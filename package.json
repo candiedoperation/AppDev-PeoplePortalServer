@@ -1,0 +1,35 @@
+{
+  "name": "people-portal-server",
+  "version": "1.0.0",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsoa spec-and-routes && tsc",
+    "start": "npm run build && node dist/app.js",
+    "dev": "npm run build && nodemon src/app.ts"
+  },
+  "keywords": [],
+  "author": "Atheesh Thirumalairajan",
+  "license": "GPL-3.0-only",
+  "description": "App Dev Club People Portal Server",
+  "dependencies": {
+    "axios": "^1.11.0",
+    "body-parser": "^2.2.0",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.1",
+    "express": "^5.1.0",
+    "loglevel": "^1.9.2",
+    "mongoose": "^8.17.1",
+    "swagger-ui-express": "^5.0.1",
+    "tsoa": "^6.6.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.3",
+    "@types/node": "^24.3.0",
+    "@types/swagger-ui-express": "^4.1.8",
+    "nodemon": "^3.1.10",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.2"
+  }
+}
