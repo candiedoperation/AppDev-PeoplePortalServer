@@ -16,8 +16,8 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-import { Controller, Get, Route, SuccessResponse } from "tsoa";
-import { GetUserListResponse } from "../clients/AuthentikClient/models";
+import { Controller, Get, Queries, Route, SuccessResponse } from "tsoa";
+import { GetTeamsListOptions, GetTeamsListResponse, GetUserListOptions, GetUserListResponse } from "../clients/AuthentikClient/models";
 import { AuthentikClient } from "../clients/AuthentikClient";
 
 @Route("/api/org")
@@ -31,7 +31,13 @@ export class OrgController extends Controller {
     
     @Get("people")
     @SuccessResponse(200)
-    async getPeople(): Promise<GetUserListResponse> {
-        return await this.authentikClient.getUserList()
+    async getPeople(@Queries() options: GetUserListOptions): Promise<GetUserListResponse> {
+        return await this.authentikClient.getUserList(options)
+    }
+
+    @Get("teams")
+    @SuccessResponse(200)
+    async getTeams(@Queries() options: GetTeamsListOptions): Promise<GetTeamsListResponse> {
+        return await this.authentikClient.getTeamsList(options)
     }
 }

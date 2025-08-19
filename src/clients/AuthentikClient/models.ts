@@ -16,12 +16,59 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-export interface GetUserListOptions {
+export enum TeamType {
+    PROJECT_TEAM = "PROJECT_TEAM",
+    CORPORATE = "CORPORATE"
+}
+
+export enum SeasonType {
+    FALL = "FALL",
+    SPRING = "SPRING"
+}
+
+export interface TeamAttributeDefinition {
+    teamType: TeamType,
+    seasonType: SeasonType,
+    seasonYear: number
+}
+
+export interface UserAttributeDefinition {
 
 }
 
-export interface GetUserListResponse {
+export interface PaginationDefinition {
 
+}
+
+export interface GetUserListOptions {
+    page?: number
+}
+
+export interface GetTeamsListOptions {
+    includeUsers?: boolean
+}
+
+export interface TeamInformationBrief {
+    name: string
+}
+
+export interface GetTeamsListResponse {
+    pagination: PaginationDefinition,
+    teams: TeamInformationBrief[]
+}
+
+export interface UserInformationBrief {
+    username: string,
+    name: string,
+    email: string,
+    memberSince: Date,
+    active: boolean,
+    attributes: UserAttributeDefinition,
+}
+
+export interface GetUserListResponse {
+    pagination: PaginationDefinition,
+    users: UserInformationBrief[]
 }
 
 export class AuthentikClientError extends Error {
