@@ -16,9 +16,10 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-import { Body, Controller, Get, Post, Queries, Route, SuccessResponse } from "tsoa";
-import { CreateTeamRequest, CreateTeamResponse, GetTeamsListOptions, GetTeamsListResponse, GetUserListOptions, GetUserListResponse, SeasonType, TeamType } from "../clients/AuthentikClient/models";
+import { Body, Controller, Get, Path, Post, Queries, Route, SuccessResponse } from "tsoa";
+import { CreateTeamRequest, CreateTeamResponse, GetGroupInfoResponse, GetTeamsListOptions, GetTeamsListResponse, GetUserListOptions, GetUserListResponse, SeasonType, TeamType } from "../clients/AuthentikClient/models";
 import { AuthentikClient } from "../clients/AuthentikClient";
+import { UUID } from "crypto";
 
 /* Define Request Interfaces */
 interface APICreateTeamRequest {
@@ -26,6 +27,11 @@ interface APICreateTeamRequest {
     teamType: TeamType,
     seasonType: SeasonType,
     seasonYear: number,
+}
+
+interface APITeamInfoResponse {
+    team: GetGroupInfoResponse,
+    subteams: GetGroupInfoResponse[]
 }
 
 @Route("/api/org")
@@ -46,29 +52,52 @@ export class OrgController extends Controller {
     @Get("teams")
     @SuccessResponse(200)
     async getTeams(@Queries() options: GetTeamsListOptions): Promise<GetTeamsListResponse> {
-        return await this.authentikClient.getTeamsList(options)
+        return await this.authentikClient.getGroupsList(options)
+    }
+
+    @Get("teams/{teamId}")
+    @SuccessResponse(200)
+    async getTeamInfo(@Path() teamId: string): Promise<APITeamInfoResponse> {
+        const primaryTeam = await this.authentikClient.getGroupInfo(teamId)
+        const subteamList = await this.authentikClient.getGroupsList({
+            subgroupsOnly: true,
+            search: primaryTeam.attributes.friendlyName.replaceAll(" ", "")
+        })
+
+        const subteamResponses: GetGroupInfoResponse[] = []
+        const filteredSubTeams = subteamList.teams.filter((team) => team.parent == teamId)
+        for (const team of filteredSubTeams) {
+            subteamResponses.push(await this.authentikClient.getGroupInfo(team.pk))
+        }
+
+        return {
+            team: primaryTeam,
+            subteams: subteamResponses
+        }
     }
 
     @Post("teams/create")
     @SuccessResponse(201)
     async createTeam(@Body() req: APICreateTeamRequest): Promise<CreateTeamResponse> {
-        const parentTeamCreateRes = await this.authentikClient.createNewTeam(req)
+        const newTeam = await this.authentikClient.createNewTeam({ attributes: { ...req } })
         // create slack channel
         
         switch (req.teamType) {
             case TeamType.CORPORATE:
                 /* WE NEED TO ADD THE CURRENT USER TO THE GROUP!!! */
-                return parentTeamCreateRes
+                return newTeam
 
             case TeamType.PROJECT: {
-                /* Create Leadership and Member Sub-teams! */
+                /* Create Leadership and Engineering Sub-teams! */
+                await this.authentikClient.createNewTeam({ parent: newTeam.pk, attributes: { ...req, friendlyName: `${req.friendlyName} Lead`} })
+                await this.authentikClient.createNewTeam({  parent: newTeam.pk, attributes: { ...req, friendlyName: `${req.friendlyName} Engr`} })
 
                 /* Setup Gitea Organization and Teams */
-                return parentTeamCreateRes
+                return newTeam
             }
 
             case TeamType.BOOTCAMP: {
-                return parentTeamCreateRes
+                return newTeam
             }
         }
     }

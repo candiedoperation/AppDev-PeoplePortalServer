@@ -18,7 +18,7 @@
 
 import axios from "axios"
 import log from "loglevel"
-import { AuthentikClientError, CreateTeamRequest, CreateTeamResponse, GetTeamsListOptions, GetTeamsListResponse, GetUserListOptions, GetUserListResponse, TeamAttributeDefinition, UserInformationBrief } from "./models"
+import { AuthentikClientError, CreateTeamRequest, CreateTeamResponse, GetGroupInfoResponse as GetGroupInfoResponse, GetTeamsListOptions as GetGroupsListOptions, GetTeamsListResponse as GetGroupsListResponse, GetUserListOptions, GetUserListResponse, TeamAttributeDefinition, TeamInformationBrief, UserInformationBrief } from "./models"
 import { randomUUID } from "crypto"
 
 export class AuthentikClient {
@@ -78,7 +78,7 @@ export class AuthentikClient {
         }
     }
 
-    public getTeamsList = async (options: GetTeamsListOptions): Promise<GetTeamsListResponse> => {
+    public getGroupsList = async (options: GetGroupsListOptions): Promise<GetGroupsListResponse> => {
         var RequestConfig: any = {
             ...this.AxiosBaseConfig,
             method: 'get',
@@ -92,12 +92,16 @@ export class AuthentikClient {
         if (options.includeUsers)
             RequestConfig.params.include_users = options.includeUsers
 
+        if (options.search)
+            RequestConfig.params.search = options.search
+
         try {
             const res = await axios.request(RequestConfig)
-            const filteredResults = res.data.results.filter((entry: any) => entry.attributes.peoplePortalCreation)
-            const teamListArray: UserInformationBrief[] = filteredResults.map((team: any) => ({
+            const filteredResults = res.data.results.filter((entry: any) => entry.attributes.peoplePortalCreation && (options.subgroupsOnly) ? entry.parent : !entry.parent)
+            const teamListArray: TeamInformationBrief[] = filteredResults.map((team: any) => ({
                 name: team.name,
                 pk: team.pk,
+                parent: team.parent,
                 ...team.attributes
             }))
 
@@ -112,11 +116,41 @@ export class AuthentikClient {
         }
     }
 
+    public getGroupInfo = async (teamId: string): Promise<GetGroupInfoResponse> => {
+        var RequestConfig: any = {
+            ...this.AxiosBaseConfig,
+            method: 'get',
+            url: `/api/v3/core/groups/${teamId}/`,
+            params: {
+                include_users: true,
+            }
+        }
+
+        try {
+            const res = await axios.request(RequestConfig)
+            return {
+                name: res.data.name,
+                attributes: res.data.attributes,
+                users: res.data.users_obj.map((user: any) => ({
+                    pk: user.pk,
+                    username: user.username,
+                    name: user.name,
+                    email: user.email,
+                    attributes: user.attributes
+                }))
+            }
+        } catch (e) {
+            log.error(AuthentikClient.TAG, "Get Teams List Request Failed with Error: ", e)
+            throw new AuthentikClientError("Get Team Request Failed")
+        }
+    }
+
     public createNewTeam = async (request: CreateTeamRequest): Promise<CreateTeamResponse> => {
+        const attr = request.attributes
         const randomSuffix = randomUUID().split("-").slice(-1)
-        const teamName = `${request.friendlyName.replaceAll(" ", "")}${request.seasonType}${request.seasonYear}_${randomSuffix}`
+        const teamName = `${attr.friendlyName.replaceAll(" ", "")}${attr.seasonType}${attr.seasonYear}_${randomSuffix}`
         const teamAttributes: TeamAttributeDefinition = {
-            ...request,
+            ...request.attributes,
             peoplePortalCreation: true  /* Helps Identify People Portal Managed Entires! */
         }
         
@@ -127,6 +161,7 @@ export class AuthentikClient {
             data: {
                 is_superuser: false,
                 name: teamName,
+                parent: request.parent,
                 attributes: teamAttributes
             }
         }

@@ -49,10 +49,13 @@ export interface GetUserListOptions {
 }
 
 export interface GetTeamsListOptions {
-    includeUsers?: boolean
+    subgroupsOnly?: boolean,
+    includeUsers?: boolean,
+    search?: string
 }
 
 export interface TeamInformationBrief {
+    parent: string,
     name: string,
     pk: string,
 }
@@ -62,13 +65,21 @@ export interface GetTeamsListResponse {
     teams: TeamInformationBrief[]
 }
 
+export interface GetGroupInfoResponse {
+    name: string,
+    users: number[],
+    attributes: TeamAttributeDefinition
+}
+
 export interface CreateTeamRequest {
-    friendlyName: string,
-    teamType: TeamType,
-    seasonType: SeasonType,
-    seasonYear: number,
     parent?: string,
-    isSuperuser?: boolean
+    isSuperuser?: boolean,
+    attributes: {
+        friendlyName: string,
+        teamType: TeamType,
+        seasonType: SeasonType,
+        seasonYear: number,
+    }
 }
 
 export interface CreateTeamResponse {
