@@ -16,9 +16,17 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-import { Controller, Get, Queries, Route, SuccessResponse } from "tsoa";
-import { GetTeamsListOptions, GetTeamsListResponse, GetUserListOptions, GetUserListResponse } from "../clients/AuthentikClient/models";
+import { Body, Controller, Get, Post, Queries, Route, SuccessResponse } from "tsoa";
+import { CreateTeamRequest, CreateTeamResponse, GetTeamsListOptions, GetTeamsListResponse, GetUserListOptions, GetUserListResponse, SeasonType, TeamType } from "../clients/AuthentikClient/models";
 import { AuthentikClient } from "../clients/AuthentikClient";
+
+/* Define Request Interfaces */
+interface APICreateTeamRequest {
+    friendlyName: string,
+    teamType: TeamType,
+    seasonType: SeasonType,
+    seasonYear: number,
+}
 
 @Route("/api/org")
 export class OrgController extends Controller {
@@ -39,5 +47,29 @@ export class OrgController extends Controller {
     @SuccessResponse(200)
     async getTeams(@Queries() options: GetTeamsListOptions): Promise<GetTeamsListResponse> {
         return await this.authentikClient.getTeamsList(options)
+    }
+
+    @Post("teams/create")
+    @SuccessResponse(201)
+    async createTeam(@Body() req: APICreateTeamRequest): Promise<CreateTeamResponse> {
+        const parentTeamCreateRes = await this.authentikClient.createNewTeam(req)
+        // create slack channel
+        
+        switch (req.teamType) {
+            case TeamType.CORPORATE:
+                /* WE NEED TO ADD THE CURRENT USER TO THE GROUP!!! */
+                return parentTeamCreateRes
+
+            case TeamType.PROJECT: {
+                /* Create Leadership and Member Sub-teams! */
+
+                /* Setup Gitea Organization and Teams */
+                return parentTeamCreateRes
+            }
+
+            case TeamType.BOOTCAMP: {
+                return parentTeamCreateRes
+            }
+        }
     }
 }

@@ -17,8 +17,9 @@
 */
 
 export enum TeamType {
-    PROJECT_TEAM = "PROJECT_TEAM",
-    CORPORATE = "CORPORATE"
+    PROJECT = "PROJECT",
+    CORPORATE = "CORPORATE",
+    BOOTCAMP = "BOOTCAMP"
 }
 
 export enum SeasonType {
@@ -27,9 +28,11 @@ export enum SeasonType {
 }
 
 export interface TeamAttributeDefinition {
+    friendlyName: string,
     teamType: TeamType,
     seasonType: SeasonType,
-    seasonYear: number
+    seasonYear: number,
+    peoplePortalCreation?: boolean
 }
 
 export interface UserAttributeDefinition {
@@ -40,6 +43,7 @@ export interface PaginationDefinition {
 
 }
 
+/* Teams API Models */
 export interface GetUserListOptions {
     page?: number
 }
@@ -49,7 +53,8 @@ export interface GetTeamsListOptions {
 }
 
 export interface TeamInformationBrief {
-    name: string
+    name: string,
+    pk: string,
 }
 
 export interface GetTeamsListResponse {
@@ -57,7 +62,23 @@ export interface GetTeamsListResponse {
     teams: TeamInformationBrief[]
 }
 
+export interface CreateTeamRequest {
+    friendlyName: string,
+    teamType: TeamType,
+    seasonType: SeasonType,
+    seasonYear: number,
+    parent?: string,
+    isSuperuser?: boolean
+}
+
+export interface CreateTeamResponse {
+    pk: string,
+    name: string
+}
+
+/* User Information API Models */
 export interface UserInformationBrief {
+    pk: string,
     username: string,
     name: string,
     email: string,

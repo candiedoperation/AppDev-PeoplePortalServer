@@ -29,6 +29,7 @@ const models: TsoaRoute.Models = {
     "UserInformationBrief": {
         "dataType": "refObject",
         "properties": {
+            "pk": {"dataType":"string","required":true},
             "username": {"dataType":"string","required":true},
             "name": {"dataType":"string","required":true},
             "email": {"dataType":"string","required":true},
@@ -60,6 +61,7 @@ const models: TsoaRoute.Models = {
         "dataType": "refObject",
         "properties": {
             "name": {"dataType":"string","required":true},
+            "pk": {"dataType":"string","required":true},
         },
         "additionalProperties": false,
     },
@@ -77,6 +79,36 @@ const models: TsoaRoute.Models = {
         "dataType": "refObject",
         "properties": {
             "includeUsers": {"dataType":"boolean"},
+        },
+        "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "CreateTeamResponse": {
+        "dataType": "refObject",
+        "properties": {
+            "pk": {"dataType":"string","required":true},
+            "name": {"dataType":"string","required":true},
+        },
+        "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "TeamType": {
+        "dataType": "refEnum",
+        "enums": ["PROJECT","CORPORATE","BOOTCAMP"],
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "SeasonType": {
+        "dataType": "refEnum",
+        "enums": ["FALL","SPRING"],
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "APICreateTeamRequest": {
+        "dataType": "refObject",
+        "properties": {
+            "friendlyName": {"dataType":"string","required":true},
+            "teamType": {"ref":"TeamType","required":true},
+            "seasonType": {"ref":"SeasonType","required":true},
+            "seasonYear": {"dataType":"double","required":true},
         },
         "additionalProperties": false,
     },
@@ -152,6 +184,36 @@ export function RegisterRoutes(app: Router) {
                 next,
                 validatedArgs,
                 successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsOrgController_createTeam: Record<string, TsoaRoute.ParameterSchema> = {
+                req: {"in":"body","name":"req","required":true,"ref":"APICreateTeamRequest"},
+        };
+        app.post('/api/org/teams/create',
+            ...(fetchMiddlewares<RequestHandler>(OrgController)),
+            ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.createTeam)),
+
+            async function OrgController_createTeam(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsOrgController_createTeam, request, response });
+
+                const controller = new OrgController();
+
+              await templateService.apiHandler({
+                methodName: 'createTeam',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 201,
               });
             } catch (err) {
                 return next(err);

@@ -16,20 +16,24 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-import express, { Router, Request, Response } from "express"
+import express, { Router, Request, Response, NextFunction } from "express"
 import cors from "cors"
 import dotenv from 'dotenv'
 import { RegisterRoutes } from "./routes";
 import swaggerUi from "swagger-ui-express";
+import { ValidateError } from "tsoa";
+import bodyParser from "body-parser";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 dotenv.config()
 app.use(express.urlencoded({ extended: true }))
+app.use(express.json())
 
 app.use(cors({
-  origin: '*'
+  origin: 'http://localhost:5173',
+  credentials: true
 }));
 
 /* Register TSOA Routes */
@@ -44,6 +48,29 @@ app.use(ApiRouter);
 app.get("*splat", (req, res) => {
   res.send("CATCHALL")
 })
+
+app.use(function errorHandler(
+  err: unknown,
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Response | void {
+  if (err instanceof ValidateError) {
+    console.warn(`Caught Validation Error for ${req.path}:`, err.fields);
+    return res.status(422).json({
+      message: "Validation Failed",
+      details: err?.fields
+    });
+  }
+  
+  if (err instanceof Error) {
+    return res.status(500).json({
+      message: "Internal Server Error",
+    });
+  }
+
+  next();
+});
 
 app.listen(PORT, () => {
   console.log(`Server running at http://localhost:${PORT}`);

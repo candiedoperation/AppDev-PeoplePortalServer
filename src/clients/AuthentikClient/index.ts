@@ -18,7 +18,8 @@
 
 import axios from "axios"
 import log from "loglevel"
-import { AuthentikClientError, GetTeamsListOptions, GetTeamsListResponse, GetUserListOptions, GetUserListResponse, UserInformationBrief } from "./models"
+import { AuthentikClientError, CreateTeamRequest, CreateTeamResponse, GetTeamsListOptions, GetTeamsListResponse, GetUserListOptions, GetUserListResponse, TeamAttributeDefinition, UserInformationBrief } from "./models"
+import { randomUUID } from "crypto"
 
 export class AuthentikClient {
     private static readonly TAG = "AuthentikClient"
@@ -57,6 +58,7 @@ export class AuthentikClient {
         try {
             const res = await axios.request(RequestConfig)
             const userListArray: UserInformationBrief[] = res.data.results.map((user: any) => ({
+                pk: user.pk,
                 username: user.username,
                 name: user.name,
                 email: user.email,
@@ -82,7 +84,8 @@ export class AuthentikClient {
             method: 'get',
             url: '/api/v3/core/groups/',
             params: {
-                include_users: false
+                include_users: false,
+                is_superuser: false
             }
         }
 
@@ -91,8 +94,11 @@ export class AuthentikClient {
 
         try {
             const res = await axios.request(RequestConfig)
-            const teamListArray: UserInformationBrief[] = res.data.results.map((team: any) => ({
-                name: team.name
+            const filteredResults = res.data.results.filter((entry: any) => entry.attributes.peoplePortalCreation)
+            const teamListArray: UserInformationBrief[] = filteredResults.map((team: any) => ({
+                name: team.name,
+                pk: team.pk,
+                ...team.attributes
             }))
 
             /* Return Mapped List */
@@ -102,6 +108,37 @@ export class AuthentikClient {
             };
         } catch (e) {
             log.error(AuthentikClient.TAG, "Get Teams List Request Failed with Error: ", e)
+            throw new AuthentikClientError("Get Team Request Failed")
+        }
+    }
+
+    public createNewTeam = async (request: CreateTeamRequest): Promise<CreateTeamResponse> => {
+        const randomSuffix = randomUUID().split("-").slice(-1)
+        const teamName = `${request.friendlyName.replaceAll(" ", "")}${request.seasonType}${request.seasonYear}_${randomSuffix}`
+        const teamAttributes: TeamAttributeDefinition = {
+            ...request,
+            peoplePortalCreation: true  /* Helps Identify People Portal Managed Entires! */
+        }
+        
+        var RequestConfig: any = {
+            ...this.AxiosBaseConfig,
+            method: 'post',
+            url: '/api/v3/core/groups/',
+            data: {
+                is_superuser: false,
+                name: teamName,
+                attributes: teamAttributes
+            }
+        }
+
+         try {
+            const res = await axios.request(RequestConfig)
+            return {
+                name: teamName,
+                pk: res.data.pk
+            };
+        } catch (e) {
+            log.error(AuthentikClient.TAG, "Create Team Request Failed with Error: ", e)
             throw new AuthentikClientError("Get Team Request Failed")
         }
     }
