@@ -40,7 +40,7 @@ export class AuthentikClient {
         if (!this.AUTHENTIK_TOKEN)
             throw new Error("Authentik Token is Invalid!")
     }
-    
+
     public getUserList = async (options: GetUserListOptions): Promise<GetUserListResponse> => {
         var RequestConfig: any = {
             ...this.AxiosBaseConfig,
