@@ -13,8 +13,8 @@ export class SlackClient {
         if (!email) throw new Error('Email is required');
     
         try {
-        const res = await this.slack.users.lookupByEmail({ email });
-        const anyRes = res as any;
+            const res = await this.slack.users.lookupByEmail({ email });
+            const anyRes = res as any;
     
         // Found
         if (anyRes?.user?.id) return true;

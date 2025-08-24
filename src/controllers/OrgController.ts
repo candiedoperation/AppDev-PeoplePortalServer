@@ -55,12 +55,6 @@ export class OrgController extends Controller {
         return await this.authentikClient.getGroupsList(options)
     }
 
-    @Get("emails/{userId}")
-    @SuccessResponse(200)
-    async getUserEmail(@Path() userId: string): Promise<string> {
-        return await this.authentikClient.getUserEmail(userId)
-    }
-
     @Get("teams/{teamId}")
     @SuccessResponse(200)
     async getTeamInfo(@Path() teamId: string): Promise<APITeamInfoResponse> {
