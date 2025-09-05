@@ -18,7 +18,7 @@
 
 import axios from "axios"
 import log from "loglevel"
-import { AuthentikClientError, CreateTeamRequest, CreateTeamResponse, GetGroupInfoResponse as GetGroupInfoResponse, GetTeamsListOptions as GetGroupsListOptions, GetTeamsListResponse as GetGroupsListResponse, GetUserListOptions, GetUserListResponse, TeamAttributeDefinition, TeamInformationBrief, UserInformationBrief } from "./models"
+import { AddGroupMemberRequest, AuthentikClientError, CreateTeamRequest, CreateTeamResponse, GetGroupInfoResponse as GetGroupInfoResponse, GetTeamsListOptions as GetGroupsListOptions, GetTeamsListResponse as GetGroupsListResponse, GetUserListOptions, GetUserListResponse, TeamAttributeDefinition, TeamInformationBrief, UserInformationBrief } from "./models"
 import { randomUUID } from "crypto"
 
 export class AuthentikClient {
@@ -54,6 +54,9 @@ export class AuthentikClient {
         /* Append Optional Parameters */
         if (options?.page)
             RequestConfig.params.page = options.page
+
+        if (options?.search)
+            RequestConfig.params.search = options.search
 
         try {
             const res = await axios.request(RequestConfig)
@@ -97,7 +100,7 @@ export class AuthentikClient {
 
         try {
             const res = await axios.request(RequestConfig)
-            const filteredResults = res.data.results.filter((entry: any) => entry.attributes.peoplePortalCreation && (options.subgroupsOnly) ? entry.parent : !entry.parent)
+            const filteredResults = res.data.results.filter((entry: any) => entry.attributes.peoplePortalCreation && ((options.subgroupsOnly) ? entry.parent : !entry.parent))
             const teamListArray: TeamInformationBrief[] = filteredResults.map((team: any) => ({
                 name: team.name,
                 pk: team.pk,
@@ -129,6 +132,7 @@ export class AuthentikClient {
         try {
             const res = await axios.request(RequestConfig)
             return {
+                pk: res.data.pk,
                 name: res.data.name,
                 attributes: res.data.attributes,
                 users: res.data.users_obj.map((user: any) => ({
@@ -142,6 +146,23 @@ export class AuthentikClient {
         } catch (e) {
             log.error(AuthentikClient.TAG, "Get Teams List Request Failed with Error: ", e)
             throw new AuthentikClientError("Get Team Request Failed")
+        }
+    }
+
+    public addGroupMember = async (request: AddGroupMemberRequest): Promise<boolean> => {
+        var RequestConfig: any = {
+            ...this.AxiosBaseConfig,
+            method: 'post',
+            url: `/api/v3/core/groups/${request.groupId}/add_user/`,
+            data: { pk: request.userPk }
+        }
+
+        try {
+            await axios.request(RequestConfig)
+            return true
+        } catch (e) {
+            log.error(AuthentikClient.TAG, "Add Team Member Request Failed with Error: ", e)
+            throw new AuthentikClientError("Add Team Member Request Failed")
         }
     }
 

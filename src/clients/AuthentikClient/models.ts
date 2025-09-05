@@ -45,7 +45,8 @@ export interface PaginationDefinition {
 
 /* Teams API Models */
 export interface GetUserListOptions {
-    page?: number
+    page?: number,
+    search?: string
 }
 
 export interface GetTeamsListOptions {
@@ -66,9 +67,15 @@ export interface GetTeamsListResponse {
 }
 
 export interface GetGroupInfoResponse {
+    pk: string,
     name: string,
     users: number[],
     attributes: TeamAttributeDefinition
+}
+
+export interface AddGroupMemberRequest {
+    groupId: string,
+    userPk: number
 }
 
 export interface CreateTeamRequest {

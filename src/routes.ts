@@ -53,6 +53,7 @@ const models: TsoaRoute.Models = {
         "dataType": "refObject",
         "properties": {
             "page": {"dataType":"double"},
+            "search": {"dataType":"string"},
         },
         "additionalProperties": false,
     },
@@ -60,6 +61,7 @@ const models: TsoaRoute.Models = {
     "TeamInformationBrief": {
         "dataType": "refObject",
         "properties": {
+            "parent": {"dataType":"string","required":true},
             "name": {"dataType":"string","required":true},
             "pk": {"dataType":"string","required":true},
         },
@@ -78,7 +80,9 @@ const models: TsoaRoute.Models = {
     "GetTeamsListOptions": {
         "dataType": "refObject",
         "properties": {
+            "subgroupsOnly": {"dataType":"boolean"},
             "includeUsers": {"dataType":"boolean"},
+            "search": {"dataType":"string"},
         },
         "additionalProperties": false,
     },
@@ -108,6 +112,7 @@ const models: TsoaRoute.Models = {
     "GetGroupInfoResponse": {
         "dataType": "refObject",
         "properties": {
+            "pk": {"dataType":"string","required":true},
             "name": {"dataType":"string","required":true},
             "users": {"dataType":"array","array":{"dataType":"double"},"required":true},
             "attributes": {"ref":"TeamAttributeDefinition","required":true},
@@ -245,6 +250,37 @@ export function RegisterRoutes(app: Router) {
                 next,
                 validatedArgs,
                 successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsOrgController_addTeamMember: Record<string, TsoaRoute.ParameterSchema> = {
+                teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
+                req: {"in":"body","name":"req","required":true,"dataType":"nestedObjectLiteral","nestedProperties":{"userPk":{"dataType":"double","required":true}}},
+        };
+        app.post('/api/org/teams/:teamId/addmember',
+            ...(fetchMiddlewares<RequestHandler>(OrgController)),
+            ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.addTeamMember)),
+
+            async function OrgController_addTeamMember(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsOrgController_addTeamMember, request, response });
+
+                const controller = new OrgController();
+
+              await templateService.apiHandler({
+                methodName: 'addTeamMember',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 201,
               });
             } catch (err) {
                 return next(err);

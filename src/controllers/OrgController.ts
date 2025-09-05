@@ -17,7 +17,7 @@
 */
 
 import { Body, Controller, Get, Path, Post, Queries, Route, SuccessResponse } from "tsoa";
-import { CreateTeamRequest, CreateTeamResponse, GetGroupInfoResponse, GetTeamsListOptions, GetTeamsListResponse, GetUserListOptions, GetUserListResponse, SeasonType, TeamType } from "../clients/AuthentikClient/models";
+import { AddGroupMemberRequest, CreateTeamRequest, CreateTeamResponse, GetGroupInfoResponse, GetTeamsListOptions, GetTeamsListResponse, GetUserListOptions, GetUserListResponse, SeasonType, TeamType } from "../clients/AuthentikClient/models";
 import { AuthentikClient } from "../clients/AuthentikClient";
 import { UUID } from "crypto";
 
@@ -32,6 +32,11 @@ interface APICreateTeamRequest {
 interface APITeamInfoResponse {
     team: GetGroupInfoResponse,
     subteams: GetGroupInfoResponse[]
+}
+
+interface APITeamMemberAddResponse {
+    coreAdditionComplete: boolean,
+    slackAdditionComplete: boolean
 }
 
 @Route("/api/org")
@@ -76,10 +81,21 @@ export class OrgController extends Controller {
         }
     }
 
+    @Post("teams/{teamId}/addmember")
+    @SuccessResponse(201)
+    async addTeamMember(@Path() teamId: string, @Body() req: { userPk: number }) {
+        await this.addTeamMemberWrapper({
+            groupId: teamId,
+            userPk: req.userPk
+        })
+    }
+
     @Post("teams/create")
     @SuccessResponse(201)
     async createTeam(@Body() req: APICreateTeamRequest): Promise<CreateTeamResponse> {
         const newTeam = await this.authentikClient.createNewTeam({ attributes: { ...req } })
+        // this.addTeamMemberWrapper({ groupId: newTeam.pk, userPk: 0 })
+        
         // create slack channel
         
         switch (req.teamType) {
@@ -89,8 +105,11 @@ export class OrgController extends Controller {
 
             case TeamType.PROJECT: {
                 /* Create Leadership and Engineering Sub-teams! */
-                await this.authentikClient.createNewTeam({ parent: newTeam.pk, attributes: { ...req, friendlyName: `${req.friendlyName} Lead`} })
+                const leadershipTeam = await this.authentikClient.createNewTeam({ parent: newTeam.pk, attributes: { ...req, friendlyName: `${req.friendlyName} Lead`} })
                 await this.authentikClient.createNewTeam({  parent: newTeam.pk, attributes: { ...req, friendlyName: `${req.friendlyName} Engr`} })
+
+                /* Add Self as Project Lead */
+                // this.addTeamMemberWrapper({ groupId: leadershipTeam.pk, userPk: 0 })
 
                 /* Setup Gitea Organization and Teams */
                 return newTeam
@@ -99,6 +118,18 @@ export class OrgController extends Controller {
             case TeamType.BOOTCAMP: {
                 return newTeam
             }
+        }
+    }
+
+
+    /* Other Wrapper Functions */
+    async addTeamMemberWrapper(request: AddGroupMemberRequest): Promise<APITeamMemberAddResponse> {
+        const coreAdditionComplete = await this.authentikClient.addGroupMember(request)
+        /* DO SLACK and GIT REPO here! */
+
+        return {
+            coreAdditionComplete,
+            slackAdditionComplete: false
         }
     }
 }
