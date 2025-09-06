@@ -41,6 +41,33 @@ export class AuthentikClient {
             throw new Error("Authentik Token is Invalid!")
     }
 
+    public getUserInfo = async (userId: number): Promise<UserInformationBrief> => {
+        var RequestConfig: any = {
+            ...this.AxiosBaseConfig,
+            method: 'get',
+            url: `/api/v3/core/users/${userId}/`,
+            params: {
+                type: 'internal',
+            }
+        }
+
+        try {
+            const res = await axios.request(RequestConfig)
+            return {
+                pk: res.data.pk,
+                username: res.data.username,
+                name: res.data.name,
+                email: res.data.email,
+                memberSince: res.data.date_joined,
+                active: res.data.is_active,
+                attributes: res.data.attributes,
+            };
+        } catch (e) {
+            log.error(AuthentikClient.TAG, "User Info Request Failed with Error: ", e)
+            throw new AuthentikClientError("User Info Request Failed")
+        }
+    }
+
     public getUserList = async (options: GetUserListOptions): Promise<GetUserListResponse> => {
         var RequestConfig: any = {
             ...this.AxiosBaseConfig,

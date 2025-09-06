@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Team Invite</title>
+  </head>
+  {{> header}}
+  <body style="font-family: Arial, sans-serif; color: #333;">
+    <p>Hey {{inviteName}},<br>We're glad to have you here! <b>{{invitorName}}</b> has invited you to join the <b>{{teamName}}</b> team and your role is <b>{{roleTitle}}</b>. Since it's your first time at App Dev, we'd want to reiterate that your time and effort means a lot to us and we'd really want you onboard to help expand this awesome community of thinkers and innovators.</p>
+    <p>We've generated a customized invite link for you which is valid for the next <b>48 hours</b>. To initiate the onboarding process, please follow the instructions at <a href="{{onboardUrl}}">{{onboardUrl}}</a>.</p>
+    <p>If you have any issues with the onboarding process, please contact {{invitorName}} by replying to this email.</p>
+  </body>
+  {{> footer}}
+</html>

@@ -17,11 +17,17 @@
 */
 
 import { Body, Controller, Get, Path, Post, Queries, Route, SuccessResponse } from "tsoa";
-import { AddGroupMemberRequest, CreateTeamRequest, CreateTeamResponse, GetGroupInfoResponse, GetTeamsListOptions, GetTeamsListResponse, GetUserListOptions, GetUserListResponse, SeasonType, TeamType } from "../clients/AuthentikClient/models";
+import { AddGroupMemberRequest, CreateTeamRequest, CreateTeamResponse, GetGroupInfoResponse, GetTeamsListOptions, GetTeamsListResponse, GetUserListOptions, GetUserListResponse, SeasonType, TeamType, UserInformationBrief } from "../clients/AuthentikClient/models";
 import { AuthentikClient } from "../clients/AuthentikClient";
 import { UUID } from "crypto";
+import { Invite } from "../models/Invites";
+import { EmailClient } from "../clients/EmailClient";
 
 /* Define Request Interfaces */
+interface APIUserInfoResponse extends UserInformationBrief {
+
+}
+
 interface APICreateTeamRequest {
     friendlyName: string,
     teamType: TeamType,
@@ -39,13 +45,23 @@ interface APITeamMemberAddResponse {
     slackAdditionComplete: boolean
 }
 
+interface APITeamInviteCreateRequest {
+    inviteName: string;
+    inviteEmail: string;
+    roleTitle: string;
+    teamPk: string;
+    inviterPk: number;
+}
+
 @Route("/api/org")
 export class OrgController extends Controller {
     private readonly authentikClient;
+    private readonly emailClient;
 
     constructor() {
         super()
         this.authentikClient = new AuthentikClient()
+        this.emailClient = new EmailClient()
     }
     
     @Get("people")
@@ -54,10 +70,59 @@ export class OrgController extends Controller {
         return await this.authentikClient.getUserList(options)
     }
 
+    @Get("people/{personId}")
+    @SuccessResponse(200)
+    async getPersonInfo(@Path() personId: number): Promise<APIUserInfoResponse> {
+        const authentikUserInfo = await this.authentikClient.getUserInfo(personId)
+        return { 
+            ...authentikUserInfo 
+        }
+    }
+
     @Get("teams")
     @SuccessResponse(200)
     async getTeams(@Queries() options: GetTeamsListOptions): Promise<GetTeamsListResponse> {
         return await this.authentikClient.getGroupsList(options)
+    }
+
+    @Post("invites/new")
+    @SuccessResponse(201)
+    async createInvite(@Body() req: APITeamInviteCreateRequest) {
+        const inviterPk = req.inviterPk;
+        const teamInfo = await this.getTeamInfo(req.teamPk)
+        const invitorInfo = await this.getPersonInfo(inviterPk) /* inviterPk should be obtained from SSO */
+
+        /* Verify Team Owner Status */
+        // if (!teamInfo.team.users.includes(inviterPk)) {
+        //     this.setStatus(403);
+        //     throw new Error(`You're not authorized to perform Team Management options for the resource ${teamInfo.team.name}`)
+        // }
+
+        /* Create New Invite */
+        const createdInvite = await Invite.create({
+            inviteName: req.inviteName,
+            inviteEmail: req.inviteEmail,
+            roleTitle: req.roleTitle,
+            teamPk: req.teamPk,
+            inviterPk: req.inviterPk,
+            expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000)
+        })
+
+        /* Send an Email to the Invitee and the Invitor */
+        await this.emailClient.send({
+            to: req.inviteEmail,
+            cc: [invitorInfo.email],
+            replyTo: [invitorInfo.email],
+            subject: `${teamInfo.team.attributes.friendlyName} Team Invitation`,
+            templateName: "invite",
+            templateVars: {
+                inviteName: req.inviteName,
+                invitorName: invitorInfo.name,
+                teamName: teamInfo.team.attributes.friendlyName,
+                roleTitle: req.roleTitle,
+                onboardUrl: `${process.env.PEOPLEPORTAL_BASE_URL}/onboard/${createdInvite._id}`
+            }
+        })
     }
 
     @Get("teams/{teamId}")
@@ -84,6 +149,7 @@ export class OrgController extends Controller {
     @Post("teams/{teamId}/addmember")
     @SuccessResponse(201)
     async addTeamMember(@Path() teamId: string, @Body() req: { userPk: number }) {
+        /* Needs Is Team owner Middleware?! */
         await this.addTeamMemberWrapper({
             groupId: teamId,
             userPk: req.userPk

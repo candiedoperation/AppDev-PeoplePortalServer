@@ -23,6 +23,7 @@ import { RegisterRoutes } from "./routes";
 import swaggerUi from "swagger-ui-express";
 import { ValidateError } from "tsoa";
 import bodyParser from "body-parser";
+import mongoose from "mongoose";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -62,7 +63,7 @@ app.use(function errorHandler(
       details: err?.fields
     });
   }
-  
+
   if (err instanceof Error) {
     return res.status(500).json({
       message: "Internal Server Error",
@@ -72,6 +73,7 @@ app.use(function errorHandler(
   next();
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
+  await mongoose.connect(process.env.PEOPLEPORTAL_MONGO_URL!)
   console.log(`Server running at http://localhost:${PORT}`);
 });
