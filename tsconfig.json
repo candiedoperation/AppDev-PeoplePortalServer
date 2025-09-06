@@ -4,12 +4,12 @@
     // File Layout
     "rootDir": "./src",
     "outDir": "./dist",
+    "typeRoots": ["./node_modules/@types", "./src/types"],
 
     // Environment Settings
     "module": "commonjs",
     "target": "esnext",
     "lib": ["esnext"],
-    "types": ["node"],
     "esModuleInterop": true,
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,

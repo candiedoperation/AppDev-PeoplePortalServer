@@ -24,6 +24,9 @@ import swaggerUi from "swagger-ui-express";
 import { ValidateError } from "tsoa";
 import bodyParser from "body-parser";
 import mongoose from "mongoose";
+import { OpenIdClient } from "./clients/OpenIdClient";
+import expressSession from 'express-session'
+import { generateSecureRandomString } from "./utils/strings";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -36,6 +39,15 @@ app.use(cors({
   origin: 'http://localhost:5173',
   credentials: true
 }));
+
+app.use(
+  expressSession({
+    secret: process.env.PEOPLEPORTAL_TOKEN_SECRET ?? generateSecureRandomString(16),
+    resave: false,
+    saveUninitialized: true,
+    store: new expressSession.MemoryStore() /* Use Redis for Horizontal Scaling */
+  })
+);
 
 /* Register TSOA Routes */
 const ApiRouter = Router()
@@ -65,6 +77,7 @@ app.use(function errorHandler(
   }
 
   if (err instanceof Error) {
+    console.error(err)
     return res.status(500).json({
       message: "Internal Server Error",
     });
@@ -74,6 +87,7 @@ app.use(function errorHandler(
 });
 
 app.listen(PORT, async () => {
+  await OpenIdClient.init()
   await mongoose.connect(process.env.PEOPLEPORTAL_MONGO_URL!)
   console.log(`Server running at http://localhost:${PORT}`);
 });

@@ -4,9 +4,21 @@
   "controllerPathGlobs": ["src/**/*Controller.ts"],
   "spec": {
     "outputDirectory": "dist",
-    "specVersion": 3
+    "specVersion": 3,
+
+    "securityDefinitions": {
+      "oidc": {
+        "type": "oauth2",
+        "authorizationUrl": "http://localhost:9000",
+        "flow": "implicit",
+        "scopes": {
+
+        }
+      }
+    }
   },
   "routes": {
-    "routesDir": "src"
+    "routesDir": "src",
+    "authenticationModule": "src/auth.ts"
   }
 }

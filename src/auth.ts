@@ -16,8 +16,25 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-export class CoreAuthentication {
-    private RequiresOIDCAuth = (req: Request, res: Response) => {
-        
+import * as express from "express";
+
+export function expressAuthentication(
+  request: express.Request,
+  securityName: string,
+  scopes?: string[]
+): Promise<any> {
+    if (securityName == "oidc" && oidcAuthVerify(request, scopes)) {
+        return Promise.resolve({})
+    } else {
+        return Promise.reject({})
     }
+}
+
+function oidcAuthVerify(req: express.Request, scopes?: string[]): boolean {
+    let tokenExpiry = req.session.tokenExpiry
+    return (
+        tokenExpiry != undefined && 
+        new Date() < tokenExpiry,
+        req.session.authorizedUser != undefined
+    )
 }
