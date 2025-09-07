@@ -8,12 +8,9 @@
 
     "securityDefinitions": {
       "oidc": {
-        "type": "oauth2",
-        "authorizationUrl": "http://localhost:9000",
-        "flow": "implicit",
-        "scopes": {
-
-        }
+        "type": "openIdConnect",
+        "openIdConnectUrl": "https://localhost:9443/application/o/swagger-test/.well-known/openid-configuration"
+        
       }
     }
   },

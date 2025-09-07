@@ -17,14 +17,32 @@
 */
 
 import * as express from "express";
+import { OpenIdClient } from "./clients/OpenIdClient";
 
 export function expressAuthentication(
   request: express.Request,
   securityName: string,
   scopes?: string[]
 ): Promise<any> {
-    if (securityName == "oidc" && oidcAuthVerify(request, scopes)) {
-        return Promise.resolve({})
+    if (securityName == "oidc") {
+        return new Promise(async (resolve, reject) => {
+            try {
+                const authHeader = request.headers.authorization?.replace("Bearer ", "")
+                const authToken = authHeader || request.session.accessToken
+                if (!authToken)
+                    return reject({})
+
+                const userData = await OpenIdClient.verifyAccessToken(authToken)
+                if (!request.session.accessToken || !request.session.authorizedUser) {
+                    request.session.accessToken = authHeader ?? ""
+                    request.session.authorizedUser = userData
+                }
+                
+                resolve({})
+            } catch (e) {
+                reject({})
+            }
+        })
     } else {
         return Promise.reject({})
     }

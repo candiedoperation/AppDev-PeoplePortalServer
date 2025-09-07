@@ -16,15 +16,17 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+import jwt from "jsonwebtoken"
+import jwksClient from 'jwks-rsa';
 import * as client from 'openid-client'
 
 export interface AuthorizedUser {
-    sub: string,
-    email: string,
-    name: string,
-    username: string,
-    groups: string[]
-  }
+  sub: string,
+  email: string,
+  name: string,
+  username: string,
+  groups: string[]
+}
 
 export interface AuthorizationStamp {
   accessToken: string,
@@ -44,7 +46,7 @@ export class OpenIdClient {
   private static code_verifier = client.randomPKCECodeVerifier()
   private static code_challenge: string | undefined
   private static redirect_uri: string | undefined
-  private static nonce = client.randomNonce()
+  private static jwksClient: jwksClient.JwksClient | undefined;
 
   public static async init() {
     this.config = await client.discovery(
@@ -53,6 +55,12 @@ export class OpenIdClient {
       process.env.PEOPLEPORTAL_OIDC_CLIENTSECRET!,
     )
 
+    const jwksUri = this.config.serverMetadata().jwks_uri
+    if (!jwksUri) {
+      throw new Error("OIDC Backend doesn't support JWKS!")
+    }
+
+    this.jwksClient = jwksClient({ jwksUri })
     this.code_challenge = await client.calculatePKCECodeChallenge(this.code_verifier)
     this.redirect_uri = `${process.env.PEOPLEPORTAL_BASE_URL}/api/auth/redirect`
   }
@@ -83,7 +91,6 @@ export class OpenIdClient {
     })
 
     const claims = tokens.claims()
-    console.log(claims)
     if (!claims)
       throw new Error("Failed to Obtain OIDC Claims!")
 
@@ -99,6 +106,36 @@ export class OpenIdClient {
         groups: claims.groups as string[]
       }
     }
+  }
+
+  public static verifyAccessToken(accessToken: string): Promise<any> {
+    return new Promise<any>((resolve, reject) => {
+      jwt.verify(
+        accessToken,
+        (header, callback) => {
+          this.jwksClient?.getSigningKey(header.kid, (err, key) => {
+            const signingKey = key?.getPublicKey()
+            callback(null, signingKey)
+          })
+        },
+
+        {
+          algorithms: ["RS256"],
+          ignoreExpiration: false,
+          audience: process.env.PEOPLEPORTAL_OIDC_CLIENTID
+        },
+
+        (err, decoded) => {
+          if (err) {
+            console.log(err)
+            reject(err)
+          }
+
+          /* Success!! */
+          resolve(decoded)
+        }
+      )
+    })
   }
 
   public static async getUserInfo(accessToken: string, sub: string) {
