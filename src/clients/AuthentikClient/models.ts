@@ -27,12 +27,22 @@ export enum SeasonType {
     SPRING = "SPRING"
 }
 
+export interface BindlePermission {
+    friendlyName: string,
+    description: string,
+    enabled: boolean
+}
+
 export interface TeamAttributeDefinition {
     friendlyName: string,
     teamType: TeamType,
     seasonType: SeasonType,
     seasonYear: number,
-    peoplePortalCreation?: boolean
+    peoplePortalCreation?: boolean,
+    bindlePermissions?: {
+        /* The key is the Client name (Ex. GiteaClient, OpenIdClient, etc.) */
+        [key: string]: BindlePermission[]
+    }
 }
 
 export interface UserAttributeDefinition {
@@ -69,7 +79,9 @@ export interface GetTeamsListResponse {
 export interface GetGroupInfoResponse {
     pk: string,
     name: string,
-    users: number[],
+    users: UserInformationBrief[],
+    subteamPkList: string[],
+    subteams: GetGroupInfoResponse[],
     attributes: TeamAttributeDefinition
 }
 
@@ -80,12 +92,14 @@ export interface AddGroupMemberRequest {
 
 export interface CreateTeamRequest {
     parent?: string,
+    parentName?: string,
     isSuperuser?: boolean,
     attributes: {
         friendlyName: string,
         teamType: TeamType,
         seasonType: SeasonType,
         seasonYear: number,
+        description: string
     }
 }
 

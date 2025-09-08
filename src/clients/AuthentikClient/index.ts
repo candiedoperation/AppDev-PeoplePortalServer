@@ -20,6 +20,7 @@ import axios from "axios"
 import log from "loglevel"
 import { AddGroupMemberRequest, AuthentikClientError, CreateTeamRequest, CreateTeamResponse, GetGroupInfoResponse as GetGroupInfoResponse, GetTeamsListOptions as GetGroupsListOptions, GetTeamsListResponse as GetGroupsListResponse, GetUserListOptions, GetUserListResponse, TeamAttributeDefinition, TeamInformationBrief, UserInformationBrief } from "./models"
 import { randomUUID } from "crypto"
+import { sanitizeGroupName } from "../../utils/strings"
 
 export class AuthentikClient {
     private static readonly TAG = "AuthentikClient"
@@ -153,15 +154,26 @@ export class AuthentikClient {
             url: `/api/v3/core/groups/${teamId}/`,
             params: {
                 include_users: true,
+                include_children: true
             }
         }
 
         try {
             const res = await axios.request(RequestConfig)
+            const subteams = res.data.children_obj
+
+            /* Populate Users Within SubTeams */
+            for (let subteam of subteams) {
+                const subteamInfo = await this.getGroupInfo(subteam.pk)
+                subteam.users = subteamInfo.users
+            }
+
             return {
                 pk: res.data.pk,
                 name: res.data.name,
                 attributes: res.data.attributes,
+                subteamPkList: res.data.children,
+                subteams: res.data.children_obj,
                 users: res.data.users_obj.map((user: any) => ({
                     pk: user.pk,
                     username: user.username,
@@ -194,13 +206,17 @@ export class AuthentikClient {
     }
 
     public createNewTeam = async (request: CreateTeamRequest): Promise<CreateTeamResponse> => {
+        if (request.parent && !request.parentName)
+            throw new Error("Creating a SubTeam needs a Parent Name!")
+        
         const attr = request.attributes
         const randomSuffix = randomUUID().split("-").slice(-1)
-        const teamName = `${attr.friendlyName.replaceAll(" ", "")}${attr.seasonType}${attr.seasonYear}_${randomSuffix}`
+        const teamName = sanitizeGroupName(`${attr.friendlyName.replaceAll(" ", "")}${attr.seasonType}${attr.seasonYear}_${randomSuffix}`)
         const teamAttributes: TeamAttributeDefinition = {
             ...request.attributes,
             peoplePortalCreation: true  /* Helps Identify People Portal Managed Entires! */
         }
+        
         
         var RequestConfig: any = {
             ...this.AxiosBaseConfig,
@@ -208,13 +224,13 @@ export class AuthentikClient {
             url: '/api/v3/core/groups/',
             data: {
                 is_superuser: false,
-                name: teamName,
+                name: (request.parent) ? `${sanitizeGroupName(request.parentName!)}${teamName}` : teamName,
                 parent: request.parent,
                 attributes: teamAttributes
             }
         }
 
-         try {
+        try {
             const res = await axios.request(RequestConfig)
             return {
                 name: teamName,

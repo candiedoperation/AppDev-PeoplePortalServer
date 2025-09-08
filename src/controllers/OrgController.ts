@@ -16,16 +16,24 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-import { Body, Controller, Get, Path, Post, Queries, Route, SuccessResponse } from "tsoa";
+import * as express from 'express'
+import { Request, Body, Controller, Get, Patch, Path, Post, Queries, Res, Route, SuccessResponse } from "tsoa";
 import { AddGroupMemberRequest, CreateTeamRequest, CreateTeamResponse, GetGroupInfoResponse, GetTeamsListOptions, GetTeamsListResponse, GetUserListOptions, GetUserListResponse, SeasonType, TeamType, UserInformationBrief } from "../clients/AuthentikClient/models";
 import { AuthentikClient } from "../clients/AuthentikClient";
 import { UUID } from "crypto";
 import { Invite } from "../models/Invites";
 import { EmailClient } from "../clients/EmailClient";
+import { SharedResourceClient } from '../clients';
+import { GiteaClient } from '../clients/GiteaClient';
 
 /* Define Request Interfaces */
 interface APIUserInfoResponse extends UserInformationBrief {
 
+}
+
+interface APICreateSubTeamRequest {
+    friendlyName: string,
+    description: string
 }
 
 interface APICreateTeamRequest {
@@ -33,6 +41,7 @@ interface APICreateTeamRequest {
     teamType: TeamType,
     seasonType: SeasonType,
     seasonYear: number,
+    description: string
 }
 
 interface APITeamInfoResponse {
@@ -55,6 +64,7 @@ interface APITeamInviteCreateRequest {
 
 @Route("/api/org")
 export class OrgController extends Controller {
+    private sharedResources: SharedResourceClient[];
     private readonly authentikClient;
     private readonly emailClient;
 
@@ -62,6 +72,9 @@ export class OrgController extends Controller {
         super()
         this.authentikClient = new AuthentikClient()
         this.emailClient = new EmailClient()
+        this.sharedResources = [
+            new GiteaClient()
+        ]
     }
     
     @Get("people")
@@ -129,20 +142,22 @@ export class OrgController extends Controller {
     @SuccessResponse(200)
     async getTeamInfo(@Path() teamId: string): Promise<APITeamInfoResponse> {
         const primaryTeam = await this.authentikClient.getGroupInfo(teamId)
-        const subteamList = await this.authentikClient.getGroupsList({
-            subgroupsOnly: true,
-            search: primaryTeam.attributes.friendlyName.replaceAll(" ", "")
-        })
 
-        const subteamResponses: GetGroupInfoResponse[] = []
-        const filteredSubTeams = subteamList.teams.filter((team) => team.parent == teamId)
-        for (const team of filteredSubTeams) {
-            subteamResponses.push(await this.authentikClient.getGroupInfo(team.pk))
-        }
+        /* Recursive Team Population Logic for Authentik Versions less than 2025.8 */
+        // const subteamList = await this.authentikClient.getGroupsList({
+        //     subgroupsOnly: true,
+        //     search: primaryTeam.attributes.friendlyName.replaceAll(" ", "")
+        // })
+
+        // const subteamResponses: GetGroupInfoResponse[] = []
+        // const filteredSubTeams = subteamList.teams.filter((team) => team.parent == teamId)
+        // for (const team of filteredSubTeams) {
+        //     subteamResponses.push(await this.authentikClient.getGroupInfo(team.pk))
+        // }
 
         return {
             team: primaryTeam,
-            subteams: subteamResponses
+            subteams: primaryTeam.subteams
         }
     }
 
@@ -154,6 +169,26 @@ export class OrgController extends Controller {
             groupId: teamId,
             userPk: req.userPk
         })
+    }
+
+    @Post("teams/{teamId}/subteam")
+    @SuccessResponse(201)
+    async createSubTeam(@Path() teamId: string, @Body() req: APICreateSubTeamRequest): Promise<CreateTeamResponse> {
+        const parentInfo = await this.authentikClient.getGroupInfo(teamId)
+        const createdSubTeam = await this.authentikClient.createNewTeam({
+            parent: teamId,
+            parentName: parentInfo.attributes.friendlyName,
+            attributes: {
+                friendlyName: req.friendlyName,
+                teamType: parentInfo.attributes.teamType,
+                seasonType: parentInfo.attributes.seasonType,
+                seasonYear: parentInfo.attributes.seasonYear,
+                description: req.description
+            }
+        })
+
+        /* Return the Sub team */
+        return createdSubTeam
     }
 
     @Post("teams/create")
@@ -171,8 +206,8 @@ export class OrgController extends Controller {
 
             case TeamType.PROJECT: {
                 /* Create Leadership and Engineering Sub-teams! */
-                const leadershipTeam = await this.authentikClient.createNewTeam({ parent: newTeam.pk, attributes: { ...req, friendlyName: `${req.friendlyName} Lead`} })
-                await this.authentikClient.createNewTeam({  parent: newTeam.pk, attributes: { ...req, friendlyName: `${req.friendlyName} Engr`} })
+                await this.createSubTeam(newTeam.pk, { friendlyName: 'Leadership', description: 'Project and Tech Leads' })
+                await this.createSubTeam(newTeam.pk, { friendlyName: 'Engineering', description: 'UI/UX, PMs, SWEs, etc.' })
 
                 /* Add Self as Project Lead */
                 // this.addTeamMemberWrapper({ groupId: leadershipTeam.pk, userPk: 0 })
@@ -185,6 +220,30 @@ export class OrgController extends Controller {
                 return newTeam
             }
         }
+    }
+
+    @Patch("teams/{teamId}/syncbindles")
+    @SuccessResponse(200)
+    async syncOrgBindles(@Request() req: Request, @Path() teamId: string) {
+        const res = (req as any).res as express.Response
+        res.setHeader('Content-Type', 'text/plain');
+        res.setHeader('Transfer-Encoding', 'chunked');
+
+        /* Obtain Teams and Compute Progress Effort */
+        const teamInfo = await this.authentikClient.getGroupInfo(teamId)
+        const computeEffort = teamInfo.users.length +
+            teamInfo.subteams.reduce((acc, val) => acc + val.users.length, 0)
+
+        let updatedResources = 0
+        for (const sharedResource of this.sharedResources) {
+            await sharedResource.handleOrgBindleSync(teamInfo, (updatedResourceCount, status) => {
+                /* Update Progress and Write Output */
+                updatedResources += updatedResourceCount
+                res.write(JSON.stringify({ progressPercent: (updatedResources/computeEffort)*100, status }))
+            })
+        }
+
+        res.end()
     }
 
 
