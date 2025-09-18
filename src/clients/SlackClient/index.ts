@@ -1,102 +1,59 @@
+/**
+  App Dev Club People Portal Server
+  Copyright (C) 2025  Atheesh Thirumalairajan
+
+  This program is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+*/
+
 import { WebClient } from '@slack/web-api';
+import { BindlePermissionMap } from '../../controllers/BindleController';
+import { SharedResourceClient } from '..';
+import { GetGroupInfoResponse } from '../AuthentikClient/models';
 
-export class SlackClient {
-    private slack: WebClient;
-
-    constructor(token = process.env.SLACK_BOT_TOKEN) {
-        if (!token) throw new Error('Missing SLACK_BOT_TOKEN');
-        this.slack = new WebClient(token);
-    }
-
-    // users.lookupByEmail -> boolean (exists?)
-    public async checkIfUserExists(email: string): Promise<boolean> {
-        if (!email) throw new Error('Email is required');
-    
-        try {
-            const res = await this.slack.users.lookupByEmail({ email });
-            const anyRes = res as any;
-    
-        // Found
-        if (anyRes?.user?.id) return true;
-    
-        // Not found is a normal case → return false
-        if (anyRes?.ok === false && (anyRes.error === 'users_not_found' || anyRes.error === 'user_not_found')) {
-            return false;
-        }
-    
-        // Slack replied ok:false with another error → surface it
-        if (anyRes?.ok === false) {
-            throw new Error(`Slack API error: ${anyRes.error || 'unknown_error'}`);
-        }
-    
-        // Defensive fallback
-        return false;
-        } catch (e: any) {
-        // If the SDK throws, check for "not found" then rethrow others (auth, network, rate limit)
-        const code = e?.data?.error || e?.code;
-        if (code === 'users_not_found' || code === 'user_not_found') return false;
-        throw e;
+export class SlackClient implements SharedResourceClient {
+    private static readonly TAG = "SlackClient"
+    private GITEA_TOKEN = process.env.PEOPLEPORTAL_GITEA_TOKEN
+    private readonly SlackBaseConfig = {
+        baseURL: process.env.PEOPLEPORTAL_GITEA_ENDPOINT ?? "",
+        maxBodyLength: Infinity,
+        headers: {
+            'Accept': "application/json",
+            'Authorization': `Bearer ${this.GITEA_TOKEN}`
         }
     }
-    
 
-    public async getUserIdByEmail(email: string): Promise<string> {
-        // Check if email is provided
-        if (!email) throw new Error('Email is required');
-
-        // Check if Slack is configured
-        const res = await this.slack.users.lookupByEmail({ email });
-
-        // Check if the response contains a user ID
-        const id = (res as any)?.user?.id as string | undefined;
-
-        // If no user ID is found, throw an error
-        if (!id) throw new Error('Slack user not found for that email');
-
-        // Return the user ID
-        return id;
-    }
-    
-    
-    public async ensureUserInUserGroup(slackusergroupId: string, slackuserId: string) {
-        // Check if usergroup ID and user ID are provided
-        if (!this.slack) throw new Error('Slack not configured');
-
-        // Check if usergroup ID is provided
-        const list = await this.slack.usergroups.users.list({ usergroup: slackusergroupId, include_disabled: true });
-
-        // Check if the user is already a member of the usergroup
-        const current = new Set((list as any).users || []);
-
-        // If the user is already a member, return early
-        if (current.has(slackuserId)) return { ok: true, already_member: true, users: Array.from(current) };
+    private readonly supportedBindles: BindlePermissionMap = {
         
-        // Add the user to the usergroup
-        current.add(slackuserId);
-
-        // Update the usergroup with the new list of users
-        return this.slack.usergroups.users.update({
-        usergroup: slackusergroupId,
-        users: Array.from(current).join(',')
-        });
     }
 
-    public async ensureUserInChannel(channelId: string, userId: string) {
-        // Check if channel ID and user ID are provided
-        if (!this.slack) throw new Error('Slack not configured');
+    constructor() {
+        if (!this.SlackBaseConfig.baseURL)
+            throw new Error("Slack Backend URL is Invalid!")
 
-        // Check if channel ID is provided
-        try {
-        // Attempt to invite the user to the channel
-        return await this.slack.conversations.invite({ channel: channelId, users: userId });
-        } catch (e: any) {
-        // If the user is already in the channel, return early
-        const code = e?.data?.error || e?.code;
-        if (code === 'already_in_channel' || code === 'already_in_conversation') {
-            return { ok: true, already_in_channel: true };
-        }
-        throw e;
-        }
+        if (!this.GITEA_TOKEN)
+            throw new Error("Slack Token is Invalid!")
     }
 
+    getResourceName(): string {
+        return SlackClient.TAG
+    }
+
+    getSupportedBindles(): BindlePermissionMap {
+        return this.supportedBindles
+    }
+    
+    handleOrgBindleSync(org: GetGroupInfoResponse, callback: (updatedResourceCount: number, status: string) => void): Promise<boolean> {
+        throw new Error('Method not implemented.');
+    }
 }

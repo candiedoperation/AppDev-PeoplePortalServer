@@ -17,9 +17,22 @@
 */
 
 import * as express from 'express'
-import { Request, Controller, Get, Route, SuccessResponse, Security } from "tsoa";
+import { Request, Controller, Get, Route, SuccessResponse, Security, Post, Body } from "tsoa";
 import { OpenIdClient } from '../clients/OpenIdClient';
 import { UserInfoResponse } from 'openid-client';
+import { Applicant } from '../models/Applicant';
+import jwt from "jsonwebtoken"
+import { generateSecureRandomString } from '../utils/strings';
+
+interface OtpInitRequest {
+    email: string;
+    name: string;
+}
+
+interface OtpVerifyRequest {
+    email: string;
+    otp: string;
+}
 
 @Route("/api/auth")
 export class AuthController extends Controller {
@@ -33,7 +46,7 @@ export class AuthController extends Controller {
         const userInfo = await OpenIdClient.getUserInfo(req.session.accessToken, req.session.authorizedUser.sub)
         return userInfo
     }
-    
+
     @Get("login")
     @SuccessResponse(302, "Redirect")
     async handleLogin(@Request() req: express.Request) {
@@ -65,5 +78,83 @@ export class AuthController extends Controller {
             console.log(e)
             throw e
         }
+    }
+
+    @Post("otpinit")
+    @SuccessResponse(200)
+    async otpInitRequest(@Body() body: OtpInitRequest, @Request() req: express.Request) {
+        const { email, name } = body;
+
+        if (!email || !name) {
+            this.setStatus(400);
+            return { error: "Bad Request", message: "Email and name are required" };
+        }
+
+        // Generate 6-digit OTP
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+        // Initialize tempsession if it doesn't exist
+        req.session.tempsession = req.session.tempsession || {};
+
+        // Store OTP data in tempsession
+        req.session.tempsession.otp = otp;
+        req.session.tempsession.otpEmail = email;
+        req.session.tempsession.otpName = name;
+        req.session.tempsession.otpExpiry = Date.now() + 5 * 60 * 1000; // 5 minutes
+
+        console.log(`OTP for ${email}: ${otp}`);
+
+        return { message: "OTP sent successfully" };
+    }
+
+    @Post("otpverify")
+    @SuccessResponse(200)
+    async otpVerifyRequest(@Body() body: OtpVerifyRequest, @Request() req: express.Request) {
+        const { email, otp } = body;
+
+        // Get tempsession data
+        const tempsession = req.session.tempsession || {};
+
+        // Verify OTP from tempsession
+        if (!tempsession.otp || !tempsession.otpEmail || !tempsession.otpExpiry ||
+            tempsession.otpEmail !== email ||
+            tempsession.otp !== otp ||
+            Date.now() > tempsession.otpExpiry) {
+            this.setStatus(401);
+            return { error: "Unauthorized", message: "Invalid or expired OTP" };
+        }
+
+        // Find or create applicant
+        let applicant = await Applicant.findOne({ email }).exec();
+
+        if (!applicant) {
+            applicant = new Applicant({
+                email,
+                fullName: tempsession.otpName
+            });
+            await applicant.save();
+        }
+
+        // Generate JWT
+        const token = jwt.sign(
+            { email, name: applicant.fullName, id: applicant._id },
+            process.env.PEOPLEPORTAL_TOKEN_SECRET!,
+            { expiresIn: "24h" }
+        );
+
+        // Store JWT and user info in tempsession
+        req.session.tempsession = {
+            jwt: token,
+            user: {
+                email: applicant.email,
+                name: applicant.fullName,
+                id: applicant._id as string
+            }
+        }
+
+        return {
+            name: applicant.fullName,
+            email: applicant.email
+        };
     }
 }

@@ -18,6 +18,7 @@
 
 import * as express from "express";
 import { OpenIdClient } from "./clients/OpenIdClient";
+import jwt from "jsonwebtoken"
 
 export function expressAuthentication(
   request: express.Request,
@@ -43,6 +44,18 @@ export function expressAuthentication(
                 reject({})
             }
         })
+    } else if (securityName == "ats_otp") {
+        if (!request.session.tempsession?.jwt || !request.session.tempsession?.user) {
+            return Promise.reject({ error: "Session is Invalid" });
+        }
+
+        try {
+            jwt.verify(request.session.tempsession.jwt, process.env.JWT_SECRET!);
+            return Promise.resolve({})
+        } catch (error) {
+            delete request.session.tempsession;
+            return Promise.reject({ error: "Invalid or expired token" });
+        }
     } else {
         return Promise.reject({})
     }

@@ -21,6 +21,7 @@ import { SharedResourceClient } from ".."
 import { GetGroupInfoResponse } from "../AuthentikClient/models"
 import { GiteaAPITeamDefinition, GiteaAPIUserDefinition } from "./models";
 import { computeStringArrStateDiff } from "../../utils/operations";
+import { BindlePermission, BindlePermissionMap } from "../../controllers/BindleController";
 
 class GiteaClientResourceNotExists extends Error {
     constructor(message: string) {
@@ -55,12 +56,32 @@ export class GiteaClient implements SharedResourceClient {
         }
     }
 
+    private readonly supportedBindles: BindlePermissionMap = {
+        "repo:allowcreate": {
+            friendlyName: "Allow Repository Creation",
+            description: "Enabling this allows members in this subteam to create repositories",
+        },
+
+        "repo:allowsome": {
+            friendlyName: "Allow Something Else",
+            description: "This Allows Something Else to Happen on the Gitea Interface"
+        }
+    }
+
     constructor() {
         if (!this.GiteaBaseConfig.baseURL)
             throw new Error("Gitea Backend URL is Invalid!")
 
         if (!this.GITEA_TOKEN)
             throw new Error("Gitea Token is Invalid!")
+    }
+
+    getResourceName(): string {
+        return GiteaClient.TAG
+    }
+
+    getSupportedBindles(): BindlePermissionMap {
+        return this.supportedBindles
     }
 
     public async handleOrgBindleSync(org: GetGroupInfoResponse, callback: (updatedResourceCount: number, status: string) => void): Promise<boolean> {

@@ -25,6 +25,7 @@ import { Invite } from "../models/Invites";
 import { EmailClient } from "../clients/EmailClient";
 import { SharedResourceClient } from '../clients';
 import { GiteaClient } from '../clients/GiteaClient';
+import { ENABLED_SHARED_RESOURCES } from '../config';
 
 /* Define Request Interfaces */
 interface APIUserInfoResponse extends UserInformationBrief {
@@ -72,9 +73,7 @@ export class OrgController extends Controller {
         super()
         this.authentikClient = new AuthentikClient()
         this.emailClient = new EmailClient()
-        this.sharedResources = [
-            new GiteaClient()
-        ]
+        this.sharedResources = ENABLED_SHARED_RESOURCES
     }
     
     @Get("people")
@@ -217,6 +216,10 @@ export class OrgController extends Controller {
             }
 
             case TeamType.BOOTCAMP: {
+                await this.createSubTeam(newTeam.pk, { friendlyName: 'Learners', description: 'Bootcamp Students' })
+                await this.createSubTeam(newTeam.pk, { friendlyName: 'Educators', description: 'Bootcamp Teachers' })
+                await this.createSubTeam(newTeam.pk, { friendlyName: 'Mentors', description: 'Mentors for Bootcamp' })
+                await this.createSubTeam(newTeam.pk, { friendlyName: 'Interviewers', description: 'Interviewers for Bootcamp' })
                 return newTeam
             }
         }

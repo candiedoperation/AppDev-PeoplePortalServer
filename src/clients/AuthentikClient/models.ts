@@ -16,6 +16,8 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+import { EnabledBindlePermissions } from "../../controllers/BindleController"
+
 export enum TeamType {
     PROJECT = "PROJECT",
     CORPORATE = "CORPORATE",
@@ -27,21 +29,16 @@ export enum SeasonType {
     SPRING = "SPRING"
 }
 
-export interface BindlePermission {
-    friendlyName: string,
-    description: string,
-    enabled: boolean
-}
-
 export interface TeamAttributeDefinition {
     friendlyName: string,
     teamType: TeamType,
     seasonType: SeasonType,
     seasonYear: number,
     peoplePortalCreation?: boolean,
+    description: string,
     bindlePermissions?: {
         /* The key is the Client name (Ex. GiteaClient, OpenIdClient, etc.) */
-        [key: string]: BindlePermission[]
+        [key: string]: EnabledBindlePermissions
     }
 }
 
@@ -80,6 +77,7 @@ export interface GetGroupInfoResponse {
     pk: string,
     name: string,
     users: UserInformationBrief[],
+    parentPk: string,
     subteamPkList: string[],
     subteams: GetGroupInfoResponse[],
     attributes: TeamAttributeDefinition

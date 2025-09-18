@@ -10,5 +10,19 @@ declare module 'express-session' {
     idToken?: string | undefined,
     code_verifier?: string;
     oidcState: string;
+
+    /* OTP Auth (Temporary Sessions) */
+    tempsession?: {
+      otp?: string;
+      otpEmail?: string;
+      otpName?: string;
+      otpExpiry?: number;
+      jwt?: string;
+      user?: {
+          email: string;
+          name: string;
+          id: string;
+      };
+    };
   }
 }

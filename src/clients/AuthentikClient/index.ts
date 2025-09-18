@@ -171,9 +171,10 @@ export class AuthentikClient {
             return {
                 pk: res.data.pk,
                 name: res.data.name,
-                attributes: res.data.attributes,
                 subteamPkList: res.data.children,
                 subteams: res.data.children_obj,
+                parentPk: res.data.parent,
+                attributes: res.data.attributes,
                 users: res.data.users_obj.map((user: any) => ({
                     pk: user.pk,
                     username: user.username,

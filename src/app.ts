@@ -28,6 +28,9 @@ import { OpenIdClient } from "./clients/OpenIdClient";
 import expressSession from 'express-session'
 import { generateSecureRandomString } from "./utils/strings";
 
+if (!process.env.PEOPLEPORTAL_TOKEN_SECRET)
+  process.env.PEOPLEPORTAL_TOKEN_SECRET = generateSecureRandomString(16)
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -42,7 +45,7 @@ app.use(cors({
 
 app.use(
   expressSession({
-    secret: process.env.PEOPLEPORTAL_TOKEN_SECRET ?? generateSecureRandomString(16),
+    secret: process.env.PEOPLEPORTAL_TOKEN_SECRET,
     resave: false,
     saveUninitialized: true,
     store: new expressSession.MemoryStore() /* Use Redis for Horizontal Scaling */
