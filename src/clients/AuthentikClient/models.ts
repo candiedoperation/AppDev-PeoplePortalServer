@@ -17,6 +17,7 @@
 */
 
 import { EnabledBindlePermissions } from "../../controllers/BindleController"
+import { EnabledRootSettings, RootTeamSettingInfo } from "../../controllers/OrgController"
 
 export enum TeamType {
     PROJECT = "PROJECT",
@@ -36,6 +37,11 @@ export interface TeamAttributeDefinition {
     seasonYear: number,
     peoplePortalCreation?: boolean,
     description: string,
+    rootTeamSettings: {
+        /* The key is the setting name (Ex. AwsAccount, AppleDevAccount, etc.) */
+        [key: string]: EnabledRootSettings
+    },
+
     bindlePermissions?: {
         /* The key is the Client name (Ex. GiteaClient, OpenIdClient, etc.) */
         [key: string]: EnabledBindlePermissions

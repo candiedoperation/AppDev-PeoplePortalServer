@@ -1,4 +1,5 @@
 import { BindlePermissionMap } from "../controllers/BindleController";
+import { RootTeamSettingMap } from "../controllers/OrgController";
 import { GetGroupInfoResponse } from "./AuthentikClient/models";
 
 /**
@@ -12,5 +13,19 @@ export interface SharedResourceClient {
     handleOrgBindleSync(
         org: GetGroupInfoResponse, 
         callback: (updatedResourceCount: number, status: string) => void
+    ): Promise<boolean>
+}
+
+/**
+ * Interface to define clients that are impacted by root team setting
+ * changes like, AWS accounts, etc.
+ */
+export interface RootTeamSettingClient {
+    getResourceName(): string
+    getSupportedSettings(): RootTeamSettingMap
+
+    syncSettingUpdate(
+        org: GetGroupInfoResponse,
+        callback: (updatePercent: number, status: string) => void /* Provide Updates to Front End! */
     ): Promise<boolean>
 }

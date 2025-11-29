@@ -284,7 +284,8 @@ export class AuthentikClient {
         const teamName = sanitizeGroupName(`${attr.friendlyName.replaceAll(" ", "")}${attr.seasonType}${attr.seasonYear}`)
         const teamAttributes: TeamAttributeDefinition = {
             ...request.attributes,
-            peoplePortalCreation: true  /* Helps Identify People Portal Managed Entires! */
+            peoplePortalCreation: true,  /* Helps Identify People Portal Managed Entires! */
+            rootTeamSettings: {}
         }
 
         /* Check if a team with the Same Name Exists! */

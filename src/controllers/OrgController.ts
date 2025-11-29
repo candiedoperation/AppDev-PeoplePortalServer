@@ -25,8 +25,21 @@ import { IInvite, Invite } from "../models/Invites";
 import { EmailClient } from "../clients/EmailClient";
 import { SharedResourceClient } from '../clients';
 import { GiteaClient } from '../clients/GiteaClient';
-import { ENABLED_SHARED_RESOURCES } from '../config';
+import { ENABLED_SHARED_RESOURCES, ENABLED_TEAMSETTING_RESOURCES } from '../config';
 import { SlackClient } from '../clients/SlackClient';
+
+export interface EnabledRootSettings {
+    [key: string]: boolean
+}
+
+export interface RootTeamSettingMap {
+    [key: string]: RootTeamSettingInfo
+}
+
+export interface RootTeamSettingInfo {
+    friendlyName: string,
+    description: string,
+}
 
 /* Define Request Interfaces */
 interface APIUserInfoResponse extends UserInformationBrief {
@@ -82,6 +95,7 @@ interface APITeamInviteAcceptRequest {
 
 @Route("/api/org")
 export class OrgController extends Controller {
+    private teamSettingList: { [key: string]: RootTeamSettingMap } = {}
     private sharedResources: SharedResourceClient[];
     private readonly authentikClient;
     private readonly emailClient;
@@ -93,6 +107,11 @@ export class OrgController extends Controller {
         this.emailClient = new EmailClient()
         this.slackClient = ENABLED_SHARED_RESOURCES.slackClient as SlackClient
         this.sharedResources = Object.values(ENABLED_SHARED_RESOURCES)
+
+        for (const teamSettingResource of Object.values(ENABLED_TEAMSETTING_RESOURCES)) {
+            const resourceName = teamSettingResource.getResourceName()
+            this.teamSettingList[resourceName] = teamSettingResource.getSupportedSettings()
+        }
     }
     
     @Get("people")
@@ -110,6 +129,13 @@ export class OrgController extends Controller {
         return { 
             ...authentikUserInfo 
         }
+    }
+
+    @Get("teamsettings")
+    @SuccessResponse(200)
+    @Security("oidc")
+    async listRootTeamSettings() {
+        return this.teamSettingList;
     }
 
     @Get("teams")
@@ -206,7 +232,6 @@ export class OrgController extends Controller {
         return await this.slackClient.validateUserPresence(req.email)
     }
 
-
     @Get("teams/{teamId}")
     @SuccessResponse(200)
     @Security("oidc")
@@ -229,6 +254,21 @@ export class OrgController extends Controller {
             team: primaryTeam,
             subteams: primaryTeam.subteams
         }
+    }
+
+    @Get("teams/{teamId}/awsaccess")
+    @SuccessResponse(201)
+    @Security("oidc")
+    async fetchAWSAccessCredentials(@Path() teamId: string) {
+        const teamInfo = await this.authentikClient.getGroupInfo(teamId)
+        // use teamInfo.name
+    }
+
+    @Patch("teams/{teamId}/rootsetting")
+    @SuccessResponse(201)
+    @Security("oidc")
+    async updateRootTeamSetting(@Path() teamId: string, @Body() req: { [key: string]: boolean }) {
+
     }
 
     @Post("teams/{teamId}/addmember")
