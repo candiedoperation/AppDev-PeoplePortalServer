@@ -47,6 +47,7 @@ export class AWSClient implements RootTeamSettingClient {
     }
 
     syncSettingUpdate(org: GetGroupInfoResponse, callback: (updatePercent: number, status: string) => void): Promise<boolean> {
+        /* Your AWS account creation happens here! */
         throw new Error("Method not implemented.");
     }
 }
