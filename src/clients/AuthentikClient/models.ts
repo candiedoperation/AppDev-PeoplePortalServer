@@ -43,7 +43,14 @@ export interface TeamAttributeDefinition {
 }
 
 export interface UserAttributeDefinition {
-
+    peoplePortalCreation?: boolean,
+    major: string,
+    expectedGrad: Date,
+    phoneNumber: string,
+    roles: {
+        /* Org ID Mapped to Role Title */
+        [key: string]: string
+    }
 }
 
 export interface PaginationDefinition {
@@ -86,6 +93,19 @@ export interface GetGroupInfoResponse {
 export interface AddGroupMemberRequest {
     groupId: string,
     userPk: number
+}
+
+export interface CreateUserRequest {
+    name: string;
+    email: string;
+    groupPk: string;
+    password: string;
+    attributes: {
+        major: string;
+        expectedGrad: Date;
+        phoneNumber: string;
+        roles: { [key: string]: string }
+    }
 }
 
 export interface CreateTeamRequest {

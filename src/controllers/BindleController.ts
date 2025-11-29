@@ -22,7 +22,7 @@ export class BindleController extends Controller {
     
     constructor() {
         super()
-        for (const sharedResource of ENABLED_SHARED_RESOURCES) {
+        for (const sharedResource of Object.values(ENABLED_SHARED_RESOURCES)) {
             const resourceName = sharedResource.getResourceName()
             this.bindleDefinition[resourceName] = sharedResource.getSupportedBindles()
         }

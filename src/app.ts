@@ -27,6 +27,8 @@ import mongoose from "mongoose";
 import { OpenIdClient } from "./clients/OpenIdClient";
 import expressSession from 'express-session'
 import { generateSecureRandomString } from "./utils/strings";
+import path from "path";
+import { NativeExpressOIDCAuthPort } from "./auth";
 
 if (!process.env.PEOPLEPORTAL_TOKEN_SECRET)
   process.env.PEOPLEPORTAL_TOKEN_SECRET = generateSecureRandomString(16)
@@ -61,8 +63,15 @@ ApiRouter.use("/api/docs", swaggerUi.serve, async (req: Request, res: Response) 
 /* Register & Setup Catch All Route for Public Dir */
 RegisterRoutes(ApiRouter);
 app.use(ApiRouter);
-app.get("*splat", (req, res) => {
-  res.send("CATCHALL")
+
+app.get("/onboard/*splat", (req, res) => {
+  res.sendFile(path.join(__dirname, "ui", "index.html"))
+})
+
+app.use(express.static(path.join(__dirname, "ui")))
+
+app.get("*splat", NativeExpressOIDCAuthPort, (req, res) => {
+  res.sendFile(path.join(__dirname, "ui", "index.html"))
 })
 
 app.use(function errorHandler(

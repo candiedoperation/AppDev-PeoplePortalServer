@@ -4,7 +4,7 @@
   "main": "app.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "tsoa spec-and-routes && tsc",
+    "build": "tsoa spec-and-routes && tsc && cpx src/**/*.hbs dist",
     "start": "npm run build && node dist/app.js",
     "dev": "npm run build && nodemon src/app.ts"
   },
@@ -13,10 +13,12 @@
   "license": "GPL-3.0-only",
   "description": "App Dev Club People Portal Server",
   "dependencies": {
+    "@slack/oauth": "^3.0.4",
     "@slack/web-api": "^7.10.0",
     "axios": "^1.11.0",
     "body-parser": "^2.2.0",
     "cors": "^2.8.5",
+    "cpx": "^1.5.0",
     "dotenv": "^17.2.1",
     "express": "^5.1.0",
     "express-session": "^1.18.2",

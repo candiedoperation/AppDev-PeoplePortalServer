@@ -18,7 +18,7 @@
 
 import axios from "axios"
 import log from "loglevel"
-import { AddGroupMemberRequest, AuthentikClientError, CreateTeamRequest, CreateTeamResponse, GetGroupInfoResponse as GetGroupInfoResponse, GetTeamsListOptions as GetGroupsListOptions, GetTeamsListResponse as GetGroupsListResponse, GetUserListOptions, GetUserListResponse, TeamAttributeDefinition, TeamInformationBrief, UserInformationBrief } from "./models"
+import { AddGroupMemberRequest, AuthentikClientError, CreateTeamRequest, CreateTeamResponse, CreateUserRequest, GetGroupInfoResponse as GetGroupInfoResponse, GetTeamsListOptions as GetGroupsListOptions, GetTeamsListResponse as GetGroupsListResponse, GetUserListOptions, GetUserListResponse, TeamAttributeDefinition, TeamInformationBrief, UserInformationBrief } from "./models"
 import { randomUUID } from "crypto"
 import { sanitizeGroupName } from "../../utils/strings"
 
@@ -147,6 +147,33 @@ export class AuthentikClient {
         }
     }
 
+    public getGroupPkFromName = async (teamName: string): Promise<string> => {
+        var RequestConfig: any = {
+            ...this.AxiosBaseConfig,
+            method: 'get',
+            url: `/api/v3/core/groups/`,
+            params: {
+                include_users: false,
+                include_children: false,
+                name: teamName
+            }
+        }
+
+        try {
+            const res = await axios.request(RequestConfig)
+            const teams = res.data.results
+
+            if (teams.length != 1)
+                throw new AuthentikClientError("Team Search Length is Invalid!")
+
+            const team = teams[0]
+            return team.pk
+        } catch (e) {
+            log.error(AuthentikClient.TAG, "Get Teams PK Request Failed with Error: ", e)
+            throw e
+        }
+    }
+
     public getGroupInfo = async (teamId: string): Promise<GetGroupInfoResponse> => {
         var RequestConfig: any = {
             ...this.AxiosBaseConfig,
@@ -206,18 +233,73 @@ export class AuthentikClient {
         }
     }
 
+    public createNewUser = async (request: CreateUserRequest): Promise<boolean> => {
+        if (!request.email.endsWith("@terpmail.umd.edu"))
+            throw new Error("Portal Currently Supports Terpmail Addresses Only!")
+        
+        let username = request.email.replace("@terpmail.umd.edu", "")
+        var RequestConfigAddUser: any = {
+            ...this.AxiosBaseConfig,
+            method: 'post',
+            url: '/api/v3/core/users/',
+            data: {
+                username,
+                name: request.name,
+                groups: [request.groupPk],
+                email: request.email,
+                attributes: {
+                    ...request.attributes,
+                    peoplePortalCreation: true,
+                }
+            }
+        }
+
+        try {
+            const res = await axios.request(RequestConfigAddUser)
+            const userPk = res.data.pk
+
+            /* Set User Password */
+            var RequestConfigSetPassword: any = {
+                ...this.AxiosBaseConfig,
+                method: 'post',
+                url: `/api/v3/core/users/${userPk}/set_password/`,
+                data: {
+                    password: request.password
+                }
+            }
+
+            await axios.request(RequestConfigSetPassword)
+            return true
+        } catch (e) {
+            log.error(AuthentikClient.TAG, "Create Team Request Failed with Error: ", e)
+            throw new AuthentikClientError("Get Team Request Failed")
+        }
+    }
+
     public createNewTeam = async (request: CreateTeamRequest): Promise<CreateTeamResponse> => {
         if (request.parent && !request.parentName)
             throw new Error("Creating a SubTeam needs a Parent Name!")
         
         const attr = request.attributes
-        const randomSuffix = randomUUID().split("-").slice(-1)
-        const teamName = sanitizeGroupName(`${attr.friendlyName.replaceAll(" ", "")}${attr.seasonType}${attr.seasonYear}_${randomSuffix}`)
+        const teamName = sanitizeGroupName(`${attr.friendlyName.replaceAll(" ", "")}${attr.seasonType}${attr.seasonYear}`)
         const teamAttributes: TeamAttributeDefinition = {
             ...request.attributes,
             peoplePortalCreation: true  /* Helps Identify People Portal Managed Entires! */
         }
-        
+
+        /* Check if a team with the Same Name Exists! */
+        let teamExists = false
+        try {
+            const teamPk = await this.getGroupPkFromName(teamName)
+            teamExists = true
+        } catch (e) {
+            /* If its some other error than count, throw it! */
+            if (!(e instanceof AuthentikClientError))
+                throw e
+        }
+
+        if (teamExists)
+            throw new AuthentikClientError("Team with the Same Name Already Exists!")
         
         var RequestConfig: any = {
             ...this.AxiosBaseConfig,

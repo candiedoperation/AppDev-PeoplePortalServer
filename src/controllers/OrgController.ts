@@ -17,15 +17,16 @@
 */
 
 import * as express from 'express'
-import { Request, Body, Controller, Get, Patch, Path, Post, Queries, Res, Route, SuccessResponse } from "tsoa";
+import { Request, Body, Controller, Get, Patch, Path, Post, Queries, Res, Route, SuccessResponse, Put, Security } from "tsoa";
 import { AddGroupMemberRequest, CreateTeamRequest, CreateTeamResponse, GetGroupInfoResponse, GetTeamsListOptions, GetTeamsListResponse, GetUserListOptions, GetUserListResponse, SeasonType, TeamType, UserInformationBrief } from "../clients/AuthentikClient/models";
 import { AuthentikClient } from "../clients/AuthentikClient";
 import { UUID } from "crypto";
-import { Invite } from "../models/Invites";
+import { IInvite, Invite } from "../models/Invites";
 import { EmailClient } from "../clients/EmailClient";
 import { SharedResourceClient } from '../clients';
 import { GiteaClient } from '../clients/GiteaClient';
 import { ENABLED_SHARED_RESOURCES } from '../config';
+import { SlackClient } from '../clients/SlackClient';
 
 /* Define Request Interfaces */
 interface APIUserInfoResponse extends UserInformationBrief {
@@ -63,27 +64,47 @@ interface APITeamInviteCreateRequest {
     inviterPk: number;
 }
 
+interface APITeamInviteGetResponse {
+    inviteName: string;
+    inviteEmail: string;
+    roleTitle: string;
+    teamPk: string;
+    inviterPk: number;
+    expiresAt: Date;
+}
+
+interface APITeamInviteAcceptRequest {
+    password: string;
+    major: string;
+    expectedGrad: Date;
+    phoneNumber: string;
+}
+
 @Route("/api/org")
 export class OrgController extends Controller {
     private sharedResources: SharedResourceClient[];
     private readonly authentikClient;
     private readonly emailClient;
+    private readonly slackClient;
 
     constructor() {
         super()
         this.authentikClient = new AuthentikClient()
         this.emailClient = new EmailClient()
-        this.sharedResources = ENABLED_SHARED_RESOURCES
+        this.slackClient = ENABLED_SHARED_RESOURCES.slackClient as SlackClient
+        this.sharedResources = Object.values(ENABLED_SHARED_RESOURCES)
     }
     
     @Get("people")
     @SuccessResponse(200)
+    @Security("oidc")
     async getPeople(@Queries() options: GetUserListOptions): Promise<GetUserListResponse> {
         return await this.authentikClient.getUserList(options)
     }
 
     @Get("people/{personId}")
     @SuccessResponse(200)
+    @Security("oidc")
     async getPersonInfo(@Path() personId: number): Promise<APIUserInfoResponse> {
         const authentikUserInfo = await this.authentikClient.getUserInfo(personId)
         return { 
@@ -93,12 +114,14 @@ export class OrgController extends Controller {
 
     @Get("teams")
     @SuccessResponse(200)
+    @Security("oidc")
     async getTeams(@Queries() options: GetTeamsListOptions): Promise<GetTeamsListResponse> {
         return await this.authentikClient.getGroupsList(options)
     }
 
     @Post("invites/new")
     @SuccessResponse(201)
+    @Security("oidc")
     async createInvite(@Body() req: APITeamInviteCreateRequest) {
         const inviterPk = req.inviterPk;
         const teamInfo = await this.getTeamInfo(req.teamPk)
@@ -137,8 +160,56 @@ export class OrgController extends Controller {
         })
     }
 
+    @Get("invites/{inviteId}")
+    @SuccessResponse(200)
+    async getInviteInfo(@Path() inviteId: string): Promise<APITeamInviteGetResponse> {
+        const invite = await Invite.findById(inviteId).lean<APITeamInviteGetResponse>().exec()
+        if (!invite)
+            throw new Error("Invalid Invite ID!")
+
+        return invite
+    }
+
+    @Put("invites/{inviteId}")
+    @SuccessResponse(201)
+    async acceptInvite(@Path() inviteId: string, @Body() req: APITeamInviteAcceptRequest) {
+        const invite = await Invite.findById(inviteId).exec()
+        if (!invite)
+            throw new Error("Invalid Invite ID")
+        
+        
+        /* Check Slack Presence! */
+        const slackPresence = await this.slackClient.validateUserPresence(invite.inviteEmail)
+        if (!slackPresence)
+            throw new Error("User has not joined the Slack Workspace!")
+
+        /* Create the New User */
+        await this.authentikClient.createNewUser({
+            name: invite.inviteName,
+            email: invite.inviteEmail,
+            groupPk: invite.teamPk,
+            password: req.password,
+            attributes: {
+                major: req.major,
+                expectedGrad: req.expectedGrad,
+                phoneNumber: req.phoneNumber,
+                roles: {
+                    [invite.teamPk]: invite.roleTitle
+                }
+            }
+        })
+    }
+
+    @Post("tools/verifyslack")
+    @SuccessResponse(200)
+    async verifySlack(@Body() req: { email: string }): Promise<boolean> {
+        return await this.slackClient.validateUserPresence(req.email)
+    }
+
+
     @Get("teams/{teamId}")
     @SuccessResponse(200)
+    @Security("oidc")
     async getTeamInfo(@Path() teamId: string): Promise<APITeamInfoResponse> {
         const primaryTeam = await this.authentikClient.getGroupInfo(teamId)
 
@@ -162,6 +233,7 @@ export class OrgController extends Controller {
 
     @Post("teams/{teamId}/addmember")
     @SuccessResponse(201)
+    @Security("oidc")
     async addTeamMember(@Path() teamId: string, @Body() req: { userPk: number }) {
         /* Needs Is Team owner Middleware?! */
         await this.addTeamMemberWrapper({
@@ -172,6 +244,7 @@ export class OrgController extends Controller {
 
     @Post("teams/{teamId}/subteam")
     @SuccessResponse(201)
+    @Security("oidc")
     async createSubTeam(@Path() teamId: string, @Body() req: APICreateSubTeamRequest): Promise<CreateTeamResponse> {
         const parentInfo = await this.authentikClient.getGroupInfo(teamId)
         const createdSubTeam = await this.authentikClient.createNewTeam({
@@ -192,6 +265,7 @@ export class OrgController extends Controller {
 
     @Post("teams/create")
     @SuccessResponse(201)
+    @Security("oidc")
     async createTeam(@Body() req: APICreateTeamRequest): Promise<CreateTeamResponse> {
         const newTeam = await this.authentikClient.createNewTeam({ attributes: { ...req } })
         // this.addTeamMemberWrapper({ groupId: newTeam.pk, userPk: 0 })
@@ -227,6 +301,7 @@ export class OrgController extends Controller {
 
     @Patch("teams/{teamId}/syncbindles")
     @SuccessResponse(200)
+    @Security("oidc")
     async syncOrgBindles(@Request() req: Request, @Path() teamId: string) {
         const res = (req as any).res as express.Response
         res.setHeader('Content-Type', 'text/plain');

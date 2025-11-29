@@ -20,6 +20,26 @@ import * as express from "express";
 import { OpenIdClient } from "./clients/OpenIdClient";
 import jwt from "jsonwebtoken"
 
+export async function NativeExpressOIDCAuthPort(
+    req: express.Request, 
+    res: express.Response, 
+    next: express.NextFunction
+) {
+
+    console.log("MW TRIGGERED")
+    /* Obtain Auth Status */
+    try {
+        const res = await expressAuthentication(req, "oidc")
+        console.log(res)
+        next()
+    } catch (e) {
+        /* Auth Exception */
+        console.log(e)
+        res.redirect(301, "/api/auth/login")
+        next(e)
+    }
+}
+
 export function expressAuthentication(
   request: express.Request,
   securityName: string,

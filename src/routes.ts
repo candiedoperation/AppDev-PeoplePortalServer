@@ -8,6 +8,8 @@ import { BindleController } from './controllers/BindleController';
 // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
 import { OrgController } from './controllers/OrgController';
 // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+import { HooksController } from './controllers/HooksController';
+// WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
 import { AuthController } from './controllers/AuthController';
 // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
 import { ATSController } from './controllers/ATSController';
@@ -47,6 +49,11 @@ const models: TsoaRoute.Models = {
     "UserAttributeDefinition": {
         "dataType": "refObject",
         "properties": {
+            "peoplePortalCreation": {"dataType":"boolean"},
+            "major": {"dataType":"string","required":true},
+            "expectedGrad": {"dataType":"datetime","required":true},
+            "phoneNumber": {"dataType":"string","required":true},
+            "roles": {"dataType":"nestedObjectLiteral","nestedProperties":{},"additionalProperties":{"dataType":"string"},"required":true},
         },
         "additionalProperties": false,
     },
@@ -134,6 +141,30 @@ const models: TsoaRoute.Models = {
             "roleTitle": {"dataType":"string","required":true},
             "teamPk": {"dataType":"string","required":true},
             "inviterPk": {"dataType":"double","required":true},
+        },
+        "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "APITeamInviteGetResponse": {
+        "dataType": "refObject",
+        "properties": {
+            "inviteName": {"dataType":"string","required":true},
+            "inviteEmail": {"dataType":"string","required":true},
+            "roleTitle": {"dataType":"string","required":true},
+            "teamPk": {"dataType":"string","required":true},
+            "inviterPk": {"dataType":"double","required":true},
+            "expiresAt": {"dataType":"datetime","required":true},
+        },
+        "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "APITeamInviteAcceptRequest": {
+        "dataType": "refObject",
+        "properties": {
+            "password": {"dataType":"string","required":true},
+            "major": {"dataType":"string","required":true},
+            "expectedGrad": {"dataType":"datetime","required":true},
+            "phoneNumber": {"dataType":"string","required":true},
         },
         "additionalProperties": false,
     },
@@ -374,6 +405,7 @@ export function RegisterRoutes(app: Router) {
                 options: {"in":"queries","name":"options","required":true,"ref":"GetUserListOptions"},
         };
         app.get('/api/org/people',
+            authenticateMiddleware([{"oidc":[]}]),
             ...(fetchMiddlewares<RequestHandler>(OrgController)),
             ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.getPeople)),
 
@@ -404,6 +436,7 @@ export function RegisterRoutes(app: Router) {
                 personId: {"in":"path","name":"personId","required":true,"dataType":"double"},
         };
         app.get('/api/org/people/:personId',
+            authenticateMiddleware([{"oidc":[]}]),
             ...(fetchMiddlewares<RequestHandler>(OrgController)),
             ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.getPersonInfo)),
 
@@ -434,6 +467,7 @@ export function RegisterRoutes(app: Router) {
                 options: {"in":"queries","name":"options","required":true,"ref":"GetTeamsListOptions"},
         };
         app.get('/api/org/teams',
+            authenticateMiddleware([{"oidc":[]}]),
             ...(fetchMiddlewares<RequestHandler>(OrgController)),
             ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.getTeams)),
 
@@ -464,6 +498,7 @@ export function RegisterRoutes(app: Router) {
                 req: {"in":"body","name":"req","required":true,"ref":"APITeamInviteCreateRequest"},
         };
         app.post('/api/org/invites/new',
+            authenticateMiddleware([{"oidc":[]}]),
             ...(fetchMiddlewares<RequestHandler>(OrgController)),
             ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.createInvite)),
 
@@ -490,10 +525,102 @@ export function RegisterRoutes(app: Router) {
             }
         });
         // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsOrgController_getInviteInfo: Record<string, TsoaRoute.ParameterSchema> = {
+                inviteId: {"in":"path","name":"inviteId","required":true,"dataType":"string"},
+        };
+        app.get('/api/org/invites/:inviteId',
+            ...(fetchMiddlewares<RequestHandler>(OrgController)),
+            ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.getInviteInfo)),
+
+            async function OrgController_getInviteInfo(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsOrgController_getInviteInfo, request, response });
+
+                const controller = new OrgController();
+
+              await templateService.apiHandler({
+                methodName: 'getInviteInfo',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsOrgController_acceptInvite: Record<string, TsoaRoute.ParameterSchema> = {
+                inviteId: {"in":"path","name":"inviteId","required":true,"dataType":"string"},
+                req: {"in":"body","name":"req","required":true,"ref":"APITeamInviteAcceptRequest"},
+        };
+        app.put('/api/org/invites/:inviteId',
+            ...(fetchMiddlewares<RequestHandler>(OrgController)),
+            ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.acceptInvite)),
+
+            async function OrgController_acceptInvite(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsOrgController_acceptInvite, request, response });
+
+                const controller = new OrgController();
+
+              await templateService.apiHandler({
+                methodName: 'acceptInvite',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 201,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsOrgController_verifySlack: Record<string, TsoaRoute.ParameterSchema> = {
+                req: {"in":"body","name":"req","required":true,"dataType":"nestedObjectLiteral","nestedProperties":{"email":{"dataType":"string","required":true}}},
+        };
+        app.post('/api/org/tools/verifyslack',
+            ...(fetchMiddlewares<RequestHandler>(OrgController)),
+            ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.verifySlack)),
+
+            async function OrgController_verifySlack(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsOrgController_verifySlack, request, response });
+
+                const controller = new OrgController();
+
+              await templateService.apiHandler({
+                methodName: 'verifySlack',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
         const argsOrgController_getTeamInfo: Record<string, TsoaRoute.ParameterSchema> = {
                 teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
         };
         app.get('/api/org/teams/:teamId',
+            authenticateMiddleware([{"oidc":[]}]),
             ...(fetchMiddlewares<RequestHandler>(OrgController)),
             ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.getTeamInfo)),
 
@@ -525,6 +652,7 @@ export function RegisterRoutes(app: Router) {
                 req: {"in":"body","name":"req","required":true,"dataType":"nestedObjectLiteral","nestedProperties":{"userPk":{"dataType":"double","required":true}}},
         };
         app.post('/api/org/teams/:teamId/addmember',
+            authenticateMiddleware([{"oidc":[]}]),
             ...(fetchMiddlewares<RequestHandler>(OrgController)),
             ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.addTeamMember)),
 
@@ -556,6 +684,7 @@ export function RegisterRoutes(app: Router) {
                 req: {"in":"body","name":"req","required":true,"ref":"APICreateSubTeamRequest"},
         };
         app.post('/api/org/teams/:teamId/subteam',
+            authenticateMiddleware([{"oidc":[]}]),
             ...(fetchMiddlewares<RequestHandler>(OrgController)),
             ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.createSubTeam)),
 
@@ -586,6 +715,7 @@ export function RegisterRoutes(app: Router) {
                 req: {"in":"body","name":"req","required":true,"ref":"APICreateTeamRequest"},
         };
         app.post('/api/org/teams/create',
+            authenticateMiddleware([{"oidc":[]}]),
             ...(fetchMiddlewares<RequestHandler>(OrgController)),
             ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.createTeam)),
 
@@ -617,6 +747,7 @@ export function RegisterRoutes(app: Router) {
                 teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
         };
         app.patch('/api/org/teams/:teamId/syncbindles',
+            authenticateMiddleware([{"oidc":[]}]),
             ...(fetchMiddlewares<RequestHandler>(OrgController)),
             ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.syncOrgBindles)),
 
@@ -632,6 +763,36 @@ export function RegisterRoutes(app: Router) {
 
               await templateService.apiHandler({
                 methodName: 'syncOrgBindles',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsHooksController_processGitSysEventHook: Record<string, TsoaRoute.ParameterSchema> = {
+                requestBody: {"in":"body","name":"requestBody","required":true,"dataType":"any"},
+        };
+        app.post('/api/webhook/git/sysevent',
+            ...(fetchMiddlewares<RequestHandler>(HooksController)),
+            ...(fetchMiddlewares<RequestHandler>(HooksController.prototype.processGitSysEventHook)),
+
+            async function HooksController_processGitSysEventHook(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsHooksController_processGitSysEventHook, request, response });
+
+                const controller = new HooksController();
+
+              await templateService.apiHandler({
+                methodName: 'processGitSysEventHook',
                 controller,
                 response,
                 next,
