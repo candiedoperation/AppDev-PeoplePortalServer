@@ -264,11 +264,32 @@ export class OrgController extends Controller {
         // use teamInfo.name
     }
 
-    @Patch("teams/{teamId}/rootsetting")
+    @Patch("teams/{teamId}/updateconf")
     @SuccessResponse(201)
     @Security("oidc")
-    async updateRootTeamSetting(@Path() teamId: string, @Body() req: { [key: string]: boolean }) {
+    async updateRootTeamSetting(@Path() teamId: string, @Body() conf: { [key: string]: EnabledRootSettings }) {
+        /* Filter for only the available settings */
+        const applySettingsList: { [key: string]: EnabledRootSettings } = {};
+        for (const client in conf) {
+            if (!this.teamSettingList[client])
+                continue;
 
+            const supportedSettings = this.teamSettingList[client];
+            const filteredSettings: EnabledRootSettings = {};
+            for (const setting in conf[client]) {
+                if (!supportedSettings[setting])
+                    continue;
+
+                /* Update Filtered Setting */
+                filteredSettings[setting] = conf[client][setting] ?? false;
+            }
+            
+            /* Apply the Filtered Settings to the Final List */
+            applySettingsList[client] = filteredSettings;
+        }
+
+        /* Call Authentik to Update the Attributes */
+        await this.authentikClient.updateRootTeamSettings(teamId, applySettingsList);
     }
 
     @Post("teams/{teamId}/addmember")

@@ -734,9 +734,9 @@ export function RegisterRoutes(app: Router) {
         // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
         const argsOrgController_updateRootTeamSetting: Record<string, TsoaRoute.ParameterSchema> = {
                 teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
-                req: {"in":"body","name":"req","required":true,"dataType":"nestedObjectLiteral","nestedProperties":{},"additionalProperties":{"dataType":"boolean"}},
+                conf: {"in":"body","name":"conf","required":true,"dataType":"nestedObjectLiteral","nestedProperties":{},"additionalProperties":{"ref":"EnabledRootSettings"}},
         };
-        app.patch('/api/org/teams/:teamId/rootsetting',
+        app.patch('/api/org/teams/:teamId/updateconf',
             authenticateMiddleware([{"oidc":[]}]),
             ...(fetchMiddlewares<RequestHandler>(OrgController)),
             ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.updateRootTeamSetting)),
