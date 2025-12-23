@@ -240,9 +240,9 @@ export class AuthentikClient {
         }
     }
 
-    public updateRootTeamSettings = async (teamId: string, teamSettings: {[key: string]: EnabledRootSettings}): Promise<boolean> => {
+    public updateRootTeamSettings = async (teamId: string, teamSettings: { [key: string]: EnabledRootSettings }): Promise<boolean> => {
         return await this.updateGroupAttributes(
-            teamId, 
+            teamId,
             { rootTeamSettings: teamSettings }
         )
     }
@@ -354,23 +354,6 @@ export class AuthentikClient {
         } catch (e) {
             log.error(AuthentikClient.TAG, "Create Team Request Failed with Error: ", e)
             throw new AuthentikClientError("Get Team Request Failed")
-        }
-    }
-
-    public updateGroup = async (groupPk: string, data: { attributes: any }): Promise<boolean> => {
-        var RequestConfig: any = {
-            ...this.AxiosBaseConfig,
-            method: 'patch',
-            url: `/api/v3/core/groups/${groupPk}/`,
-            data: data
-        }
-
-        try {
-            await axios.request(RequestConfig)
-            return true
-        } catch (e) {
-            log.error(AuthentikClient.TAG, "Update Group Request Failed with Error: ", e)
-            throw new AuthentikClientError("Update Group Request Failed")
         }
     }
 }

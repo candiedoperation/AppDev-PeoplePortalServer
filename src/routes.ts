@@ -734,7 +734,6 @@ export function RegisterRoutes(app: Router) {
         });
         // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
         const argsOrgController_updateRootTeamSetting: Record<string, TsoaRoute.ParameterSchema> = {
-                expressReq: {"in":"request","name":"expressReq","required":true,"dataType":"object"},
                 teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
                 conf: {"in":"body","name":"conf","required":true,"dataType":"nestedObjectLiteral","nestedProperties":{},"additionalProperties":{"ref":"EnabledRootSettings"}},
         };

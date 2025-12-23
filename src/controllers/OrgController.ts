@@ -305,76 +305,32 @@ export class OrgController extends Controller {
         res.end()
     }
 
-    @Patch("teams/{teamId}/rootsetting")
+    @Patch("teams/{teamId}/updateconf")
     @SuccessResponse(201)
     @Security("oidc")
-    async updateRootTeamSetting(@Request() expressReq: Request, @Path() teamId: string, @Body() req: { [key: string]: boolean }) {
-        const res = (expressReq as any).res as express.Response
-        res.setHeader('Content-Type', 'text/plain');
-        res.setHeader('Transfer-Encoding', 'chunked');
+    async updateRootTeamSetting(@Path() teamId: string, @Body() conf: { [key: string]: EnabledRootSettings }) {
+        /* Filter for only the available settings */
+        const applySettingsList: { [key: string]: EnabledRootSettings } = {};
+        for (const client in conf) {
+            if (!this.teamSettingList[client])
+                continue;
 
-        /* Obtain Team Information */
-        res.write(JSON.stringify({ progressPercent: 5, status: "Fetching team information..." }))
-        const teamInfo = await this.authentikClient.getGroupInfo(teamId)
+            const supportedSettings = this.teamSettingList[client];
+            const filteredSettings: EnabledRootSettings = {};
+            for (const setting in conf[client]) {
+                if (!supportedSettings[setting])
+                    continue;
 
-        /* Build the updated rootTeamSettings structure */
-        const existingSettings = teamInfo.attributes.rootTeamSettings || {}
-        const updatedSettings: { [resourceName: string]: { [settingKey: string]: boolean } } = { ...existingSettings }
-
-        /* Organize incoming settings by resource name - find the matching client */
-        for (const [settingKey, value] of Object.entries(req)) {
-            /* Find the RootTeamSettingClient that supports this setting key */
-            let matchedResourceName: string | null = null
-            for (const client of Object.values(ENABLED_TEAMSETTING_RESOURCES)) {
-                const supportedSettings = client.getSupportedSettings()
-                if (settingKey in supportedSettings) {
-                    matchedResourceName = client.getResourceName()
-                    break
-                }
+                /* Update Filtered Setting */
+                filteredSettings[setting] = conf[client][setting] ?? false;
             }
 
-            if (!matchedResourceName) continue
-
-            const resourceSettings = updatedSettings[matchedResourceName] ?? {}
-            resourceSettings[settingKey] = value
-            updatedSettings[matchedResourceName] = resourceSettings
+            /* Apply the Filtered Settings to the Final List */
+            applySettingsList[client] = filteredSettings;
         }
 
-        /* Update the group's rootTeamSettings attribute in Authentik */
-        res.write(JSON.stringify({ progressPercent: 15, status: "Updating team settings..." }))
-        await this.authentikClient.updateGroup(teamId, {
-            attributes: {
-                ...teamInfo.attributes,
-                rootTeamSettings: updatedSettings
-            }
-        })
-
-        /* Re-fetch team info to get updated state */
-        const updatedTeamInfo = await this.authentikClient.getGroupInfo(teamId)
-
-        /* Call syncSettingUpdate for each RootTeamSettingClient */
-        const teamSettingClients = Object.values(ENABLED_TEAMSETTING_RESOURCES)
-        const progressPerClient = 80 / teamSettingClients.length
-        let currentProgress = 20
-
-        for (const teamSettingClient of teamSettingClients) {
-            const resourceName = teamSettingClient.getResourceName()
-            res.write(JSON.stringify({ progressPercent: currentProgress, status: `Syncing ${resourceName}...` }))
-
-            await teamSettingClient.syncSettingUpdate(
-                updatedTeamInfo,
-                (updatePercent, status) => {
-                    const scaledPercent = currentProgress + (updatePercent / 100) * progressPerClient
-                    res.write(JSON.stringify({ progressPercent: scaledPercent, status: `[${resourceName}] ${status}` }))
-                },
-                {} /* AdditionalRootSettingParams - empty base object */
-            )
-
-            currentProgress += progressPerClient
-        }
-
-        res.write(JSON.stringify({ progressPercent: 100, status: "Settings updated successfully!" }))
-        res.end()
+        /* Call Authentik to Update the Attributes */
+        await this.authentikClient.updateRootTeamSettings(teamId, applySettingsList);
     }
 
     @Post("teams/{teamId}/addmember")
