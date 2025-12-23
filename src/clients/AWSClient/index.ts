@@ -125,7 +125,7 @@ export class AWSClient implements RootTeamSettingClient {
             // Use the first user's email for alerts, or fallback to the finance email
             const alertEmail = this.BILLING_ALERT_EMAIL;
             console.log(`Using ${alertEmail} for billing alerts for ${name}`);
-            await this.createBudget(accountId, alertEmail, name, additionalParams.budgetLimit);
+            await this.createBudget(accountId, alertEmail, name, additionalParams.budgetLimit ? additionalParams.budgetLimit : this.BUDGET_LIMIT);
 
             callback(100, `Successfully provisioned AWS Account: ${accountId}`);
             return true;
