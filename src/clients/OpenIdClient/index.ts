@@ -52,9 +52,7 @@ export class OpenIdClient {
     this.config = await client.discovery(
       new URL(process.env.PEOPLEPORTAL_OIDC_DSCVURL!),
       process.env.PEOPLEPORTAL_OIDC_CLIENTID!,
-      process.env.PEOPLEPORTAL_OIDC_CLIENTSECRET!,
-      undefined,
-      { execute: [client.allowInsecureRequests] }
+      process.env.PEOPLEPORTAL_OIDC_CLIENTSECRET!
     )
 
     const jwksUri = this.config.serverMetadata().jwks_uri
