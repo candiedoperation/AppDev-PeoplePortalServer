@@ -21,6 +21,7 @@ import log from "loglevel"
 import { AddGroupMemberRequest, AuthentikClientError, CreateTeamRequest, CreateTeamResponse, CreateUserRequest, GetGroupInfoResponse as GetGroupInfoResponse, GetTeamsListOptions as GetGroupsListOptions, GetTeamsListResponse as GetGroupsListResponse, GetUserListOptions, GetUserListResponse, TeamAttributeDefinition, TeamInformationBrief, UserInformationBrief } from "./models"
 import { randomUUID } from "crypto"
 import { sanitizeGroupName } from "../../utils/strings"
+import { EnabledRootSettings } from "../../controllers/OrgController"
 
 export class AuthentikClient {
     private static readonly TAG = "AuthentikClient"
@@ -214,6 +215,36 @@ export class AuthentikClient {
             log.error(AuthentikClient.TAG, "Get Teams List Request Failed with Error: ", e)
             throw new AuthentikClientError("Get Team Request Failed")
         }
+    }
+
+    private updateGroupAttributes = async (teamId: string, updatePayload: Partial<TeamAttributeDefinition>): Promise<boolean> => {
+        let groupInfo = await this.getGroupInfo(teamId);
+        var RequestConfig: any = {
+            ...this.AxiosBaseConfig,
+            method: 'patch',
+            url: `/api/v3/core/groups/${teamId}/`,
+            data: {
+                attributes: {
+                    ...groupInfo.attributes,
+                    ...updatePayload
+                }
+            }
+        }
+
+        try {
+            await axios.request(RequestConfig)
+            return true
+        } catch (e) {
+            log.error(AuthentikClient.TAG, "Update Group AttributesFailed with Error: ", e)
+            throw new AuthentikClientError("Update Group Attributes Failed")
+        }
+    }
+
+    public updateRootTeamSettings = async (teamId: string, teamSettings: {[key: string]: EnabledRootSettings}): Promise<boolean> => {
+        return await this.updateGroupAttributes(
+            teamId, 
+            { rootTeamSettings: teamSettings }
+        )
     }
 
     public addGroupMember = async (request: AddGroupMemberRequest): Promise<boolean> => {

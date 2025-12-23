@@ -736,9 +736,9 @@ export function RegisterRoutes(app: Router) {
         const argsOrgController_updateRootTeamSetting: Record<string, TsoaRoute.ParameterSchema> = {
                 expressReq: {"in":"request","name":"expressReq","required":true,"dataType":"object"},
                 teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
-                req: {"in":"body","name":"req","required":true,"dataType":"nestedObjectLiteral","nestedProperties":{},"additionalProperties":{"dataType":"boolean"}},
+                conf: {"in":"body","name":"conf","required":true,"dataType":"nestedObjectLiteral","nestedProperties":{},"additionalProperties":{"ref":"EnabledRootSettings"}},
         };
-        app.patch('/api/org/teams/:teamId/rootsetting',
+        app.patch('/api/org/teams/:teamId/updateconf',
             authenticateMiddleware([{"oidc":[]}]),
             ...(fetchMiddlewares<RequestHandler>(OrgController)),
             ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.updateRootTeamSetting)),
