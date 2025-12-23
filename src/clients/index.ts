@@ -1,6 +1,7 @@
 import { BindlePermissionMap } from "../controllers/BindleController";
 import { RootTeamSettingMap } from "../controllers/OrgController";
 import { GetGroupInfoResponse } from "./AuthentikClient/models";
+import { AdditionalRootSettingParams } from "./AWSClient/models";
 
 /**
  * Interface to define clients that manipulate Shared Resources like,
@@ -11,7 +12,7 @@ export interface SharedResourceClient {
     getSupportedBindles(): BindlePermissionMap
 
     handleOrgBindleSync(
-        org: GetGroupInfoResponse, 
+        org: GetGroupInfoResponse,
         callback: (updatedResourceCount: number, status: string) => void
     ): Promise<boolean>
 }
@@ -26,6 +27,7 @@ export interface RootTeamSettingClient {
 
     syncSettingUpdate(
         org: GetGroupInfoResponse,
-        callback: (updatePercent: number, status: string) => void /* Provide Updates to Front End! */
+        callback: (updatePercent: number, status: string) => void, /* Provide Updates to Front End! */
+        additionalParams: AdditionalRootSettingParams
     ): Promise<boolean>
 }

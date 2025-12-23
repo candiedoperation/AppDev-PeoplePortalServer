@@ -21,6 +21,7 @@ import { RootTeamSettingClient, SharedResourceClient } from "..";
 import { BindlePermissionMap } from "../../controllers/BindleController";
 import { RootTeamSettingMap } from "../../controllers/OrgController";
 import { GetGroupInfoResponse } from "../AuthentikClient/models";
+import { AWSAdditionalParams } from "./models";
 import {
     OrganizationsClient,
     CreateAccountCommand,
@@ -70,7 +71,7 @@ export class AWSClient implements RootTeamSettingClient {
 
     constructor() {
         if (!this.ROOT_ID || !this.STUDENT_OU_ID || !this.MANAGEMENT_ACCOUNT_ID) {
-            console.warn(`${AWSClient.TAG}: Missing critical AWS environment variables. AWS features will fail.`);
+            throw new Error(`${AWSClient.TAG}: Missing critical AWS environment variables. AWS features will fail.`);
         }
 
         this.orgClient = new OrganizationsClient({ region: this.REGION });
@@ -86,7 +87,7 @@ export class AWSClient implements RootTeamSettingClient {
         return this.SUPPORTED_ROOTSETTINGS;
     }
 
-    async syncSettingUpdate(org: GetGroupInfoResponse, callback: (updatePercent: number, status: string) => void): Promise<boolean> {
+    async syncSettingUpdate(org: GetGroupInfoResponse, callback: (updatePercent: number, status: string) => void, additionalParams: AWSAdditionalParams): Promise<boolean> {
         const settings = org.attributes.rootTeamSettings?.[this.getResourceName()];
         const shouldProvision = settings && settings["awsclient:provision"] === true;
 
@@ -95,23 +96,23 @@ export class AWSClient implements RootTeamSettingClient {
             return true;
         }
 
-        const safeTeamName = org.attributes.friendlyName;
-
-        // Check for existing account
-        callback(10, `Checking for existing account: ${safeTeamName}...`);
-        const existingAccountId = await this.findAccountIdByName(safeTeamName);
-
-        if (existingAccountId) {
-            callback(100, `Account already exists (${existingAccountId}). No action taken.`);
-            return true;
-        }
-
-        // Create Account
-        const adminEmail = `awsroot+${safeTeamName.toLowerCase()}@appdevclub.com`;
-        callback(20, `Creating AWS Account (${adminEmail})...`);
+        const name = org.name;
 
         try {
-            const accountId = await this.createAccount(safeTeamName, adminEmail, callback);
+            // Check for existing account
+            callback(10, `Checking for existing account: ${name}...`);
+            const existingAccountId = await this.findAccountIdByName(name);
+
+            if (existingAccountId) {
+                callback(100, `Account already exists (${existingAccountId}). No action taken.`);
+                return true;
+            }
+
+            // Create Account
+            const adminEmail = `awsroot+${name.toLowerCase()}@appdevclub.com`;
+            callback(20, `Creating AWS Account (${adminEmail})...`);
+
+            const accountId = await this.createAccount(name, adminEmail, callback);
             if (!accountId) throw new Error("Account creation returned no ID.");
 
             // Move to OU
@@ -123,14 +124,14 @@ export class AWSClient implements RootTeamSettingClient {
 
             // Use the first user's email for alerts, or fallback to the finance email
             const alertEmail = org.users.length > 0 && org.users[0] ? org.users[0].email : this.BILLING_ALERT_EMAIL;
-            console.log(`Using ${alertEmail} for billing alerts for ${safeTeamName}`);
-            await this.createBudget(accountId, alertEmail, safeTeamName);
+            console.log(`Using ${alertEmail} for billing alerts for ${name}`);
+            await this.createBudget(accountId, alertEmail, name, additionalParams.budgetLimit);
 
             callback(100, `Successfully provisioned AWS Account: ${accountId}`);
             return true;
         } catch (e: any) {
             console.error(e);
-            callback(0, `AWS Provisioning Failed: ${e.message}`);
+            callback(100, `AWS Provisioning Failed: ${e.message}`);
             return false;
         }
     }
@@ -219,7 +220,7 @@ export class AWSClient implements RootTeamSettingClient {
         }
     }
 
-    private async createBudget(accountId: string, email: string, projectName: string) {
+    private async createBudget(accountId: string, email: string, projectName: string, budgetLimit: string) {
         await new Promise(r => setTimeout(r, 5000));
 
         await this.budgetsClient.send(new CreateBudgetCommand({
@@ -228,7 +229,7 @@ export class AWSClient implements RootTeamSettingClient {
                 BudgetName: `Project-Budget-${projectName}`,
                 BudgetType: BudgetType.Cost,
                 TimeUnit: TimeUnit.MONTHLY,
-                BudgetLimit: { Amount: this.BUDGET_LIMIT, Unit: "USD" },
+                BudgetLimit: { Amount: budgetLimit, Unit: "USD" },
                 CostFilters: { "LinkedAccount": [accountId] }
             },
             NotificationsWithSubscribers: [
@@ -245,40 +246,51 @@ export class AWSClient implements RootTeamSettingClient {
         }));
     }
 
-    private async findAccountIdByName(name: string): Promise<string | undefined> {
-        const config = { client: this.orgClient };
-        const input = { ParentId: this.STUDENT_OU_ID };
+    public async findAccountIdByName(name: string): Promise<string | undefined> {
+        const TIMEOUT_MS = 30000; // 30 second timeout
 
-        const paginator = paginateListAccountsForParent(config, input);
+        const findAccount = async (): Promise<string | undefined> => {
+            const config = { client: this.orgClient };
+            const input = { ParentId: this.STUDENT_OU_ID };
 
-        for await (const page of paginator) {
-            const accounts = page.Accounts || [];
+            const paginator = paginateListAccountsForParent(config, input);
 
-            const match = accounts.find((a) => a.Name === name);
+            for await (const page of paginator) {
+                const accounts = page.Accounts || [];
 
-            if (match) {
-                return match.Id;
+                const match = accounts.find((a) => a.Name === name);
+
+                if (match) {
+                    return match.Id;
+                }
             }
-        }
 
-        // just in case the account was created but not moved
-        const rootConfig = { client: this.orgClient };
-        const rootInput = { ParentId: this.ROOT_ID };
+            // just in case the account was created but not moved
+            const rootConfig = { client: this.orgClient };
+            const rootInput = { ParentId: this.ROOT_ID };
 
-        const rootPaginator = paginateListAccountsForParent(rootConfig, rootInput);
+            const rootPaginator = paginateListAccountsForParent(rootConfig, rootInput);
 
-        for await (const page of rootPaginator) {
-            const accounts = page.Accounts || [];
+            for await (const page of rootPaginator) {
+                const accounts = page.Accounts || [];
 
-            const match = accounts.find((a) => a.Name === name);
+                const match = accounts.find((a) => a.Name === name);
 
-            if (match) {
-                await this.moveAccount(match.Id!);
-                return match.Id;
+                if (match) {
+                    await this.moveAccount(match.Id!);
+                    return match.Id;
+                }
             }
-        }
 
-        return undefined;
+            return undefined;
+        };
+
+        // Wrap in timeout to prevent indefinite hangs
+        const timeoutPromise = new Promise<never>((_, reject) => {
+            setTimeout(() => reject(new Error(`AWS account lookup timed out after ${TIMEOUT_MS / 1000}s`)), TIMEOUT_MS);
+        });
+
+        return Promise.race([findAccount(), timeoutPromise]);
     }
 
 

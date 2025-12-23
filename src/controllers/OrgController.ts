@@ -27,6 +27,7 @@ import { SharedResourceClient } from '../clients';
 import { GiteaClient } from '../clients/GiteaClient';
 import { ENABLED_SHARED_RESOURCES, ENABLED_TEAMSETTING_RESOURCES } from '../config';
 import { SlackClient } from '../clients/SlackClient';
+import { AWSClient } from '../clients/AWSClient';
 
 export interface EnabledRootSettings {
     [key: string]: boolean
@@ -100,12 +101,14 @@ export class OrgController extends Controller {
     private readonly authentikClient;
     private readonly emailClient;
     private readonly slackClient;
+    private readonly awsClient;
 
     constructor() {
         super()
         this.authentikClient = new AuthentikClient()
         this.emailClient = new EmailClient()
         this.slackClient = ENABLED_SHARED_RESOURCES.slackClient as SlackClient
+        this.awsClient = new AWSClient()
         this.sharedResources = Object.values(ENABLED_SHARED_RESOURCES)
 
         for (const teamSettingResource of Object.values(ENABLED_TEAMSETTING_RESOURCES)) {
@@ -113,7 +116,7 @@ export class OrgController extends Controller {
             this.teamSettingList[resourceName] = teamSettingResource.getSupportedSettings()
         }
     }
-    
+
     @Get("people")
     @SuccessResponse(200)
     @Security("oidc")
@@ -126,8 +129,8 @@ export class OrgController extends Controller {
     @Security("oidc")
     async getPersonInfo(@Path() personId: number): Promise<APIUserInfoResponse> {
         const authentikUserInfo = await this.authentikClient.getUserInfo(personId)
-        return { 
-            ...authentikUserInfo 
+        return {
+            ...authentikUserInfo
         }
     }
 
@@ -202,8 +205,8 @@ export class OrgController extends Controller {
         const invite = await Invite.findById(inviteId).exec()
         if (!invite)
             throw new Error("Invalid Invite ID")
-        
-        
+
+
         /* Check Slack Presence! */
         const slackPresence = await this.slackClient.validateUserPresence(invite.inviteEmail)
         if (!slackPresence)
@@ -259,16 +262,119 @@ export class OrgController extends Controller {
     @Get("teams/{teamId}/awsaccess")
     @SuccessResponse(201)
     @Security("oidc")
-    async fetchAWSAccessCredentials(@Path() teamId: string) {
+    async fetchAWSAccessCredentials(@Request() req: Request, @Path() teamId: string) {
+        const res = (req as any).res as express.Response
+        res.setHeader('Content-Type', 'text/plain');
+        res.setHeader('Transfer-Encoding', 'chunked');
+
+        const awsRes = Object.values(ENABLED_TEAMSETTING_RESOURCES).find((res) => res.getResourceName() == "AWSClient") as unknown as AWSClient;
+
+        res.write(JSON.stringify({ progressPercent: 10, status: "Retrieving Team Credentials..." }))
         const teamInfo = await this.authentikClient.getGroupInfo(teamId)
-        // use teamInfo.name
+
+        // Check if provisioning is enabled
+        const settings = teamInfo.attributes.rootTeamSettings?.[awsRes.getResourceName()];
+        const shouldProvision = settings && settings["awsclient:provision"] === true;
+
+        if (!shouldProvision) {
+            res.write(JSON.stringify({ progressPercent: 100, status: "AWS Provisioning is not enabled for this team.", error: true }))
+            res.end()
+            return
+        }
+
+        const name = teamInfo.name
+
+        res.write(JSON.stringify({ progressPercent: 30, status: "Locating AWS Account..." }))
+
+        const accountId = await awsRes.findAccountIdByName(name);
+
+        if (!accountId) {
+            res.write(JSON.stringify({ progressPercent: 100, status: "AWS Account not found! Please contact an administrator.", error: true }))
+            res.end()
+            return
+        }
+
+        res.write(JSON.stringify({ progressPercent: 60, status: "Generating Session..." }))
+        try {
+            const link = await awsRes.generateConsoleLink(accountId, "TeamDashboardUSER") // TODO: Use actual user name if available
+            res.write(JSON.stringify({ progressPercent: 100, status: "Link Generated!", link: link }))
+        } catch (e: any) {
+            res.write(JSON.stringify({ progressPercent: 100, status: "Failed to generate link: " + e.message, error: true }))
+        }
+
+        res.end()
     }
 
     @Patch("teams/{teamId}/rootsetting")
     @SuccessResponse(201)
     @Security("oidc")
-    async updateRootTeamSetting(@Path() teamId: string, @Body() req: { [key: string]: boolean }) {
+    async updateRootTeamSetting(@Request() expressReq: Request, @Path() teamId: string, @Body() req: { [key: string]: boolean }) {
+        const res = (expressReq as any).res as express.Response
+        res.setHeader('Content-Type', 'text/plain');
+        res.setHeader('Transfer-Encoding', 'chunked');
 
+        /* Obtain Team Information */
+        res.write(JSON.stringify({ progressPercent: 5, status: "Fetching team information..." }))
+        const teamInfo = await this.authentikClient.getGroupInfo(teamId)
+
+        /* Build the updated rootTeamSettings structure */
+        const existingSettings = teamInfo.attributes.rootTeamSettings || {}
+        const updatedSettings: { [resourceName: string]: { [settingKey: string]: boolean } } = { ...existingSettings }
+
+        /* Organize incoming settings by resource name - find the matching client */
+        for (const [settingKey, value] of Object.entries(req)) {
+            /* Find the RootTeamSettingClient that supports this setting key */
+            let matchedResourceName: string | null = null
+            for (const client of Object.values(ENABLED_TEAMSETTING_RESOURCES)) {
+                const supportedSettings = client.getSupportedSettings()
+                if (settingKey in supportedSettings) {
+                    matchedResourceName = client.getResourceName()
+                    break
+                }
+            }
+
+            if (!matchedResourceName) continue
+
+            const resourceSettings = updatedSettings[matchedResourceName] ?? {}
+            resourceSettings[settingKey] = value
+            updatedSettings[matchedResourceName] = resourceSettings
+        }
+
+        /* Update the group's rootTeamSettings attribute in Authentik */
+        res.write(JSON.stringify({ progressPercent: 15, status: "Updating team settings..." }))
+        await this.authentikClient.updateGroup(teamId, {
+            attributes: {
+                ...teamInfo.attributes,
+                rootTeamSettings: updatedSettings
+            }
+        })
+
+        /* Re-fetch team info to get updated state */
+        const updatedTeamInfo = await this.authentikClient.getGroupInfo(teamId)
+
+        /* Call syncSettingUpdate for each RootTeamSettingClient */
+        const teamSettingClients = Object.values(ENABLED_TEAMSETTING_RESOURCES)
+        const progressPerClient = 80 / teamSettingClients.length
+        let currentProgress = 20
+
+        for (const teamSettingClient of teamSettingClients) {
+            const resourceName = teamSettingClient.getResourceName()
+            res.write(JSON.stringify({ progressPercent: currentProgress, status: `Syncing ${resourceName}...` }))
+
+            await teamSettingClient.syncSettingUpdate(
+                updatedTeamInfo,
+                (updatePercent, status) => {
+                    const scaledPercent = currentProgress + (updatePercent / 100) * progressPerClient
+                    res.write(JSON.stringify({ progressPercent: scaledPercent, status: `[${resourceName}] ${status}` }))
+                },
+                {} /* AdditionalRootSettingParams - empty base object */
+            )
+
+            currentProgress += progressPerClient
+        }
+
+        res.write(JSON.stringify({ progressPercent: 100, status: "Settings updated successfully!" }))
+        res.end()
     }
 
     @Post("teams/{teamId}/addmember")
@@ -309,9 +415,9 @@ export class OrgController extends Controller {
     async createTeam(@Body() req: APICreateTeamRequest): Promise<CreateTeamResponse> {
         const newTeam = await this.authentikClient.createNewTeam({ attributes: { ...req } })
         // this.addTeamMemberWrapper({ groupId: newTeam.pk, userPk: 0 })
-        
+
         // create slack channel
-        
+
         switch (req.teamType) {
             case TeamType.CORPORATE:
                 /* WE NEED TO ADD THE CURRENT USER TO THE GROUP!!! */
@@ -357,7 +463,7 @@ export class OrgController extends Controller {
             await sharedResource.handleOrgBindleSync(teamInfo, (updatedResourceCount, status) => {
                 /* Update Progress and Write Output */
                 updatedResources += updatedResourceCount
-                res.write(JSON.stringify({ progressPercent: (updatedResources/computeEffort)*100, status }))
+                res.write(JSON.stringify({ progressPercent: (updatedResources / computeEffort) * 100, status }))
             })
         }
 

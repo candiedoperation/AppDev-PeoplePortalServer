@@ -236,7 +236,7 @@ export class AuthentikClient {
     public createNewUser = async (request: CreateUserRequest): Promise<boolean> => {
         if (!request.email.endsWith("@terpmail.umd.edu"))
             throw new Error("Portal Currently Supports Terpmail Addresses Only!")
-        
+
         let username = request.email.replace("@terpmail.umd.edu", "")
         var RequestConfigAddUser: any = {
             ...this.AxiosBaseConfig,
@@ -279,7 +279,7 @@ export class AuthentikClient {
     public createNewTeam = async (request: CreateTeamRequest): Promise<CreateTeamResponse> => {
         if (request.parent && !request.parentName)
             throw new Error("Creating a SubTeam needs a Parent Name!")
-        
+
         const attr = request.attributes
         const teamName = sanitizeGroupName(`${attr.friendlyName.replaceAll(" ", "")}${attr.seasonType}${attr.seasonYear}`)
         const teamAttributes: TeamAttributeDefinition = {
@@ -301,7 +301,7 @@ export class AuthentikClient {
 
         if (teamExists)
             throw new AuthentikClientError("Team with the Same Name Already Exists!")
-        
+
         var RequestConfig: any = {
             ...this.AxiosBaseConfig,
             method: 'post',
@@ -323,6 +323,23 @@ export class AuthentikClient {
         } catch (e) {
             log.error(AuthentikClient.TAG, "Create Team Request Failed with Error: ", e)
             throw new AuthentikClientError("Get Team Request Failed")
+        }
+    }
+
+    public updateGroup = async (groupPk: string, data: { attributes: any }): Promise<boolean> => {
+        var RequestConfig: any = {
+            ...this.AxiosBaseConfig,
+            method: 'patch',
+            url: `/api/v3/core/groups/${groupPk}/`,
+            data: data
+        }
+
+        try {
+            await axios.request(RequestConfig)
+            return true
+        } catch (e) {
+            log.error(AuthentikClient.TAG, "Update Group Request Failed with Error: ", e)
+            throw new AuthentikClientError("Update Group Request Failed")
         }
     }
 }
