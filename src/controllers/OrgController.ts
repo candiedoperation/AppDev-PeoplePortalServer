@@ -331,6 +331,18 @@ export class OrgController extends Controller {
 
         /* Call Authentik to Update the Attributes */
         await this.authentikClient.updateRootTeamSettings(teamId, applySettingsList);
+
+        /* Get updated team info and sync each RootTeamSettingClient */
+        const updatedTeamInfo = await this.authentikClient.getGroupInfo(teamId);
+        for (const client of Object.values(ENABLED_TEAMSETTING_RESOURCES)) {
+            await client.syncSettingUpdate(
+                updatedTeamInfo,
+                (updatePercent, status) => {
+                    console.log(`[${client.getResourceName()}] ${updatePercent}%: ${status}`);
+                },
+                {} // additionalParams - can be extended as needed
+            );
+        }
     }
 
     @Post("teams/{teamId}/addmember")
