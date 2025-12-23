@@ -123,7 +123,7 @@ export class AWSClient implements RootTeamSettingClient {
             callback(80, "Applying Budget...");
 
             // Use the first user's email for alerts, or fallback to the finance email
-            const alertEmail = org.users.length > 0 && org.users[0] ? org.users[0].email : this.BILLING_ALERT_EMAIL;
+            const alertEmail = this.BILLING_ALERT_EMAIL;
             console.log(`Using ${alertEmail} for billing alerts for ${name}`);
             await this.createBudget(accountId, alertEmail, name, additionalParams.budgetLimit);
 
