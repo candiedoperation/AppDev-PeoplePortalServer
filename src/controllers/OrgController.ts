@@ -101,14 +101,12 @@ export class OrgController extends Controller {
     private readonly authentikClient;
     private readonly emailClient;
     private readonly slackClient;
-    private readonly awsClient;
 
     constructor() {
         super()
         this.authentikClient = new AuthentikClient()
         this.emailClient = new EmailClient()
         this.slackClient = ENABLED_SHARED_RESOURCES.slackClient as SlackClient
-        this.awsClient = new AWSClient()
         this.sharedResources = Object.values(ENABLED_SHARED_RESOURCES)
 
         for (const teamSettingResource of Object.values(ENABLED_TEAMSETTING_RESOURCES)) {
