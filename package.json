@@ -31,7 +31,10 @@
     "nodemailer-express-handlebars": "^7.0.0",
     "openid-client": "^6.7.1",
     "swagger-ui-express": "^5.0.1",
-    "tsoa": "^6.6.0"
+    "tsoa": "^6.6.0",
+    "@aws-sdk/client-budgets": "^3.940.0",
+    "@aws-sdk/client-organizations": "^3.940.0",
+    "@aws-sdk/client-sts": "^3.940.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",

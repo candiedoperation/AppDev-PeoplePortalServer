@@ -240,9 +240,9 @@ export class AuthentikClient {
         }
     }
 
-    public updateRootTeamSettings = async (teamId: string, teamSettings: {[key: string]: EnabledRootSettings}): Promise<boolean> => {
+    public updateRootTeamSettings = async (teamId: string, teamSettings: { [key: string]: EnabledRootSettings }): Promise<boolean> => {
         return await this.updateGroupAttributes(
-            teamId, 
+            teamId,
             { rootTeamSettings: teamSettings }
         )
     }
@@ -267,7 +267,7 @@ export class AuthentikClient {
     public createNewUser = async (request: CreateUserRequest): Promise<boolean> => {
         if (!request.email.endsWith("@terpmail.umd.edu"))
             throw new Error("Portal Currently Supports Terpmail Addresses Only!")
-        
+
         let username = request.email.replace("@terpmail.umd.edu", "")
         var RequestConfigAddUser: any = {
             ...this.AxiosBaseConfig,
@@ -310,7 +310,7 @@ export class AuthentikClient {
     public createNewTeam = async (request: CreateTeamRequest): Promise<CreateTeamResponse> => {
         if (request.parent && !request.parentName)
             throw new Error("Creating a SubTeam needs a Parent Name!")
-        
+
         const attr = request.attributes
         const teamName = sanitizeGroupName(`${attr.friendlyName.replaceAll(" ", "")}${attr.seasonType}${attr.seasonYear}`)
         const teamAttributes: TeamAttributeDefinition = {
@@ -332,7 +332,7 @@ export class AuthentikClient {
 
         if (teamExists)
             throw new AuthentikClientError("Team with the Same Name Already Exists!")
-        
+
         var RequestConfig: any = {
             ...this.AxiosBaseConfig,
             method: 'post',

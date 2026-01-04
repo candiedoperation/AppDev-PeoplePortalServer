@@ -12,3 +12,25 @@ export function sanitizeGroupName(str: string) {
   let sanitized = str.replace(/[^A-Za-z0-9-_]/g, '');
   return sanitized;
 }
+
+/**
+ * Normalizes a full name into FirstLast format, removing middle names and hyphens while capitalizing segments.
+ */
+export function sanitizeUserFullName(fullName: string): string {
+  if (!fullName || typeof fullName !== 'string') return '';
+
+  const parts = fullName.trim().split(/\s+/);
+  if (parts.length === 0) return '';
+
+  const firstNameRaw = parts[0] ?? '';
+  const lastNameRaw = parts.length > 1 ? (parts[parts.length - 1] ?? '') : '';
+
+  const normalizeSegment = (str: string): string => {
+    if (!str) return '';
+    return str.split('-').map(segment => {
+      return segment.charAt(0).toUpperCase() + segment.slice(1).toLowerCase();
+    }).join('');
+  };
+
+  return normalizeSegment(firstNameRaw) + normalizeSegment(lastNameRaw);
+}
