@@ -24,10 +24,5 @@ export interface SharedResourceClient {
 export interface RootTeamSettingClient {
     getResourceName(): string
     getSupportedSettings(): RootTeamSettingMap
-
-    syncSettingUpdate(
-        org: GetGroupInfoResponse,
-        callback: (updatePercent: number, status: string) => void, /* Provide Updates to Front End! */
-        additionalParams: AdditionalRootSettingParams
-    ): Promise<boolean>
+    syncSettingUpdate(org: GetGroupInfoResponse): Promise<boolean>
 }

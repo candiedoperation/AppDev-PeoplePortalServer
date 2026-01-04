@@ -1,6 +1,6 @@
 /**
   App Dev Club People Portal Server
-  Copyright (C) 2025  Atheesh Thirumalairajan
+  Copyright (C) 2026  Atheesh Thirumalairajan
   Copyright (C) 2025  Ian Coutinho
 
   This program is free software: you can redistribute it and/or modify
@@ -17,19 +17,14 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-import { RootTeamSettingClient, SharedResourceClient } from "..";
-import { BindlePermissionMap } from "../../controllers/BindleController";
+import { RootTeamSettingClient } from "..";
 import { RootTeamSettingMap } from "../../controllers/OrgController";
 import { GetGroupInfoResponse } from "../AuthentikClient/models";
-import { AWSAdditionalParams } from "./models";
 import {
     OrganizationsClient,
     CreateAccountCommand,
     DescribeCreateAccountStatusCommand,
     MoveAccountCommand,
-    ListAccountsCommand,
-    Account,
-    ListAccountsForParentCommand,
     paginateListAccountsForParent
 } from "@aws-sdk/client-organizations";
 import {
@@ -42,7 +37,6 @@ import {
     ComparisonOperator
 } from "@aws-sdk/client-budgets";
 import { STSClient, AssumeRoleCommand } from "@aws-sdk/client-sts";
-import { AWSAccountTeamSetting } from "./models";
 import axios from "axios";
 
 export class AWSClient implements RootTeamSettingClient {
@@ -52,13 +46,13 @@ export class AWSClient implements RootTeamSettingClient {
     private budgetsClient: BudgetsClient;
     private stsClient: STSClient;
 
-    private readonly REGION = process.env.AWS_REGION || "us-east-1";
+    private readonly REGION = process.env.AWS_REGION ?? "us-east-1";
     private readonly ROOT_ID = process.env.AWS_ORG_ROOT_ID;
-    private readonly STUDENT_OU_ID = process.env.AWS_STUDENT_OU_ID;
+    private readonly NONPROD_OU_ID = process.env.AWS_NONPROD_OU_ID;
     private readonly MANAGEMENT_ACCOUNT_ID = process.env.AWS_MANAGEMENT_ACCOUNT_ID;
-    private readonly ADMIN_ROLE_NAME = process.env.AWS_ADMIN_ROLE_NAME || "OrganizationAccountAccessRole";
-    private readonly BUDGET_LIMIT = process.env.AWS_DEFAULT_BUDGET_AMOUNT || "20";
-    private readonly BILLING_ALERT_EMAIL = process.env.AWS_BILLING_ALERT_EMAIL || "awsroot+financealerts@appdevclub.com";
+    private readonly ADMIN_ROLE_NAME = "AppDevNonProductionRole";
+    private readonly BUDGET_LIMIT = process.env.AWS_DEFAULT_BUDGET_AMOUNT ?? "50";
+    private readonly BILLING_ALERT_EMAIL = "awsclient+financealerts@appdevclub.com";
     private readonly SESSION_EXPIRY = 3600;
 
 
@@ -70,7 +64,7 @@ export class AWSClient implements RootTeamSettingClient {
     }
 
     constructor() {
-        if (!this.ROOT_ID || !this.STUDENT_OU_ID || !this.MANAGEMENT_ACCOUNT_ID) {
+        if (!this.ROOT_ID || !this.NONPROD_OU_ID || !this.MANAGEMENT_ACCOUNT_ID) {
             throw new Error(`${AWSClient.TAG}: Missing critical AWS environment variables. AWS features will fail.`);
         }
 
@@ -87,12 +81,12 @@ export class AWSClient implements RootTeamSettingClient {
         return this.SUPPORTED_ROOTSETTINGS;
     }
 
-    async syncSettingUpdate(org: GetGroupInfoResponse, callback: (updatePercent: number, status: string) => void, additionalParams: AWSAdditionalParams): Promise<boolean> {
+    async syncSettingUpdate(org: GetGroupInfoResponse): Promise<boolean> {
         const settings = org.attributes.rootTeamSettings?.[this.getResourceName()];
         const shouldProvision = settings && settings["awsclient:provision"] === true;
 
         if (!shouldProvision) {
-            callback(100, "AWS Provisioning is disabled for this team.");
+            console.debug("[AWS_CLIENT] 100%: AWS Provisioning is disabled for this team.");
             return true;
         }
 
@@ -100,38 +94,38 @@ export class AWSClient implements RootTeamSettingClient {
 
         try {
             // Check for existing account
-            callback(10, `Checking for existing account: ${name}...`);
+            console.debug("[AWS_CLIENT] 10%: Checking for existing account: ${name}...");
             const existingAccountId = await this.findAccountIdByName(name);
 
             if (existingAccountId) {
-                callback(100, `Account already exists (${existingAccountId}). No action taken.`);
+                console.debug(`[AWS_CLIENT] 100%: Account already exists (${existingAccountId}). No action taken.`);
                 return true;
             }
 
             // Create Account
-            const adminEmail = `awsroot+${name.toLowerCase()}@appdevclub.com`;
-            callback(20, `Creating AWS Account (${adminEmail})...`);
+            const adminEmail = `awsclient+${name.toLowerCase()}@appdevclub.com`;
+            console.debug(`[AWS_CLIENT] 20%: Creating AWS Account (${adminEmail})...`);
 
-            const accountId = await this.createAccount(name, adminEmail, callback);
+            const accountId = await this.createAccount(name, adminEmail);
             if (!accountId) throw new Error("Account creation returned no ID.");
 
             // Move to OU
-            callback(60, "Moving account to Student OU...");
+            console.debug("[AWS_CLIENT] 60%: Moving account to Non Production OU...");
             await this.moveAccount(accountId);
 
             // Create Budget
-            callback(80, "Applying Budget...");
+            console.debug("[AWS_CLIENT] 80%: Applying Budget...");
 
             // Use the first user's email for alerts, or fallback to the finance email
             const alertEmail = this.BILLING_ALERT_EMAIL;
             console.log(`Using ${alertEmail} for billing alerts for ${name}`);
-            await this.createBudget(accountId, alertEmail, name, additionalParams.budgetLimit ? additionalParams.budgetLimit : this.BUDGET_LIMIT);
+            await this.createBudget(accountId, alertEmail, name, this.BUDGET_LIMIT);
 
-            callback(100, `Successfully provisioned AWS Account: ${accountId}`);
+            console.debug(`[AWS_CLIENT] 100%: Successfully provisioned AWS Account: ${accountId}`);
             return true;
         } catch (e: any) {
             console.error(e);
-            callback(100, `AWS Provisioning Failed: ${e.message}`);
+            console.debug(`[AWS_CLIENT] 100%: AWS Provisioning Failed: ${e.message}`);
             return false;
         }
     }
@@ -169,7 +163,7 @@ export class AWSClient implements RootTeamSettingClient {
     }
 
     // private helper methods
-    private async createAccount(name: string, email: string, callback: (p: number, s: string) => void): Promise<string> {
+    private async createAccount(name: string, email: string): Promise<string> {
         const createCmd = new CreateAccountCommand({
             Email: email,
             AccountName: name,
@@ -202,7 +196,7 @@ export class AWSClient implements RootTeamSettingClient {
                 throw new Error(`AWS Creation Failed: ${statusRes.CreateAccountStatus?.FailureReason}`);
             }
 
-            callback(30, "Waiting for AWS to finalize account creation...");
+            console.debug("[AWS_CLIENT] 30%: Waiting for AWS to finalize account creation...");
         }
     }
 
@@ -211,7 +205,7 @@ export class AWSClient implements RootTeamSettingClient {
             await this.orgClient.send(new MoveAccountCommand({
                 AccountId: accountId,
                 SourceParentId: this.ROOT_ID,
-                DestinationParentId: this.STUDENT_OU_ID
+                DestinationParentId: this.NONPROD_OU_ID
             }));
         } catch (e: any) {
             if (e.name !== 'SourceParentNotFoundException' && e.name !== 'DestinationParentNotFoundException') {
@@ -251,7 +245,7 @@ export class AWSClient implements RootTeamSettingClient {
 
         const findAccount = async (): Promise<string | undefined> => {
             const config = { client: this.orgClient };
-            const input = { ParentId: this.STUDENT_OU_ID };
+            const input = { ParentId: this.NONPROD_OU_ID };
 
             const paginator = paginateListAccountsForParent(config, input);
 

@@ -28,6 +28,7 @@ import { GiteaClient } from '../clients/GiteaClient';
 import { ENABLED_SHARED_RESOURCES, ENABLED_TEAMSETTING_RESOURCES } from '../config';
 import { SlackClient } from '../clients/SlackClient';
 import { AWSClient } from '../clients/AWSClient';
+import { sanitizeUserFullName } from '../utils/strings';
 
 export interface EnabledRootSettings {
     [key: string]: boolean
@@ -260,7 +261,7 @@ export class OrgController extends Controller {
     @Get("teams/{teamId}/awsaccess")
     @SuccessResponse(201)
     @Security("oidc")
-    async fetchAWSAccessCredentials(@Request() req: Request, @Path() teamId: string) {
+    async fetchAWSAccessCredentials(@Request() req: express.Request, @Path() teamId: string) {
         const res = (req as any).res as express.Response
         res.setHeader('Content-Type', 'text/plain');
         res.setHeader('Transfer-Encoding', 'chunked');
@@ -280,11 +281,11 @@ export class OrgController extends Controller {
             return
         }
 
-        const name = teamInfo.name
-
+        /* Provide Progess Update */
         res.write(JSON.stringify({ progressPercent: 30, status: "Locating AWS Account..." }))
 
-        const accountId = await awsRes.findAccountIdByName(name);
+        const name = teamInfo.name
+        const accountId = await awsRes.findAccountIdByName(teamInfo.name);
 
         if (!accountId) {
             res.write(JSON.stringify({ progressPercent: 100, status: "AWS Account not found! Please contact an administrator.", error: true }))
@@ -294,7 +295,8 @@ export class OrgController extends Controller {
 
         res.write(JSON.stringify({ progressPercent: 60, status: "Generating Session..." }))
         try {
-            const link = await awsRes.generateConsoleLink(accountId, "TeamDashboardUSER") // TODO: Use actual user name if available
+            const currentUser = req.session.authorizedUser?.name ?? "GenericDashboardUser"
+            const link = await awsRes.generateConsoleLink(accountId, sanitizeUserFullName(currentUser))
             res.write(JSON.stringify({ progressPercent: 100, status: "Link Generated!", link: link }))
         } catch (e: any) {
             res.write(JSON.stringify({ progressPercent: 100, status: "Failed to generate link: " + e.message, error: true }))
@@ -333,13 +335,7 @@ export class OrgController extends Controller {
         /* Get updated team info and sync each RootTeamSettingClient */
         const updatedTeamInfo = await this.authentikClient.getGroupInfo(teamId);
         for (const client of Object.values(ENABLED_TEAMSETTING_RESOURCES)) {
-            await client.syncSettingUpdate(
-                updatedTeamInfo,
-                (updatePercent, status) => {
-                    console.log(`[${client.getResourceName()}] ${updatePercent}%: ${status}`);
-                },
-                {} // additionalParams - can be extended as needed
-            );
+            await client.syncSettingUpdate(updatedTeamInfo);
         }
     }
 
