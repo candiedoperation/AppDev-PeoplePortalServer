@@ -18,23 +18,44 @@ export interface BindlePermission {
 
 @Route("/api/bindles")
 export class BindleController extends Controller {
-    private bindleDefinition: { [key: string]: BindlePermissionMap } = {}
-    
-    constructor() {
-        super()
+    private static bindleDefinition: { [key: string]: BindlePermissionMap } = (() => {
+        const definitions: { [key: string]: BindlePermissionMap } = {};
         for (const sharedResource of Object.values(ENABLED_SHARED_RESOURCES)) {
-            const resourceName = sharedResource.getResourceName()
-            this.bindleDefinition[resourceName] = sharedResource.getSupportedBindles()
+            const resourceName = sharedResource.getResourceName();
+            definitions[resourceName] = sharedResource.getSupportedBindles();
         }
-    }
+
+        /* Perform Return for Static Store */
+        return definitions;
+    })();
 
     @Get("definitions")
     @SuccessResponse(200)
     async getDefinitions(): Promise<{ [key: string]: BindlePermissionMap }> {
-        return this.bindleDefinition
+        return BindleController.bindleDefinition;
     }
 
-    private normalizeBindlePermissions = (bindlePermissions: { [key: string]: BindlePermission[] }) => {
-        
+    public static sanitizeBindlePermissions = (bindlePermissions: { [key: string]: EnabledBindlePermissions }): { [key: string]: EnabledBindlePermissions } => {
+        const sanitizedBindlePermissions: { [key: string]: EnabledBindlePermissions } = {};
+        for (const clientName in bindlePermissions) {
+            const supportedBindles = BindleController.bindleDefinition[clientName];
+            if (!supportedBindles)
+                continue;
+
+            const filteredBindles: EnabledBindlePermissions = {};
+            for (const bindleKey in bindlePermissions[clientName]) {
+                // Check if this bindle key is supported by the client
+                if (!supportedBindles[bindleKey])
+                    continue;
+
+                /* Update Filtered Bindle Setting */
+                filteredBindles[bindleKey] = bindlePermissions[clientName][bindleKey] ?? false;
+            }
+
+            /* Apply the Filtered Bindles to the Final List */
+            sanitizedBindlePermissions[clientName] = filteredBindles;
+        }
+
+        return sanitizedBindlePermissions;
     }
 }

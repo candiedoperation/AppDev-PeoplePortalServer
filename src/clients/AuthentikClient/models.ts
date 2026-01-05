@@ -42,7 +42,7 @@ export interface TeamAttributeDefinition {
         [key: string]: EnabledRootSettings
     },
 
-    bindlePermissions?: {
+    bindlePermissions: {
         /* The key is the Client name (Ex. GiteaClient, OpenIdClient, etc.) */
         [key: string]: EnabledBindlePermissions
     }

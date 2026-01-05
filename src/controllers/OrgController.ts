@@ -29,6 +29,7 @@ import { ENABLED_SHARED_RESOURCES, ENABLED_TEAMSETTING_RESOURCES } from '../conf
 import { SlackClient } from '../clients/SlackClient';
 import { AWSClient } from '../clients/AWSClient';
 import { sanitizeUserFullName } from '../utils/strings';
+import { BindleController, EnabledBindlePermissions } from '../controllers/BindleController';
 
 export interface EnabledRootSettings {
     [key: string]: boolean
@@ -256,6 +257,29 @@ export class OrgController extends Controller {
             team: primaryTeam,
             subteams: primaryTeam.subteams
         }
+    }
+
+    @Get("teams/{teamId}/bindles")
+    @SuccessResponse(200)
+    @Security("oidc")
+    async getTeamBindles(@Path() teamId: string): Promise<{ [key: string]: EnabledBindlePermissions }> {
+        const teamInfo = await this.authentikClient.getGroupInfo(teamId);
+        return teamInfo.attributes.bindlePermissions ?? {}; /* Legacy Teams don't have bindles! */
+    }
+
+    @Patch("teams/{teamId}/bindles")
+    @SuccessResponse(201)
+    @Security("oidc")
+    async updateTeamBindles(@Path() teamId: string, @Body() bindleConf: { [key: string]: EnabledBindlePermissions }) {
+        /**
+         * WARNING
+         * This method does not sync the bindles for users across the shared resources.
+         * A seperate team bindle sync call needs to be made to sync bindles for all subteams and
+         * users in a team.
+         */
+
+        const bindlePermissions = BindleController.sanitizeBindlePermissions(bindleConf);
+        await this.authentikClient.updateBindlePermissions(teamId, bindlePermissions);
     }
 
     @Get("teams/{teamId}/awsaccess")
