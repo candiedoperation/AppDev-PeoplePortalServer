@@ -22,6 +22,7 @@ import { AddGroupMemberRequest, AuthentikClientError, CreateTeamRequest, CreateT
 import { randomUUID } from "crypto"
 import { sanitizeGroupName } from "../../utils/strings"
 import { EnabledRootSettings } from "../../controllers/OrgController"
+import { EnabledBindlePermissions } from "../../controllers/BindleController"
 
 export class AuthentikClient {
     private static readonly TAG = "AuthentikClient"
@@ -247,6 +248,13 @@ export class AuthentikClient {
         )
     }
 
+    public updateBindlePermissions = async (teamId: string, bindlePermissions: { [key: string]: EnabledBindlePermissions }): Promise<boolean> => {
+        return await this.updateGroupAttributes(
+            teamId,
+            { bindlePermissions }
+        )
+    }
+
     public addGroupMember = async (request: AddGroupMemberRequest): Promise<boolean> => {
         var RequestConfig: any = {
             ...this.AxiosBaseConfig,
@@ -316,7 +324,8 @@ export class AuthentikClient {
         const teamAttributes: TeamAttributeDefinition = {
             ...request.attributes,
             peoplePortalCreation: true,  /* Helps Identify People Portal Managed Entires! */
-            rootTeamSettings: {}
+            rootTeamSettings: {},
+            bindlePermissions: {},
         }
 
         /* Check if a team with the Same Name Exists! */
