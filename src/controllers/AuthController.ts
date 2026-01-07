@@ -154,7 +154,8 @@ export class AuthController extends Controller {
 
         return {
             name: applicant.fullName,
-            email: applicant.email
+            email: applicant.email,
+            profile: applicant.profile || {}
         };
     }
 }
