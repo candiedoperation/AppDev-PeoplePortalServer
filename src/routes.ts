@@ -1229,6 +1229,38 @@ export function RegisterRoutes(app: Router) {
             }
         });
         // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsATSController_getResumeDownloadUrl: Record<string, TsoaRoute.ParameterSchema> = {
+                request: {"in":"request","name":"request","required":true,"dataType":"object"},
+                key: {"in":"query","name":"key","required":true,"dataType":"string"},
+        };
+        app.get('/api/ats/resume/download',
+            authenticateMiddleware([{"ats_otp":[]}]),
+            ...(fetchMiddlewares<RequestHandler>(ATSController)),
+            ...(fetchMiddlewares<RequestHandler>(ATSController.prototype.getResumeDownloadUrl)),
+
+            async function ATSController_getResumeDownloadUrl(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsATSController_getResumeDownloadUrl, request, response });
+
+                const controller = new ATSController();
+
+              await templateService.apiHandler({
+                methodName: 'getResumeDownloadUrl',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 307,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
         const argsATSController_getSubTeamATSConfig: Record<string, TsoaRoute.ParameterSchema> = {
                 subteamId: {"in":"path","name":"subteamId","required":true,"dataType":"string"},
         };

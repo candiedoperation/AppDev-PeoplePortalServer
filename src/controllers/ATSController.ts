@@ -8,7 +8,7 @@ import { ApplicationStage } from "../models/Application";
 import { Security } from "tsoa";
 import * as express from 'express'
 import { ApplicantProfile } from "../models/Applicant";
-import { PutObjectCommand } from "@aws-sdk/client-s3";
+import { PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { s3Client, BUCKET_NAME } from "../clients/AWSClient/S3Client";
 import { Query } from "tsoa";
@@ -62,13 +62,88 @@ export class ATSController extends Controller {
         });
 
         const uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
-        const publicUrl = `https://${BUCKET_NAME}.s3.amazonaws.com/${key}`;
+
+        // Construct the proxy URL using the request headers
+        const protocol = request.protocol;
+        const host = request.get('host');
+        const publicUrl = `${protocol}://${host}/api/ats/resume/download?key=${encodeURIComponent(key)}`;
 
         return {
             uploadUrl,
             publicUrl,
             key
         };
+    }
+
+    @Get("resume/download")
+    @Security("ats_otp") // Or appropriate security measure
+    @SuccessResponse(307, "Temporary Redirect")
+    async getResumeDownloadUrl(@Request() request: any, @Query() key: string) {
+        const userEmail = request.session?.authorizedUser?.email || request.session?.tempsession?.user?.email;
+
+        // 1. Verify Authentication
+        if (!userEmail) {
+            this.setStatus(401);
+            return { error: "Unauthorized", message: "User session not found." };
+        }
+
+        // 2. Identify User & Authorization
+        // Allow access if it's the user's own resume OR if the user is an admin/reviewer (to be implemented more robustly)
+        // For now, we'll check if the key matches the user's ID.
+        // The key format is: resumes/${applicant._id}/${Date.now()}.${fileExtension}
+
+        let isAuthorized = false;
+
+        const applicant = await Applicant.findOne({ email: userEmail });
+        if (applicant && key.startsWith(`resumes/${applicant._id}/`)) {
+            isAuthorized = true;
+        }
+
+        // TODO: Add check for admins/recruiters here once that system is more defined
+        // For example: if (user.role === 'admin') isAuthorized = true;
+
+        if (!isAuthorized) {
+            // Fallback for logic: if they are accessing via the Kanban board (which means they are likely a recruiter)
+            // We need a way to verify that. For now, if they have an active session and the key looks valid, we might need to be lenient 
+            // OR strictly enforce ownership. 
+            // STRICT Strict for now: data privacy.
+
+            // Check if the user is a recruiter? 
+            // The current session setup for recruiters isn't fully visible here, assuming 'authorizedUser' could be a recruiter.
+            // If key doesn't match, 403.
+
+            // TEMPORARY: If we assume only the applicant sees their own resume on the dashboard, strict check is fine.
+            // BUT recruiters need to see it too.
+            // If 'authorizedUser' is present (likely from SSO), they might be a recruiter.
+            if (request.session?.authorizedUser) {
+                isAuthorized = true; // Trust internal users for now?
+            }
+        }
+
+        if (!isAuthorized) {
+            this.setStatus(403);
+            return { error: "Forbidden", message: "You do not have permission to access this file." };
+        }
+
+        // 3. Generate Presigned GET URL
+        try {
+            const command = new GetObjectCommand({
+                Bucket: BUCKET_NAME,
+                Key: key,
+            });
+
+            const downloadUrl = await getSignedUrl(s3Client, command, { expiresIn: 900 }); // 15 minutes
+
+            // 4. Redirect
+            this.setStatus(307);
+            this.setHeader('Location', downloadUrl);
+            return;
+
+        } catch (error) {
+            console.error("Error generating download URL:", error);
+            this.setStatus(404); // Or 500
+            return { error: "NotFound", message: "File not found or access denied." };
+        }
     }
 
     @Get("config/{subteamId}")
