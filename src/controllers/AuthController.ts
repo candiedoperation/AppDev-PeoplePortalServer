@@ -21,8 +21,10 @@ import { Request, Controller, Get, Route, SuccessResponse, Security, Post, Body 
 import { OpenIdClient } from '../clients/OpenIdClient';
 import { UserInfoResponse } from 'openid-client';
 import { Applicant } from '../models/Applicant';
+import { Application } from '../models/Application';
 import jwt from "jsonwebtoken"
 import { generateSecureRandomString } from '../utils/strings';
+import { AuthentikClient } from '../clients/AuthentikClient';
 
 interface OtpInitRequest {
     email: string;
@@ -157,5 +159,75 @@ export class AuthController extends Controller {
             email: applicant.email,
             profile: applicant.profile || {}
         };
+    }
+
+    @Get("verifyotpsession")
+    @SuccessResponse(200)
+    async otpVerifySession(@Request() req: express.Request) {
+        const tempsession = req.session.tempsession;
+
+        // Check if tempsession and JWT exist
+        if (!tempsession?.jwt) {
+            this.setStatus(401);
+            return { error: "Unauthorized", message: "No active session" };
+        }
+
+        try {
+            // Verify the JWT
+            const decoded = jwt.verify(tempsession.jwt, process.env.PEOPLEPORTAL_TOKEN_SECRET!) as {
+                email: string;
+                name: string;
+                id: string;
+            };
+
+            // Find the applicant to get latest data
+            const applicant = await Applicant.findById(decoded.id).exec();
+
+            if (!applicant) {
+                this.setStatus(401);
+                return { error: "Unauthorized", message: "Applicant not found" };
+            }
+
+            const applications = await Application.find({ applicantId: applicant._id }).lean()
+
+            // Fetch subteam and parent names from Authentik
+            const authentikClient = new AuthentikClient();
+            const applicationsWithNames = await Promise.all(applications.map(async (app: any) => {
+                try {
+                    const subteamInfo = await authentikClient.getGroupInfo(app.subteamPk);
+                    let parentTeamName = "";
+                    try {
+                        const parentInfo = await authentikClient.getGroupInfo(subteamInfo.parentPk);
+                        parentTeamName = parentInfo.attributes.friendlyName || parentInfo.name;
+                    } catch (pe) {
+                        console.error(`Failed to fetch parent info for ${subteamInfo.parentPk}:`, pe);
+                    }
+
+                    return {
+                        ...app,
+                        subteamName: subteamInfo.attributes.friendlyName || subteamInfo.name,
+                        parentTeamName: parentTeamName
+                    };
+                } catch (e) {
+                    console.error(`Failed to fetch subteam info for ${app.subteamPk}:`, e);
+                    return {
+                        ...app,
+                        subteamName: app.subteamPk, // Fallback to PK
+                        parentTeamName: ""
+                    };
+                }
+            }));
+
+            return {
+                name: applicant.fullName,
+                email: applicant.email,
+                profile: applicant.profile || {},
+                applications: applicationsWithNames
+            };
+        } catch (error) {
+            // JWT is invalid or expired
+            this.setStatus(401);
+            return { error: "Unauthorized", message: "Session expired or invalid" };
+        }
     }
 }

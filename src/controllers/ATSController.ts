@@ -6,20 +6,17 @@ import { Applicant } from '../models/Applicant';
 import { Application } from "../models/Application";
 import { ApplicationStage } from "../models/Application";
 import { Security } from "tsoa";
+import * as express from 'express'
+import { ApplicantProfile } from "../models/Applicant";
+import { PutObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { s3Client, BUCKET_NAME } from "../clients/AWSClient/S3Client";
+import { Query } from "tsoa";
 
 interface ATSSubteamConfigRequest {
     isRecruiting: boolean;
     roles: string[];
     roleSpecificQuestions: { [role: string]: string[] };
-}
-
-interface ApplicantProfile {
-    graduationYear?: number;
-    major?: string;
-    phone?: string;
-    resumeUrl?: string;
-    linkedinUrl?: string;
-    githubUrl?: string;
 }
 
 interface ATSApplicationRequest {
@@ -36,6 +33,42 @@ export class ATSController extends Controller {
     constructor() {
         super()
         this.authentikClient = new AuthentikClient()
+    }
+
+    @Get("resume/upload-url")
+    @Security("ats_otp")
+    @SuccessResponse(200)
+    async getResumeUploadUrl(@Request() request: any, @Query() fileName: string, @Query() contentType: string) {
+        const userEmail = request.session?.authorizedUser?.email || request.session?.tempsession?.user?.email;
+
+        if (!userEmail) {
+            this.setStatus(401);
+            return { error: "Unauthorized", message: "User session not found." };
+        }
+
+        const applicant = await Applicant.findOne({ email: userEmail });
+        if (!applicant) {
+            this.setStatus(404);
+            return { error: "NotFound", message: "Applicant not found." };
+        }
+
+        const fileExtension = fileName.split('.').pop();
+        const key = `resumes/${applicant._id}/${Date.now()}.${fileExtension}`;
+
+        const command = new PutObjectCommand({
+            Bucket: BUCKET_NAME,
+            Key: key,
+            ContentType: contentType,
+        });
+
+        const uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
+        const publicUrl = `https://${BUCKET_NAME}.s3.amazonaws.com/${key}`;
+
+        return {
+            uploadUrl,
+            publicUrl,
+            key
+        };
     }
 
     @Get("config/{subteamId}")
@@ -213,7 +246,6 @@ export class ATSController extends Controller {
     }
 
     @Get("applications/{teamId}")
-    @Security("oidc")
     @SuccessResponse(200)
     async getTeamApplications(@Path() teamId: string) {
         try {
@@ -243,6 +275,10 @@ export class ATSController extends Controller {
                 stage: app.stage
             }));
 
+            if (kanbanData.length === 0) {
+                return [];
+            }
+
             return kanbanData;
         } catch (err) {
             console.error("Error fetching applications:", err);
@@ -250,6 +286,7 @@ export class ATSController extends Controller {
             return { error: "ServerError", message: "Failed to fetch applications" };
         }
     }
+
 
     private stageToColumn(stage: ApplicationStage): string {
         switch (stage) {
@@ -267,7 +304,8 @@ export class ATSController extends Controller {
         }
     }
 
-    @Post("apply")
+    @Post("applications/apply")
+    @Security("ats_otp")
     @SuccessResponse(201, "Application submitted")
     async applyToSubteam(
         @Body() body: ATSApplicationRequest,

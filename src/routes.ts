@@ -382,12 +382,11 @@ const models: TsoaRoute.Models = {
     "ApplicantProfile": {
         "dataType": "refObject",
         "properties": {
-            "graduationYear": {"dataType":"double"},
-            "major": {"dataType":"string"},
-            "phone": {"dataType":"string"},
             "resumeUrl": {"dataType":"string"},
             "linkedinUrl": {"dataType":"string"},
             "githubUrl": {"dataType":"string"},
+            "whyAppDev": {"dataType":"string"},
+            "additionalInfo": {"dataType":"string"},
         },
         "additionalProperties": false,
     },
@@ -1167,6 +1166,69 @@ export function RegisterRoutes(app: Router) {
             }
         });
         // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsAuthController_otpVerifySession: Record<string, TsoaRoute.ParameterSchema> = {
+                req: {"in":"request","name":"req","required":true,"dataType":"object"},
+        };
+        app.get('/api/auth/verifyotpsession',
+            ...(fetchMiddlewares<RequestHandler>(AuthController)),
+            ...(fetchMiddlewares<RequestHandler>(AuthController.prototype.otpVerifySession)),
+
+            async function AuthController_otpVerifySession(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsAuthController_otpVerifySession, request, response });
+
+                const controller = new AuthController();
+
+              await templateService.apiHandler({
+                methodName: 'otpVerifySession',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsATSController_getResumeUploadUrl: Record<string, TsoaRoute.ParameterSchema> = {
+                request: {"in":"request","name":"request","required":true,"dataType":"object"},
+                fileName: {"in":"query","name":"fileName","required":true,"dataType":"string"},
+                contentType: {"in":"query","name":"contentType","required":true,"dataType":"string"},
+        };
+        app.get('/api/ats/resume/upload-url',
+            authenticateMiddleware([{"ats_otp":[]}]),
+            ...(fetchMiddlewares<RequestHandler>(ATSController)),
+            ...(fetchMiddlewares<RequestHandler>(ATSController.prototype.getResumeUploadUrl)),
+
+            async function ATSController_getResumeUploadUrl(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsATSController_getResumeUploadUrl, request, response });
+
+                const controller = new ATSController();
+
+              await templateService.apiHandler({
+                methodName: 'getResumeUploadUrl',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
         const argsATSController_getSubTeamATSConfig: Record<string, TsoaRoute.ParameterSchema> = {
                 subteamId: {"in":"path","name":"subteamId","required":true,"dataType":"string"},
         };
@@ -1383,7 +1445,8 @@ export function RegisterRoutes(app: Router) {
                 body: {"in":"body","name":"body","required":true,"ref":"ATSApplicationRequest"},
                 request: {"in":"request","name":"request","required":true,"dataType":"object"},
         };
-        app.post('/api/ats/apply',
+        app.post('/api/ats/applications/apply',
+            authenticateMiddleware([{"ats_otp":[]}]),
             ...(fetchMiddlewares<RequestHandler>(ATSController)),
             ...(fetchMiddlewares<RequestHandler>(ATSController.prototype.applyToSubteam)),
 
