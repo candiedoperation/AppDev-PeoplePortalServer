@@ -387,6 +387,8 @@ const models: TsoaRoute.Models = {
             "githubUrl": {"dataType":"string"},
             "whyAppDev": {"dataType":"string"},
             "additionalInfo": {"dataType":"string"},
+            "previousInvolvement": {"dataType":"string"},
+            "instagramFollow": {"dataType":"string"},
         },
         "additionalProperties": false,
     },
@@ -1447,6 +1449,7 @@ export function RegisterRoutes(app: Router) {
                 teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
         };
         app.get('/api/ats/applications/:teamId',
+            authenticateMiddleware([{"oidc":[]}]),
             ...(fetchMiddlewares<RequestHandler>(ATSController)),
             ...(fetchMiddlewares<RequestHandler>(ATSController.prototype.getTeamApplications)),
 
@@ -1462,6 +1465,100 @@ export function RegisterRoutes(app: Router) {
 
               await templateService.apiHandler({
                 methodName: 'getTeamApplications',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsATSController_getApplicantUrls: Record<string, TsoaRoute.ParameterSchema> = {
+                applicantId: {"in":"path","name":"applicantId","required":true,"dataType":"string"},
+        };
+        app.get('/api/ats/applications/applicant/:applicantId/resume',
+            authenticateMiddleware([{"oidc":[]}]),
+            ...(fetchMiddlewares<RequestHandler>(ATSController)),
+            ...(fetchMiddlewares<RequestHandler>(ATSController.prototype.getApplicantUrls)),
+
+            async function ATSController_getApplicantUrls(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsATSController_getApplicantUrls, request, response });
+
+                const controller = new ATSController();
+
+              await templateService.apiHandler({
+                methodName: 'getApplicantUrls',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsATSController_updateApplicationStage: Record<string, TsoaRoute.ParameterSchema> = {
+                applicationId: {"in":"path","name":"applicationId","required":true,"dataType":"string"},
+                body: {"in":"body","name":"body","required":true,"dataType":"nestedObjectLiteral","nestedProperties":{"column":{"dataType":"string","required":true}}},
+        };
+        app.put('/api/ats/applications/:applicationId/stage',
+            authenticateMiddleware([{"oidc":[]}]),
+            ...(fetchMiddlewares<RequestHandler>(ATSController)),
+            ...(fetchMiddlewares<RequestHandler>(ATSController.prototype.updateApplicationStage)),
+
+            async function ATSController_updateApplicationStage(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsATSController_updateApplicationStage, request, response });
+
+                const controller = new ATSController();
+
+              await templateService.apiHandler({
+                methodName: 'updateApplicationStage',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsATSController_getApplicantApplications: Record<string, TsoaRoute.ParameterSchema> = {
+                applicantId: {"in":"path","name":"applicantId","required":true,"dataType":"string"},
+        };
+        app.get('/api/ats/applications/applicant/:applicantId/applications',
+            authenticateMiddleware([{"oidc":[]}]),
+            ...(fetchMiddlewares<RequestHandler>(ATSController)),
+            ...(fetchMiddlewares<RequestHandler>(ATSController.prototype.getApplicantApplications)),
+
+            async function ATSController_getApplicantApplications(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsATSController_getApplicantApplications, request, response });
+
+                const controller = new ATSController();
+
+              await templateService.apiHandler({
+                methodName: 'getApplicantApplications',
                 controller,
                 response,
                 next,

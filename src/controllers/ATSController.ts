@@ -39,7 +39,7 @@ export class ATSController extends Controller {
     @Security("ats_otp")
     @SuccessResponse(200)
     async getResumeUploadUrl(@Request() request: any, @Query() fileName: string, @Query() contentType: string) {
-        const userEmail = request.session?.authorizedUser?.email || request.session?.tempsession?.user?.email;
+        const userEmail = request.session?.tempsession?.user?.email
 
         if (!userEmail) {
             this.setStatus(401);
@@ -79,7 +79,7 @@ export class ATSController extends Controller {
     @Security("ats_otp") // Or appropriate security measure
     @SuccessResponse(307, "Temporary Redirect")
     async getResumeDownloadUrl(@Request() request: any, @Query() key: string) {
-        const userEmail = request.session?.authorizedUser?.email || request.session?.tempsession?.user?.email;
+        const userEmail = request.session?.tempsession?.user?.email
 
         // 1. Verify Authentication
         if (!userEmail) {
@@ -321,6 +321,7 @@ export class ATSController extends Controller {
     }
 
     @Get("applications/{teamId}")
+    @Security("oidc")
     @SuccessResponse(200)
     async getTeamApplications(@Path() teamId: string) {
         try {
@@ -340,6 +341,7 @@ export class ATSController extends Controller {
             // Map to Kanban-friendly format
             const kanbanData = applications.map((app: any) => ({
                 id: app._id.toString(),
+                applicantId: app.applicantId?._id,
                 name: app.applicantId?.fullName || 'Unknown Applicant',
                 email: app.applicantId?.email || '',
                 column: this.stageToColumn(app.stage),
@@ -347,7 +349,9 @@ export class ATSController extends Controller {
                 roles: app.roles || [],
                 subteamPk: app.subteamPk,
                 appliedAt: app.appliedAt,
-                stage: app.stage
+                stage: app.stage,
+                profile: app.applicantId?.profile,
+                responses: app.responses || {}
             }));
 
             if (kanbanData.length === 0) {
@@ -359,6 +363,152 @@ export class ATSController extends Controller {
             console.error("Error fetching applications:", err);
             this.setStatus(500);
             return { error: "ServerError", message: "Failed to fetch applications" };
+        }
+    }
+
+    @Get("applications/applicant/{applicantId}/resume")
+    @Security("oidc")
+    @SuccessResponse(200)
+    async getApplicantUrls(@Path() applicantId: string) {
+        try {
+            const applicant = await Applicant.findById(applicantId).lean();
+            if (!applicant) {
+                this.setStatus(404);
+                return { error: "NotFound", message: "Applicant not found" };
+            }
+
+            const profile = applicant.profile || {};
+            let resumeDownloadUrl: string | undefined;
+
+            if (profile.resumeUrl) {
+                try {
+                    // Check if it's an S3 key (simple heuristic or assume it is if stored internally)
+                    // The upload endpoint stores it as `resumes/${applicant._id}/${Date.now()}.${fileExtension}`
+                    // If it looks like a key, sign it.
+                    // If it's already a full URL (legacy?), just return it (though our new flow uses keys).
+
+                    // For now, we assume if it doesn't start with http, it's a key.
+                    if (!profile.resumeUrl.startsWith('http')) {
+                        const command = new GetObjectCommand({
+                            Bucket: BUCKET_NAME,
+                            Key: profile.resumeUrl,
+                        });
+                        resumeDownloadUrl = await getSignedUrl(s3Client, command, { expiresIn: 900 }); // 15 mins
+                    } else {
+                        resumeDownloadUrl = profile.resumeUrl;
+                    }
+
+                } catch (s3Error) {
+                    console.error("Error signing S3 URL:", s3Error);
+                    // Fallback or just ignore, maybe client can deal with the raw key or empty string?
+                    // We'll leave it undefined if signing fails.
+                }
+            }
+
+            return {
+                resumeUrl: resumeDownloadUrl,
+            };
+
+        } catch (err) {
+            console.error("Error fetching applicant URLs:", err);
+            this.setStatus(500);
+            return { error: "ServerError", message: "Failed to fetch applicant URLs" };
+        }
+    }
+
+
+    @Put("applications/{applicationId}/stage")
+    @Security("oidc")
+    @SuccessResponse(200, "Stage updated")
+    async updateApplicationStage(@Path() applicationId: string, @Body() body: { column: string }) {
+        try {
+            const { column } = body;
+            const newStage = this.columnToStage(column);
+
+            const application = await Application.findById(applicationId);
+            if (!application) {
+                this.setStatus(404);
+                return { error: "NotFound", message: "Application not found" };
+            }
+
+            // Update stage and history
+            application.stage = newStage;
+            application.stageHistory.push({
+                stage: newStage,
+                changedAt: new Date(),
+                changedBy: "System/Recruiter" // TODO: Add actual user info from session
+            });
+
+            await application.save();
+
+            return {
+                message: "Stage updated successfully",
+                application: {
+                    id: application._id,
+                    stage: this.stageToColumn(application.stage),
+                    // Return other needed fields if necessary
+                }
+            };
+        } catch (err) {
+            console.error("Error updating application stage:", err);
+            this.setStatus(500);
+            return { error: "ServerError", message: "Failed to update application stage" };
+        }
+    }
+
+    @Get("applications/applicant/{applicantId}/applications")
+    @Security("oidc")
+    @SuccessResponse(200)
+    async getApplicantApplications(@Path() applicantId: string) {
+        try {
+            const applications = await Application.find({ applicantId: applicantId }).lean().sort({ appliedAt: -1 });
+
+            const results = await Promise.all(applications.map(async (app: any) => {
+                let subteamName = app.subteamPk;
+                let parentTeamName = undefined;
+
+                try {
+                    const groupInfo = await this.authentikClient.getGroupInfo(app.subteamPk);
+                    if (groupInfo && groupInfo.attributes && groupInfo.attributes.friendlyName) {
+                        subteamName = groupInfo.attributes.friendlyName;
+                    } else if (groupInfo && groupInfo.name) {
+                        subteamName = groupInfo.name;
+                    }
+
+                    if (groupInfo && groupInfo.parentPk) {
+                        try {
+                            const parentGroupInfo = await this.authentikClient.getGroupInfo(groupInfo.parentPk);
+                            if (parentGroupInfo && parentGroupInfo.attributes && parentGroupInfo.attributes.friendlyName) {
+                                parentTeamName = parentGroupInfo.attributes.friendlyName;
+                            } else if (parentGroupInfo && parentGroupInfo.name) {
+                                parentTeamName = parentGroupInfo.name;
+                            }
+                        } catch (e) {
+                            console.error(`Failed to fetch parent group info for ${groupInfo.parentPk}`, e);
+                        }
+                    }
+
+                } catch (e) {
+                    console.error(`Failed to fetch group info for ${app.subteamPk}`, e);
+                }
+
+                return {
+                    id: app._id,
+                    subteamPk: app.subteamPk,
+                    subteamName: subteamName,
+                    parentTeamName: parentTeamName,
+                    roles: app.roles,
+                    stage: this.stageToColumn(app.stage),
+                    appliedAt: app.appliedAt,
+                };
+            }));
+
+            return results;
+
+        } catch (err) {
+            console.error("Error fetching applicant applications:", err);
+            this.setStatus(500);
+            return { error: "ServerError", message: "Failed to fetch applicant history" };
         }
     }
 
@@ -379,6 +529,21 @@ export class ATSController extends Controller {
         }
     }
 
+    private columnToStage(column: string): ApplicationStage {
+        switch (column) {
+            case 'applied':
+                return ApplicationStage.NEW_APPLICATIONS;
+            case 'interviewing':
+                return ApplicationStage.INTERVIEW;
+            case 'accepted':
+                return ApplicationStage.HIRED;
+            case 'rejected':
+                return ApplicationStage.REJECTED;
+            default:
+                return ApplicationStage.NEW_APPLICATIONS;
+        }
+    }
+
     @Post("applications/apply")
     @Security("ats_otp")
     @SuccessResponse(201, "Application submitted")
@@ -388,8 +553,14 @@ export class ATSController extends Controller {
     ) {
         try {
             const { subteamPk, roles, profile, responses } = body;
-
-            const userEmail = request.session?.authorizedUser?.email || request.session?.tempsession?.user?.email;
+            if (!subteamPk || !roles || roles.length === 0 || !profile) {
+                this.setStatus(400);
+                return {
+                    error: "InvalidRequest",
+                    message: "You have not provided the required information."
+                };
+            }
+            const userEmail = request.session?.tempsession?.user?.email
 
             if (!userEmail) {
                 this.setStatus(401);
@@ -407,11 +578,6 @@ export class ATSController extends Controller {
                 { upsert: true, new: true, setDefaultsOnInsert: true }
             );
 
-            if (!applicant) {
-                this.setStatus(500);
-                return { error: "ApplicantNotFound", message: "Applicant not found." }
-            }
-
             const existingApp = await Application.findOne({
                 applicantId: applicant._id,
                 subteamPk: subteamPk
@@ -420,7 +586,7 @@ export class ATSController extends Controller {
             if (existingApp) {
                 this.setStatus(409);
                 return {
-                    error: "Duplicate Application",
+                    error: "DuplicateApplication",
                     message: "You have already submitted an application for this subteam."
                 };
             }
@@ -450,16 +616,12 @@ export class ATSController extends Controller {
             }
         } catch (err) {
             this.setStatus(500);
+            console.error(err);
             return {
                 error: "ServerError",
                 message: "Internal Server Error"
             }
         }
     }
-
-
-
-
-
 
 }

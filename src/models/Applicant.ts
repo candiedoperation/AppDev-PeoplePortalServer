@@ -3,13 +3,15 @@ import { Document, Schema, model } from "mongoose";
 interface IApplicant extends Document {
   email: string;
   fullName: string;
-
+  // validation
   profile?: {
     resumeUrl?: string;
-    linkedinUrl?: string;
+    linkedinUrl?: string; // take off 
     githubUrl?: string;
     whyAppDev?: string;
+    previousInvolvement?: string;
     additionalInfo?: string;
+    instagramFollow?: string;
   }
   applicationIds: Schema.Types.ObjectId[];
   createdAt: Date;
@@ -23,7 +25,9 @@ const ApplicantSchema = new Schema<IApplicant>({
     linkedinUrl: { type: String },
     githubUrl: { type: String },
     whyAppDev: { type: String },
-    additionalInfo: { type: String }
+    previousInvolvement: { type: String },
+    additionalInfo: { type: String },
+    instagramFollow: { type: String }
   },
   applicationIds: [{ type: Schema.Types.ObjectId, ref: 'Application' }]
 }, { timestamps: true });
@@ -36,4 +40,6 @@ export interface ApplicantProfile {
   githubUrl?: string;
   whyAppDev?: string;
   additionalInfo?: string;
+  previousInvolvement?: string;
+  instagramFollow?: string;
 }
