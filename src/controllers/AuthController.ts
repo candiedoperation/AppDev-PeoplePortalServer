@@ -157,7 +157,7 @@ export class AuthController extends Controller {
         return {
             name: applicant.fullName,
             email: applicant.email,
-            profile: applicant.profile || {}
+            profile: applicant.profile ? Object.fromEntries(applicant.profile) : {}
         };
     }
 
@@ -168,7 +168,6 @@ export class AuthController extends Controller {
 
         // Check if tempsession and JWT exist
         if (!tempsession?.jwt) {
-            this.setStatus(401);
             return { error: "Unauthorized", message: "No active session" };
         }
 
@@ -184,7 +183,6 @@ export class AuthController extends Controller {
             const applicant = await Applicant.findById(decoded.id).exec();
 
             if (!applicant) {
-                this.setStatus(401);
                 return { error: "Unauthorized", message: "Applicant not found" };
             }
 
@@ -221,13 +219,22 @@ export class AuthController extends Controller {
             return {
                 name: applicant.fullName,
                 email: applicant.email,
-                profile: applicant.profile || {},
+                profile: applicant.profile ? Object.fromEntries(applicant.profile) : {},
                 applications: applicationsWithNames
             };
         } catch (error) {
             // JWT is invalid or expired
-            this.setStatus(401);
             return { error: "Unauthorized", message: "Session expired or invalid" };
         }
+    }
+
+    @Post("logout")
+    @SuccessResponse(200)
+    async handleLogout(@Request() req: express.Request) {
+        return new Promise((resolve) => {
+            req.session.destroy(() => {
+                resolve({ message: "Logged out successfully" });
+            });
+        });
     }
 }

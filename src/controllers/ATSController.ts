@@ -76,7 +76,7 @@ export class ATSController extends Controller {
     }
 
     @Get("resume/download")
-    @Security("ats_otp") // Or appropriate security measure
+    @Security("ats_otp")
     @SuccessResponse(307, "Temporary Redirect")
     async getResumeDownloadUrl(@Request() request: any, @Query() key: string) {
         const userEmail = request.session?.tempsession?.user?.email
@@ -87,40 +87,8 @@ export class ATSController extends Controller {
             return { error: "Unauthorized", message: "User session not found." };
         }
 
-        // 2. Identify User & Authorization
-        // Allow access if it's the user's own resume OR if the user is an admin/reviewer (to be implemented more robustly)
-        // For now, we'll check if the key matches the user's ID.
-        // The key format is: resumes/${applicant._id}/${Date.now()}.${fileExtension}
-
-        let isAuthorized = false;
-
         const applicant = await Applicant.findOne({ email: userEmail });
-        if (applicant && key.startsWith(`resumes/${applicant._id}/`)) {
-            isAuthorized = true;
-        }
-
-        // TODO: Add check for admins/recruiters here once that system is more defined
-        // For example: if (user.role === 'admin') isAuthorized = true;
-
-        if (!isAuthorized) {
-            // Fallback for logic: if they are accessing via the Kanban board (which means they are likely a recruiter)
-            // We need a way to verify that. For now, if they have an active session and the key looks valid, we might need to be lenient 
-            // OR strictly enforce ownership. 
-            // STRICT Strict for now: data privacy.
-
-            // Check if the user is a recruiter? 
-            // The current session setup for recruiters isn't fully visible here, assuming 'authorizedUser' could be a recruiter.
-            // If key doesn't match, 403.
-
-            // TEMPORARY: If we assume only the applicant sees their own resume on the dashboard, strict check is fine.
-            // BUT recruiters need to see it too.
-            // If 'authorizedUser' is present (likely from SSO), they might be a recruiter.
-            if (request.session?.authorizedUser) {
-                isAuthorized = true; // Trust internal users for now?
-            }
-        }
-
-        if (!isAuthorized) {
+        if (!applicant || !key.startsWith(`resumes/${applicant._id}/`)) {
             this.setStatus(403);
             return { error: "Forbidden", message: "You do not have permission to access this file." };
         }
@@ -371,16 +339,18 @@ export class ATSController extends Controller {
     @SuccessResponse(200)
     async getApplicantUrls(@Path() applicantId: string) {
         try {
-            const applicant = await Applicant.findById(applicantId).lean();
+            const applicant = await Applicant.findById(applicantId);
             if (!applicant) {
                 this.setStatus(404);
                 return { error: "NotFound", message: "Applicant not found" };
             }
 
-            const profile = applicant.profile || {};
+            const profile = applicant.profile || new Map<string, string>();
             let resumeDownloadUrl: string | undefined;
 
-            if (profile.resumeUrl) {
+            const resumeUrl = profile.get('resumeUrl');
+
+            if (resumeUrl) {
                 try {
                     // Check if it's an S3 key (simple heuristic or assume it is if stored internally)
                     // The upload endpoint stores it as `resumes/${applicant._id}/${Date.now()}.${fileExtension}`
@@ -388,14 +358,14 @@ export class ATSController extends Controller {
                     // If it's already a full URL (legacy?), just return it (though our new flow uses keys).
 
                     // For now, we assume if it doesn't start with http, it's a key.
-                    if (!profile.resumeUrl.startsWith('http')) {
+                    if (!resumeUrl.startsWith('http')) {
                         const command = new GetObjectCommand({
                             Bucket: BUCKET_NAME,
-                            Key: profile.resumeUrl,
+                            Key: resumeUrl,
                         });
                         resumeDownloadUrl = await getSignedUrl(s3Client, command, { expiresIn: 900 }); // 15 mins
                     } else {
-                        resumeDownloadUrl = profile.resumeUrl;
+                        resumeDownloadUrl = resumeUrl;
                     }
 
                 } catch (s3Error) {
@@ -553,6 +523,8 @@ export class ATSController extends Controller {
     ) {
         try {
             const { subteamPk, roles, profile, responses } = body;
+
+            // 1. Basic Structure Validation
             if (!subteamPk || !roles || roles.length === 0 || !profile) {
                 this.setStatus(400);
                 return {
@@ -560,13 +532,82 @@ export class ATSController extends Controller {
                     message: "You have not provided the required information."
                 };
             }
-            const userEmail = request.session?.tempsession?.user?.email
 
+            const userEmail = request.session?.tempsession?.user?.email
             if (!userEmail) {
                 this.setStatus(401);
                 return { error: "Unauthorized", message: "User session not found. Please verify your email." };
             }
 
+            // 2. Fetch Subteam Configuration & Verify Recruiting Status
+            const config = await SubteamConfig.findOne({ subteamPk }).exec();
+            if (!config || !config.isRecruiting) {
+                this.setStatus(403);
+                return {
+                    error: "RecruitmentClosed",
+                    message: "This subteam is not currently accepting applications."
+                };
+            }
+
+            // 3. Validate Roles
+            const allowedRoles = new Set(config.roles);
+            for (const role of roles) {
+                if (!allowedRoles.has(role)) {
+                    this.setStatus(400);
+                    return { error: "InvalidRole", message: `The role '${role}' is not valid for this subteam.` };
+                }
+            }
+
+            // 4. Validate Personal Profile (PERSONAL_INFO_FIELDS)
+            const requiredProfileFields = [
+                'resumeUrl', 'whyAppDev', 'instagramFollow'
+            ];
+
+            for (const field of requiredProfileFields) {
+                if (!profile[field] || (typeof profile[field] === 'string' && profile[field].trim() === '')) {
+                    this.setStatus(400);
+                    return { error: "MissingRequiredField", message: `Please provide your ${field}.` };
+                }
+            }
+
+            // Profile-specific logic (URLs are now optional, but if provided, we can still validate them if we want, or just skip)
+            if (profile.linkedinUrl && profile.linkedinUrl.trim() !== "" && !profile.linkedinUrl.includes("linkedin.com")) {
+                this.setStatus(400);
+                return { error: "InvalidURL", message: "Please provide a valid LinkedIn URL if you choose to include one." };
+            }
+            if (profile.githubUrl && profile.githubUrl.trim() !== "" && !profile.githubUrl.includes("github.com")) {
+                this.setStatus(400);
+                return { error: "InvalidURL", message: "Please provide a valid GitHub URL if you choose to include one." };
+            }
+
+            const whyAppDevWords = profile.whyAppDev?.trim().split(/\s+/).filter(Boolean).length || 0;
+            if (whyAppDevWords > 200) {
+                this.setStatus(400);
+                return { error: "WordCountExceeded", message: "Your 'Why App Dev' response must be 200 words or less." };
+            }
+
+            // 5. Validate Role-Specific Responses
+            const authentikSubteamInfo = await this.authentikClient.getGroupInfo(subteamPk);
+            const parentInfo = await this.authentikClient.getGroupInfo(authentikSubteamInfo.parentPk);
+            const parentName = parentInfo.attributes.friendlyName || parentInfo.name;
+            const parentQuestionKey = `Why are you interested in ${parentName}?`;
+
+            if (!responses[parentQuestionKey] || responses[parentQuestionKey].trim() === '') {
+                this.setStatus(400);
+                return { error: "MissingResponse", message: `Please answer: ${parentQuestionKey}` };
+            }
+
+            for (const role of roles) {
+                const questions = config.roleSpecificQuestions.get(role) || [];
+                for (const question of questions) {
+                    if (!responses[question] || responses[question].trim() === '') {
+                        this.setStatus(400);
+                        return { error: "MissingResponse", message: `Please answer the question for the ${role} role.` };
+                    }
+                }
+            }
+
+            // 6. Database Operations
             const applicant = await Applicant.findOneAndUpdate(
                 { email: userEmail },
                 {
@@ -581,7 +622,7 @@ export class ATSController extends Controller {
             const existingApp = await Application.findOne({
                 applicantId: applicant._id,
                 subteamPk: subteamPk
-            })
+            });
 
             if (existingApp) {
                 this.setStatus(409);
@@ -604,7 +645,6 @@ export class ATSController extends Controller {
                 }]
             });
 
-            // Add the applicationId to the applicant's applicationIds array
             await Applicant.findByIdAndUpdate(
                 applicant._id,
                 { $push: { applicationIds: application._id } }
@@ -613,7 +653,7 @@ export class ATSController extends Controller {
             return {
                 message: "Application submitted successfully",
                 id: application._id
-            }
+            };
         } catch (err) {
             this.setStatus(500);
             console.error(err);
@@ -624,4 +664,43 @@ export class ATSController extends Controller {
         }
     }
 
+    @Post("profile")
+    @Security("ats_otp")
+    @SuccessResponse(200, "Profile Updated")
+    async updateProfile(@Body() body: ApplicantProfile, @Request() request: any) {
+        try {
+            const userEmail = request.session?.tempsession?.user?.email
+            if (!userEmail) {
+                this.setStatus(401);
+                return { error: "Unauthorized", message: "User session not found." };
+            }
+
+            const applicant = await Applicant.findOne({ email: userEmail });
+            if (!applicant) {
+                this.setStatus(404);
+                return { error: "NotFound", message: "Applicant not found." };
+            }
+
+            // Merge existing profile with new updates
+            const currentProfile = applicant.profile ? Object.fromEntries(applicant.profile) : {};
+            const updatedProfile = { ...currentProfile, ...body };
+
+            await Applicant.findOneAndUpdate(
+                { email: userEmail },
+                {
+                    $set: {
+                        profile: updatedProfile,
+                        updatedAt: new Date()
+                    }
+                }
+            );
+
+            return { message: "Profile updated successfully" };
+
+        } catch (err) {
+            console.error("Error updating profile:", err);
+            this.setStatus(500);
+            return { error: "ServerError", message: "Failed to update profile" };
+        }
+    }
 }
