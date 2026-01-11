@@ -786,7 +786,7 @@ export class ATSController extends Controller {
                 {
                     $set: {
                         email: userEmail,
-                        fullName: profile.fullName || userEmail.split('@')[0],
+                        fullName: request.session.tempsession?.user?.name || userEmail.split('@')[0],
                         profile: new Map(Object.entries(profile)),
                         updatedAt: new Date()
                     }
