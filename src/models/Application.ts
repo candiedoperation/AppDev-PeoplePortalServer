@@ -10,22 +10,30 @@ export enum ApplicationStage {
 
 export interface IApplication extends Document {
   applicantId: Schema.Types.ObjectId;
-  subteamPk: string;
-  roles: string[]; // Changed from single role to array of roles
+  teamPk: string;
+  rolePreferences: string[]; // Ordered array: ["1st choice", "2nd choice", ...]
   stage: ApplicationStage;
-  responses?: Map<string, string>; // question -> answer (aggregated from all roles)
+  responses: Map<string, string>;
   appliedAt: Date;
   stageHistory: Array<{
     stage: ApplicationStage;
     changedAt: Date;
     changedBy?: string;
   }>;
+  hiredRole?: string;
 }
 
 const ApplicationSchema = new Schema<IApplication>({
   applicantId: { type: Schema.Types.ObjectId, ref: 'Applicant', required: true, index: true },
-  subteamPk: { type: String, required: true, index: true },
-  roles: [{ type: String, required: true }], // Array of roles within the subteam
+  teamPk: { type: String, required: true, index: true },
+  rolePreferences: {
+    type: [String],
+    required: true,
+    validate: {
+      validator: (v: string[]) => v && v.length > 0,
+      message: 'At least one role preference is required'
+    }
+  },
   stage: {
     type: String,
     enum: Object.values(ApplicationStage),
@@ -36,9 +44,10 @@ const ApplicationSchema = new Schema<IApplication>({
   responses: {
     type: Map,
     of: String,
-    required: false
+    required: true,
+    default: new Map()
   },
-  appliedAt: { type: Date, default: Date.now },
+  appliedAt: { type: Date, default: Date.now, required: true },
   stageHistory: [{
     stage: {
       type: String,
@@ -47,11 +56,13 @@ const ApplicationSchema = new Schema<IApplication>({
     },
     changedAt: { type: Date, default: Date.now },
     changedBy: { type: String }
-  }]
+  }],
+  hiredRole: { type: String, required: false }
 }, { timestamps: true });
 
-// Updated indexes
-ApplicationSchema.index({ subteamPk: 1, stage: 1 });
-ApplicationSchema.index({ subteamPk: 1, roles: 1 }); // Supports queries on specific roles
+// Updated indexes for team-level queries
+ApplicationSchema.index({ teamPk: 1, stage: 1 });
+ApplicationSchema.index({ applicantId: 1, teamPk: 1 }, { unique: true }); // One application per team per applicant
 
 export const Application = model<IApplication>('Application', ApplicationSchema);
+

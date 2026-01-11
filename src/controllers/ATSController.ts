@@ -1,17 +1,20 @@
 import { Body, Request, Controller, Delete, Get, Path, Post, Put, Route, SuccessResponse } from "tsoa";
-import { SubteamConfig } from "../models/SubteamConfig";
-import { TeamRecruitingStatus } from "../models/TeamRecruitingStatus";
+import { SubteamConfig, ISubteamConfig } from "../models/SubteamConfig";
+import { TeamRecruitingStatus, ITeamRecruitingStatus } from "../models/TeamRecruitingStatus";
 import { AuthentikClient } from "../clients/AuthentikClient";
-import { Applicant } from '../models/Applicant';
-import { Application } from "../models/Application";
-import { ApplicationStage } from "../models/Application";
+import { GetGroupInfoResponse } from "../clients/AuthentikClient/models";
+import { Applicant, IApplicant, ApplicantProfile } from '../models/Applicant';
+import { Application, IApplication, ApplicationStage } from "../models/Application";
 import { Security } from "tsoa";
 import * as express from 'express'
-import { ApplicantProfile } from "../models/Applicant";
 import { PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { s3Client, BUCKET_NAME } from "../clients/AWSClient/S3Client";
 import { Query } from "tsoa";
+
+// ====================
+// Type Definitions
+// ====================
 
 interface ATSSubteamConfigRequest {
     isRecruiting: boolean;
@@ -19,12 +22,35 @@ interface ATSSubteamConfigRequest {
     roleSpecificQuestions: { [role: string]: string[] };
 }
 
-interface ATSApplicationRequest {
-    subteamPk: string;
-    roles: string[];
+// Team-level application request with ordered role preferences
+interface ATSTeamApplicationRequest {
+    teamPk: string;
+    rolePreferences: string[];  // Ordered array: ["1st choice", "2nd choice", ...]
     profile: ApplicantProfile;
     responses: Record<string, string>;
 }
+
+// Response format for Kanban board
+interface KanbanApplicationCard {
+    id: string;
+    applicantId: string;
+    name: string;
+    email: string;
+    column: string;
+    rolePreferences: string[];  // Ordered role preferences
+    appliedAt: Date;
+    stage: ApplicationStage;
+    profile: Record<string, string>;
+    responses: Record<string, string>;
+    hiredRole: string | undefined;
+}
+
+// Constants
+const ALLOWED_RESUME_EXTENSIONS = ['pdf'] as const;
+const ALLOWED_CONTENT_TYPES = ['application/pdf'] as const;
+const MAX_RESPONSE_LENGTH = 500;
+const MAX_WHY_APPDEV_WORDS = 200;
+const MIN_RESPONSE_WORDS = 10;
 
 @Route("/api/ats")
 export class ATSController extends Controller {
@@ -39,20 +65,59 @@ export class ATSController extends Controller {
     @Security("ats_otp")
     @SuccessResponse(200)
     async getResumeUploadUrl(@Request() request: any, @Query() fileName: string, @Query() contentType: string) {
-        const userEmail = request.session?.tempsession?.user?.email
+        const userEmail = request.session?.tempsession?.user?.email;
 
         if (!userEmail) {
             this.setStatus(401);
             return { error: "Unauthorized", message: "User session not found." };
         }
 
-        const applicant = await Applicant.findOne({ email: userEmail });
-        if (!applicant) {
-            this.setStatus(404);
-            return { error: "NotFound", message: "Applicant not found." };
+        // Validate PDF only
+        const fileExtension = fileName.split('.').pop()?.toLowerCase();
+        if (!fileExtension || !ALLOWED_RESUME_EXTENSIONS.includes(fileExtension as any)) {
+            this.setStatus(400);
+            return {
+                error: "InvalidFileType",
+                message: `Only PDF resumes are accepted. Allowed types: ${ALLOWED_RESUME_EXTENSIONS.join(', ')}`
+            };
         }
 
-        const fileExtension = fileName.split('.').pop();
+        if (!ALLOWED_CONTENT_TYPES.includes(contentType as any)) {
+            this.setStatus(400);
+            return { error: "InvalidContentType", message: "Invalid content type. Only PDF is accepted." };
+        }
+
+        // Prevent path traversal
+        if (fileName.includes('..') || fileName.includes('/') || fileName.includes('\\')) {
+            this.setStatus(400);
+            return { error: "InvalidFileName", message: "Invalid file name" };
+        }
+
+        const applicant = await Applicant.findOne({ email: userEmail }).exec();
+        if (!applicant) {
+            // Create applicant if doesn't exist yet
+            const newApplicant = await Applicant.create({
+                email: userEmail,
+                fullName: userEmail.split('@')[0],
+                profile: new Map()
+            });
+            const key = `resumes/${newApplicant._id}/${Date.now()}.${fileExtension}`;
+
+            const command = new PutObjectCommand({
+                Bucket: BUCKET_NAME,
+                Key: key,
+                ContentType: contentType,
+            });
+
+            const uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
+
+            const protocol = request.protocol;
+            const host = request.get('host');
+            const publicUrl = `${protocol}://${host}/api/ats/resume/download?key=${encodeURIComponent(key)}`;
+
+            return { uploadUrl, publicUrl, key };
+        }
+
         const key = `resumes/${applicant._id}/${Date.now()}.${fileExtension}`;
 
         const command = new PutObjectCommand({
@@ -193,7 +258,7 @@ export class ATSController extends Controller {
     @Get("openteams")
     @SuccessResponse(200)
     async getAllRecruitingTeams() {
-        const recruitingTeams: any = await TeamRecruitingStatus.find({ isRecruiting: true }).lean().exec();
+        const recruitingTeams: any[] = await TeamRecruitingStatus.find({ isRecruiting: true }).lean().exec();
 
         /* Populate Team and Subteam Info */
         for (const team of recruitingTeams) {
@@ -223,6 +288,63 @@ export class ATSController extends Controller {
         }
 
         return recruitingTeams;
+    }
+
+    @Get("teams/{teamId}")
+    @SuccessResponse(200)
+    async getTeamDetails(@Path() teamId: string) {
+        try {
+            // Get team info from Authentik
+            const teamInfo = await this.authentikClient.getGroupInfo(teamId);
+
+            // Get team recruiting status
+            const teamStatus = await TeamRecruitingStatus.findOne({ teamPk: teamId }).exec();
+
+            if (!teamStatus || !teamStatus.isRecruiting) {
+                this.setStatus(403);
+                return {
+                    error: "NotRecruiting",
+                    message: "This team is not currently recruiting"
+                };
+            }
+
+            // Fetch configs for all recruiting subteams
+            const recruitingSubteams = await Promise.all(
+                teamStatus.recruitingSubteamPks.map(async (subteamPk) => {
+                    const config = await SubteamConfig.findOne({ subteamPk }).exec();
+                    const subteamInfo = await this.authentikClient.getGroupInfo(subteamPk);
+
+                    return {
+                        subteamPk: subteamPk,
+                        friendlyName: subteamInfo.attributes.friendlyName || subteamInfo.name,
+                        description: subteamInfo.attributes.description,
+                        roles: config?.roles || [],
+                        roleSpecificQuestions: config?.roleSpecificQuestions ?
+                            Object.fromEntries(config.roleSpecificQuestions.entries()) : {}
+                    };
+                })
+            );
+
+            return {
+                teamPk: teamId,
+                teamInfo: {
+                    name: teamInfo.name,
+                    friendlyName: teamInfo.attributes.friendlyName,
+                    description: teamInfo.attributes.description,
+                    seasonText: `${teamInfo.attributes.seasonType} ${teamInfo.attributes.seasonYear}`,
+                    pk: teamInfo.pk
+                },
+                recruitingSubteams: recruitingSubteams
+            };
+
+        } catch (err) {
+            console.error("Error fetching team details:", err);
+            this.setStatus(500);
+            return {
+                error: "ServerError",
+                message: "Failed to fetch team details"
+            };
+        }
     }
 
     @Get("openteams/{teamId}")
@@ -291,46 +413,36 @@ export class ATSController extends Controller {
     @Get("applications/{teamId}")
     @Security("oidc")
     @SuccessResponse(200)
-    async getTeamApplications(@Path() teamId: string) {
+    async getTeamApplications(@Path() teamId: string): Promise<KanbanApplicationCard[]> {
         try {
-            // Get all subteams for this team
-            const teamInfo = await this.authentikClient.getGroupInfo(teamId);
-            const subteamPks = teamInfo.subteamPkList;
-
-            if (subteamPks.length === 0) {
-                return []; // No subteams, return empty array
-            }
-
-            // Fetch all applications for these subteams, populating applicant data
+            // Fetch all applications for this team directly - ONE per applicant!
             const applications = await Application.find({
-                subteamPk: { $in: subteamPks }
-            }).populate('applicantId').lean();
+                teamPk: teamId
+            })
+                .populate<{ applicantId: IApplicant }>('applicantId')
+                .lean()
+                .exec();
 
             // Map to Kanban-friendly format
-            const kanbanData = applications.map((app: any) => ({
+            const kanbanData: KanbanApplicationCard[] = applications.map((app) => ({
                 id: app._id.toString(),
-                applicantId: app.applicantId?._id,
-                name: app.applicantId?.fullName || 'Unknown Applicant',
-                email: app.applicantId?.email || '',
+                applicantId: app.applicantId._id.toString(),
+                name: app.applicantId.fullName || 'Unknown Applicant',
+                email: app.applicantId.email || '',
                 column: this.stageToColumn(app.stage),
-                role: app.roles?.join(', ') || '',
-                roles: app.roles || [],
-                subteamPk: app.subteamPk,
+                rolePreferences: app.rolePreferences,
                 appliedAt: app.appliedAt,
                 stage: app.stage,
-                profile: app.applicantId?.profile,
-                responses: app.responses || {}
+                profile: app.applicantId.profile as any,
+                responses: app.responses as any,
+                hiredRole: app.hiredRole || undefined
             }));
-
-            if (kanbanData.length === 0) {
-                return [];
-            }
 
             return kanbanData;
         } catch (err) {
             console.error("Error fetching applications:", err);
             this.setStatus(500);
-            return { error: "ServerError", message: "Failed to fetch applications" };
+            throw new Error("Failed to fetch applications");
         }
     }
 
@@ -431,45 +543,33 @@ export class ATSController extends Controller {
     @SuccessResponse(200)
     async getApplicantApplications(@Path() applicantId: string) {
         try {
-            const applications = await Application.find({ applicantId: applicantId }).lean().sort({ appliedAt: -1 });
+            const applications = await Application.find({ applicantId: applicantId })
+                .lean()
+                .sort({ appliedAt: -1 })
+                .exec();
 
             const results = await Promise.all(applications.map(async (app: any) => {
-                let subteamName = app.subteamPk;
-                let parentTeamName = undefined;
+                let teamName = app.teamPk;
 
                 try {
-                    const groupInfo = await this.authentikClient.getGroupInfo(app.subteamPk);
-                    if (groupInfo && groupInfo.attributes && groupInfo.attributes.friendlyName) {
-                        subteamName = groupInfo.attributes.friendlyName;
-                    } else if (groupInfo && groupInfo.name) {
-                        subteamName = groupInfo.name;
+                    const teamInfo = await this.authentikClient.getGroupInfo(app.teamPk);
+                    if (teamInfo && teamInfo.attributes && teamInfo.attributes.friendlyName) {
+                        teamName = teamInfo.attributes.friendlyName;
+                    } else if (teamInfo && teamInfo.name) {
+                        teamName = teamInfo.name;
                     }
-
-                    if (groupInfo && groupInfo.parentPk) {
-                        try {
-                            const parentGroupInfo = await this.authentikClient.getGroupInfo(groupInfo.parentPk);
-                            if (parentGroupInfo && parentGroupInfo.attributes && parentGroupInfo.attributes.friendlyName) {
-                                parentTeamName = parentGroupInfo.attributes.friendlyName;
-                            } else if (parentGroupInfo && parentGroupInfo.name) {
-                                parentTeamName = parentGroupInfo.name;
-                            }
-                        } catch (e) {
-                            console.error(`Failed to fetch parent group info for ${groupInfo.parentPk}`, e);
-                        }
-                    }
-
                 } catch (e) {
-                    console.error(`Failed to fetch group info for ${app.subteamPk}`, e);
+                    console.error(`Failed to fetch team info for ${app.teamPk}`, e);
                 }
 
                 return {
                     id: app._id,
-                    subteamPk: app.subteamPk,
-                    subteamName: subteamName,
-                    parentTeamName: parentTeamName,
-                    roles: app.roles,
+                    teamPk: app.teamPk,
+                    teamName: teamName,
+                    rolePreferences: app.rolePreferences,
                     stage: this.stageToColumn(app.stage),
                     appliedAt: app.appliedAt,
+                    hiredRole: app.hiredRole
                 };
             }));
 
@@ -517,125 +617,188 @@ export class ATSController extends Controller {
     @Post("applications/apply")
     @Security("ats_otp")
     @SuccessResponse(201, "Application submitted")
-    async applyToSubteam(
-        @Body() body: ATSApplicationRequest,
+    async applyToTeam(
+        @Body() body: ATSTeamApplicationRequest,
         @Request() request: any
     ) {
         try {
-            const { subteamPk, roles, profile, responses } = body;
+            const { teamPk, rolePreferences, profile, responses } = body;
 
-            // 1. Basic Structure Validation
-            if (!subteamPk || !roles || roles.length === 0 || !profile) {
+            // 1. Basic Validation
+            if (!teamPk || !rolePreferences || rolePreferences.length === 0 || !profile) {
                 this.setStatus(400);
                 return {
                     error: "InvalidRequest",
-                    message: "You have not provided the required information."
+                    message: "TeamPk, role preferences, and profile are required."
                 };
             }
 
-            const userEmail = request.session?.tempsession?.user?.email
+            const userEmail = request.session?.tempsession?.user?.email;
             if (!userEmail) {
                 this.setStatus(401);
                 return { error: "Unauthorized", message: "User session not found. Please verify your email." };
             }
 
-            // 2. Fetch Subteam Configuration & Verify Recruiting Status
-            const config = await SubteamConfig.findOne({ subteamPk }).exec();
-            if (!config || !config.isRecruiting) {
+            // 2. Verify team exists and is recruiting
+            const teamInfo: GetGroupInfoResponse = await this.authentikClient.getGroupInfo(teamPk);
+            const teamStatus = await TeamRecruitingStatus.findOne({ teamPk }).exec();
+
+            if (!teamStatus || !teamStatus.isRecruiting) {
                 this.setStatus(403);
                 return {
                     error: "RecruitmentClosed",
-                    message: "This subteam is not currently accepting applications."
+                    message: "This team is not currently accepting applications."
                 };
             }
 
-            // 3. Validate Roles
-            const allowedRoles = new Set(config.roles);
-            for (const role of roles) {
-                if (!allowedRoles.has(role)) {
-                    this.setStatus(400);
-                    return { error: "InvalidRole", message: `The role '${role}' is not valid for this subteam.` };
+            // 3. Collect all available roles from recruiting subteams
+            const allAvailableRoles = new Set<string>();
+            const allQuestions = new Set<string>();
+
+            for (const subteamPk of teamStatus.recruitingSubteamPks) {
+                const config = await SubteamConfig.findOne({ subteamPk }).exec();
+                if (config && config.isRecruiting) {
+                    config.roles.forEach(role => allAvailableRoles.add(role));
                 }
             }
 
-            // 4. Validate Personal Profile (PERSONAL_INFO_FIELDS)
-            const requiredProfileFields = [
-                'resumeUrl', 'whyAppDev', 'instagramFollow'
-            ];
-
-            for (const field of requiredProfileFields) {
-                if (!profile[field] || (typeof profile[field] === 'string' && profile[field].trim() === '')) {
+            // 4. Validate all selected roles are available
+            for (const role of rolePreferences) {
+                if (!allAvailableRoles.has(role)) {
                     this.setStatus(400);
-                    return { error: "MissingRequiredField", message: `Please provide your ${field}.` };
+                    return {
+                        error: "InvalidRole",
+                        message: `Role '${role}' is not available for this team`
+                    };
                 }
             }
 
-            // Profile-specific logic (URLs are now optional, but if provided, we can still validate them if we want, or just skip)
-            if (profile.linkedinUrl && profile.linkedinUrl.trim() !== "" && !profile.linkedinUrl.includes("linkedin.com")) {
-                this.setStatus(400);
-                return { error: "InvalidURL", message: "Please provide a valid LinkedIn URL if you choose to include one." };
-            }
-            if (profile.githubUrl && profile.githubUrl.trim() !== "" && !profile.githubUrl.includes("github.com")) {
-                this.setStatus(400);
-                return { error: "InvalidURL", message: "Please provide a valid GitHub URL if you choose to include one." };
-            }
-
-            const whyAppDevWords = profile.whyAppDev?.trim().split(/\s+/).filter(Boolean).length || 0;
-            if (whyAppDevWords > 200) {
-                this.setStatus(400);
-                return { error: "WordCountExceeded", message: "Your 'Why App Dev' response must be 200 words or less." };
-            }
-
-            // 5. Validate Role-Specific Responses
-            const authentikSubteamInfo = await this.authentikClient.getGroupInfo(subteamPk);
-            const parentInfo = await this.authentikClient.getGroupInfo(authentikSubteamInfo.parentPk);
-            const parentName = parentInfo.attributes.friendlyName || parentInfo.name;
-            const parentQuestionKey = `Why are you interested in ${parentName}?`;
-
-            if (!responses[parentQuestionKey] || responses[parentQuestionKey].trim() === '') {
-                this.setStatus(400);
-                return { error: "MissingResponse", message: `Please answer: ${parentQuestionKey}` };
-            }
-
-            for (const role of roles) {
-                const questions = config.roleSpecificQuestions.get(role) || [];
-                for (const question of questions) {
-                    if (!responses[question] || responses[question].trim() === '') {
-                        this.setStatus(400);
-                        return { error: "MissingResponse", message: `Please answer the question for the ${role} role.` };
+            // 5. Collect role-specific questions for selected roles
+            for (const subteamPk of teamStatus.recruitingSubteamPks) {
+                const config = await SubteamConfig.findOne({ subteamPk }).exec();
+                if (config && config.isRecruiting) {
+                    for (const role of rolePreferences) {
+                        if (config.roles.includes(role)) {
+                            const roleQuestions = config.roleSpecificQuestions.get(role) || [];
+                            roleQuestions.forEach(q => allQuestions.add(q));
+                        }
                     }
                 }
             }
 
-            // 6. Database Operations
-            const applicant = await Applicant.findOneAndUpdate(
+            // 6. Validate personal profile
+            if (!profile.resumeUrl || profile.resumeUrl.trim() === '') {
+                this.setStatus(400);
+                return { error: "MissingRequiredField", message: "Resume URL is required" };
+            }
+
+            if (!profile.resumeUrl.toLowerCase().endsWith('.pdf')) {
+                this.setStatus(400);
+                return { error: "InvalidFileType", message: "Only PDF resumes are accepted" };
+            }
+
+            if (!profile.whyAppDev || profile.whyAppDev.trim() === '') {
+                this.setStatus(400);
+                return { error: "MissingRequiredField", message: "Please provide 'Why App Dev'" };
+            }
+
+            if (!profile.instagramFollow || profile.instagramFollow.trim() === '') {
+                this.setStatus(400);
+                return { error: "MissingRequiredField", message: "Please confirm Instagram follow" };
+            }
+
+            if (profile.linkedinUrl && profile.linkedinUrl.trim() !== "") {
+                try { new URL(profile.linkedinUrl) } catch {
+                    this.setStatus(400);
+                    return { error: "InvalidURL", message: "Please provide a valid LinkedIn URL" };
+                }
+            }
+
+            if (profile.githubUrl && profile.githubUrl.trim() !== "") {
+                try { new URL(profile.githubUrl) } catch {
+                    this.setStatus(400);
+                    return { error: "InvalidURL", message: "Please provide a valid GitHub URL" };
+                }
+            }
+
+            const whyAppDevWords = profile.whyAppDev.trim().split(/\s+/).filter(Boolean).length;
+            if (whyAppDevWords > MAX_WHY_APPDEV_WORDS) {
+                this.setStatus(400);
+                return {
+                    error: "WordCountExceeded",
+                    message: `'Why App Dev' must be ${MAX_WHY_APPDEV_WORDS} words or less`
+                };
+            }
+
+            // 7. Validate responses - Team question
+            const teamName = teamInfo.attributes.friendlyName || teamInfo.name;
+            const teamQuestionKey = `Why are you interested in ${teamName}?`;
+            allQuestions.add(teamQuestionKey);
+
+            for (const question of Array.from(allQuestions)) {
+                if (!responses[question] || responses[question].trim() === '') {
+                    this.setStatus(400);
+                    return {
+                        error: "MissingResponse",
+                        message: `Please answer: ${question}`
+                    };
+                }
+
+                if (responses[question].length > MAX_RESPONSE_LENGTH) {
+                    this.setStatus(400);
+                    return {
+                        error: "ResponseTooLong",
+                        message: `Response too long for: ${question}. Maximum ${MAX_RESPONSE_LENGTH} characters.`
+                    };
+                }
+
+                const wordCount = responses[question].trim().split(/\s+/).filter(Boolean).length;
+                if (wordCount < MIN_RESPONSE_WORDS) {
+                    this.setStatus(400);
+                    return {
+                        error: "ResponseTooShort",
+                        message: `Response too short for: ${question}. Please provide at least ${MIN_RESPONSE_WORDS} words.`
+                    };
+                }
+            }
+
+            // 8. Check for duplicate application
+            const applicant = await Applicant.findOne({ email: userEmail }).exec();
+
+            if (applicant) {
+                const existingApp = await Application.findOne({
+                    applicantId: applicant._id,
+                    teamPk: teamPk
+                }).exec();
+
+                if (existingApp) {
+                    this.setStatus(409);
+                    return {
+                        error: "DuplicateApplication",
+                        message: "You have already applied to this team."
+                    };
+                }
+            }
+
+            // 9. Create/update applicant
+            const updatedApplicant = await Applicant.findOneAndUpdate(
                 { email: userEmail },
                 {
                     $set: {
-                        profile: profile,
+                        email: userEmail,
+                        fullName: profile.fullName || userEmail.split('@')[0],
+                        profile: new Map(Object.entries(profile)),
                         updatedAt: new Date()
                     }
                 },
                 { upsert: true, new: true, setDefaultsOnInsert: true }
-            );
+            ).exec();
 
-            const existingApp = await Application.findOne({
-                applicantId: applicant._id,
-                subteamPk: subteamPk
-            });
-
-            if (existingApp) {
-                this.setStatus(409);
-                return {
-                    error: "DuplicateApplication",
-                    message: "You have already submitted an application for this subteam."
-                };
-            }
-
+            // 10. Create application with ordered role preferences
             const application = await Application.create({
-                applicantId: applicant._id,
-                subteamPk: subteamPk,
-                roles: roles,
+                applicantId: updatedApplicant._id,
+                teamPk: teamPk,
+                rolePreferences: rolePreferences,  // Ordered array of roles
                 stage: ApplicationStage.NEW_APPLICATIONS,
                 responses: new Map(Object.entries(responses)),
                 appliedAt: new Date(),
@@ -646,21 +809,22 @@ export class ATSController extends Controller {
             });
 
             await Applicant.findByIdAndUpdate(
-                applicant._id,
+                updatedApplicant._id,
                 { $push: { applicationIds: application._id } }
-            );
+            ).exec();
 
             return {
                 message: "Application submitted successfully",
                 id: application._id
             };
+
         } catch (err) {
+            console.error("Application submission error:", err);
             this.setStatus(500);
-            console.error(err);
             return {
                 error: "ServerError",
-                message: "Internal Server Error"
-            }
+                message: "Failed to submit application"
+            };
         }
     }
 

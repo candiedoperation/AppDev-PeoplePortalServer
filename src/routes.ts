@@ -379,9 +379,9 @@ const models: TsoaRoute.Models = {
         "type": {"dataType":"nestedObjectLiteral","nestedProperties":{},"validators":{}},
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-    "ApplicantProfile": {
-        "dataType": "refAlias",
-        "type": {"dataType":"nestedObjectLiteral","nestedProperties":{},"additionalProperties":{"dataType":"string"},"validators":{}},
+    "ApplicationStage": {
+        "dataType": "refEnum",
+        "enums": ["New Applications","Rejected","Interview","Rejected After Interview","Hired"],
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
     "Record_string.string_": {
@@ -389,11 +389,41 @@ const models: TsoaRoute.Models = {
         "type": {"dataType":"nestedObjectLiteral","nestedProperties":{},"additionalProperties":{"dataType":"string"},"validators":{}},
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-    "ATSApplicationRequest": {
+    "KanbanApplicationCard": {
         "dataType": "refObject",
         "properties": {
-            "subteamPk": {"dataType":"string","required":true},
-            "roles": {"dataType":"array","array":{"dataType":"string"},"required":true},
+            "id": {"dataType":"string","required":true},
+            "applicantId": {"dataType":"string","required":true},
+            "name": {"dataType":"string","required":true},
+            "email": {"dataType":"string","required":true},
+            "column": {"dataType":"string","required":true},
+            "rolePreferences": {"dataType":"array","array":{"dataType":"string"},"required":true},
+            "appliedAt": {"dataType":"datetime","required":true},
+            "stage": {"ref":"ApplicationStage","required":true},
+            "profile": {"ref":"Record_string.string_","required":true},
+            "responses": {"ref":"Record_string.string_","required":true},
+            "hiredRole": {"dataType":"union","subSchemas":[{"dataType":"string"},{"dataType":"undefined"}],"required":true},
+        },
+        "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "ApplicantProfile": {
+        "dataType": "refObject",
+        "properties": {
+            "resumeUrl": {"dataType":"string","required":true},
+            "whyAppDev": {"dataType":"string","required":true},
+            "instagramFollow": {"dataType":"string","required":true},
+            "linkedinUrl": {"dataType":"string"},
+            "githubUrl": {"dataType":"string"},
+        },
+        "additionalProperties": {"dataType":"union","subSchemas":[{"dataType":"string"},{"dataType":"undefined"}]},
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "ATSTeamApplicationRequest": {
+        "dataType": "refObject",
+        "properties": {
+            "teamPk": {"dataType":"string","required":true},
+            "rolePreferences": {"dataType":"array","array":{"dataType":"string"},"required":true},
             "profile": {"ref":"ApplicantProfile","required":true},
             "responses": {"ref":"Record_string.string_","required":true},
         },
@@ -1374,6 +1404,36 @@ export function RegisterRoutes(app: Router) {
             }
         });
         // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsATSController_getTeamDetails: Record<string, TsoaRoute.ParameterSchema> = {
+                teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
+        };
+        app.get('/api/ats/teams/:teamId',
+            ...(fetchMiddlewares<RequestHandler>(ATSController)),
+            ...(fetchMiddlewares<RequestHandler>(ATSController.prototype.getTeamDetails)),
+
+            async function ATSController_getTeamDetails(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsATSController_getTeamDetails, request, response });
+
+                const controller = new ATSController();
+
+              await templateService.apiHandler({
+                methodName: 'getTeamDetails',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
         const argsATSController_getTeamRecruitingStatus: Record<string, TsoaRoute.ParameterSchema> = {
                 teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
         };
@@ -1591,27 +1651,27 @@ export function RegisterRoutes(app: Router) {
             }
         });
         // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-        const argsATSController_applyToSubteam: Record<string, TsoaRoute.ParameterSchema> = {
-                body: {"in":"body","name":"body","required":true,"ref":"ATSApplicationRequest"},
+        const argsATSController_applyToTeam: Record<string, TsoaRoute.ParameterSchema> = {
+                body: {"in":"body","name":"body","required":true,"ref":"ATSTeamApplicationRequest"},
                 request: {"in":"request","name":"request","required":true,"dataType":"object"},
         };
         app.post('/api/ats/applications/apply',
             authenticateMiddleware([{"ats_otp":[]}]),
             ...(fetchMiddlewares<RequestHandler>(ATSController)),
-            ...(fetchMiddlewares<RequestHandler>(ATSController.prototype.applyToSubteam)),
+            ...(fetchMiddlewares<RequestHandler>(ATSController.prototype.applyToTeam)),
 
-            async function ATSController_applyToSubteam(request: ExRequest, response: ExResponse, next: any) {
+            async function ATSController_applyToTeam(request: ExRequest, response: ExResponse, next: any) {
 
             // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
 
             let validatedArgs: any[] = [];
             try {
-                validatedArgs = templateService.getValidatedArgs({ args: argsATSController_applyToSubteam, request, response });
+                validatedArgs = templateService.getValidatedArgs({ args: argsATSController_applyToTeam, request, response });
 
                 const controller = new ATSController();
 
               await templateService.apiHandler({
-                methodName: 'applyToSubteam',
+                methodName: 'applyToTeam',
                 controller,
                 response,
                 next,
