@@ -1,7 +1,7 @@
 import { Document, Schema, model } from "mongoose";
 
 export enum ApplicationStage {
-  NEW_APPLICATIONS = 'New Applications',
+  APPLIED = 'Applied',
   INTERVIEW = 'Interview',
   REJECTED = 'Rejected',
   POTENTIAL_HIRE = 'Potential Hire',
@@ -11,7 +11,7 @@ export enum ApplicationStage {
 export interface IApplication extends Document {
   applicantId: Schema.Types.ObjectId;
   teamPk: string;
-  rolePreferences: string[]; // Ordered array: ["1st choice", "2nd choice", ...]
+  rolePreferences: { role: string, subteamPk: string }[]; // Ordered array
   stage: ApplicationStage;
   responses: Map<string, string>;
   appliedAt: Date;
@@ -21,23 +21,27 @@ export interface IApplication extends Document {
     changedBy?: string;
   }>;
   hiredRole?: string;
+  hiredSubteamPk?: string;
 }
 
 const ApplicationSchema = new Schema<IApplication>({
   applicantId: { type: Schema.Types.ObjectId, ref: 'Applicant', required: true, index: true },
   teamPk: { type: String, required: true, index: true },
   rolePreferences: {
-    type: [String],
+    type: [{
+      role: { type: String, required: true },
+      subteamPk: { type: String, required: true }
+    }],
     required: true,
     validate: {
-      validator: (v: string[]) => v && v.length > 0,
+      validator: (v: any[]) => v && v.length > 0,
       message: 'At least one role preference is required'
     }
   },
   stage: {
     type: String,
     enum: Object.values(ApplicationStage),
-    default: ApplicationStage.NEW_APPLICATIONS,
+    default: ApplicationStage.APPLIED,
     required: true,
     index: true
   },
@@ -57,7 +61,8 @@ const ApplicationSchema = new Schema<IApplication>({
     changedAt: { type: Date, default: Date.now },
     changedBy: { type: String }
   }],
-  hiredRole: { type: String, required: false }
+  hiredRole: { type: String, required: false },
+  hiredSubteamPk: { type: String, required: false }
 }, { timestamps: true });
 
 // Updated indexes for team-level queries

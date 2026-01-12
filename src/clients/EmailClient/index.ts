@@ -81,6 +81,17 @@ export class EmailClient {
         let resolvedBody = "No Template specified";
         if (request.templateName) {
             try {
+                /* Register Partials for Dev Mode */
+                const templatesDir = path.resolve(__dirname, "templates");
+                const files = fs.readdirSync(templatesDir);
+                files.forEach(file => {
+                    if (file.endsWith(".hbs")) {
+                        const partialName = path.basename(file, ".hbs");
+                        const partialContent = fs.readFileSync(path.join(templatesDir, file), "utf-8");
+                        Handlebars.registerPartial(partialName, partialContent);
+                    }
+                });
+
                 const templatePath = path.resolve(__dirname, "templates", request.templateName + ".hbs");
                 if (fs.existsSync(templatePath)) {
                     const source = fs.readFileSync(templatePath, "utf-8");

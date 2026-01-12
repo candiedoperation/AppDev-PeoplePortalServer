@@ -152,11 +152,11 @@ const models: TsoaRoute.Models = {
     "APITeamInviteCreateRequest": {
         "dataType": "refObject",
         "properties": {
-            "inviteName": {"dataType":"string","required":true},
-            "inviteEmail": {"dataType":"string","required":true},
+            "inviteeName": {"dataType":"string","required":true},
+            "inviteeEmail": {"dataType":"string","required":true},
             "roleTitle": {"dataType":"string","required":true},
             "teamPk": {"dataType":"string","required":true},
-            "inviterPk": {"dataType":"double","required":true},
+            "subteamPk": {"dataType":"string","required":true},
         },
         "additionalProperties": false,
     },
@@ -168,6 +168,7 @@ const models: TsoaRoute.Models = {
             "inviteEmail": {"dataType":"string","required":true},
             "roleTitle": {"dataType":"string","required":true},
             "teamPk": {"dataType":"string","required":true},
+            "subteamPk": {"dataType":"string","required":true},
             "inviterPk": {"dataType":"double","required":true},
             "expiresAt": {"dataType":"datetime","required":true},
         },
@@ -376,7 +377,7 @@ const models: TsoaRoute.Models = {
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
     "ApplicationStage": {
         "dataType": "refEnum",
-        "enums": ["New Applications","Interview","Rejected","Potential Hire","Hired"],
+        "enums": ["Applied","Interview","Rejected","Potential Hire","Hired"],
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
     "mongoose.FlattenMaps_ITeamRecruitingStatus_": {
@@ -397,7 +398,7 @@ const models: TsoaRoute.Models = {
             "name": {"dataType":"string","required":true},
             "email": {"dataType":"string","required":true},
             "column": {"dataType":"string","required":true},
-            "rolePreferences": {"dataType":"array","array":{"dataType":"string"},"required":true},
+            "rolePreferences": {"dataType":"array","array":{"dataType":"nestedObjectLiteral","nestedProperties":{"subteamPk":{"dataType":"string","required":true},"role":{"dataType":"string","required":true}}},"required":true},
             "appliedAt": {"dataType":"datetime","required":true},
             "stage": {"ref":"ApplicationStage","required":true},
             "profile": {"ref":"Record_string.string_","required":true},
@@ -423,7 +424,7 @@ const models: TsoaRoute.Models = {
         "dataType": "refObject",
         "properties": {
             "teamPk": {"dataType":"string","required":true},
-            "rolePreferences": {"dataType":"array","array":{"dataType":"string"},"required":true},
+            "rolePreferences": {"dataType":"array","array":{"dataType":"nestedObjectLiteral","nestedProperties":{"subteamPk":{"dataType":"string","required":true},"role":{"dataType":"string","required":true}}},"required":true},
             "profile": {"ref":"ApplicantProfile","required":true},
             "responses": {"ref":"Record_string.string_","required":true},
         },
@@ -600,7 +601,8 @@ export function RegisterRoutes(app: Router) {
         });
         // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
         const argsOrgController_createInvite: Record<string, TsoaRoute.ParameterSchema> = {
-                req: {"in":"body","name":"req","required":true,"ref":"APITeamInviteCreateRequest"},
+                req: {"in":"request","name":"req","required":true,"dataType":"object"},
+                inviteReq: {"in":"body","name":"inviteReq","required":true,"ref":"APITeamInviteCreateRequest"},
         };
         app.post('/api/org/invites/new',
             authenticateMiddleware([{"oidc":[]}]),
@@ -1620,7 +1622,7 @@ export function RegisterRoutes(app: Router) {
         const argsATSController_updateApplicationStage: Record<string, TsoaRoute.ParameterSchema> = {
                 req: {"in":"request","name":"req","required":true,"dataType":"object"},
                 applicationId: {"in":"path","name":"applicationId","required":true,"dataType":"string"},
-                body: {"in":"body","name":"body","required":true,"dataType":"nestedObjectLiteral","nestedProperties":{"hiredRole":{"dataType":"string"},"interviewLink":{"dataType":"string"},"stage":{"ref":"ApplicationStage","required":true}}},
+                body: {"in":"body","name":"body","required":true,"dataType":"nestedObjectLiteral","nestedProperties":{"hiredSubteamPk":{"dataType":"string"},"hiredRole":{"dataType":"string"},"interviewGuidelines":{"dataType":"string"},"interviewLink":{"dataType":"string"},"stage":{"ref":"ApplicationStage","required":true}}},
         };
         app.put('/api/ats/applications/:applicationId/stage',
             authenticateMiddleware([{"oidc":[]}]),

@@ -4,16 +4,17 @@ export interface IInvite extends Document {
   inviteName: string;
   inviteEmail: string;
   roleTitle: string;
-  teamPk: string;
+  teamName: string;
+  subteamPk: string;
   inviterPk: number;
   expiresAt: Date;
 }
 
 const inviteSchema = new Schema<IInvite>({
-    inviteName: {
-        type: String,
-        required: true
-    },
+  inviteName: {
+    type: String,
+    required: true
+  },
   inviteEmail: {
     type: String,
     required: true,
@@ -23,7 +24,11 @@ const inviteSchema = new Schema<IInvite>({
     type: String,
     required: true,
   },
-  teamPk: {
+  teamName: {
+    type: String,
+    required: true,
+  },
+  subteamPk: {
     type: String,
     required: true,
   },

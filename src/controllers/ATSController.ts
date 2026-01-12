@@ -11,6 +11,9 @@ import { PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { s3Client, BUCKET_NAME } from "../clients/AWSClient/S3Client";
 import { Query } from "tsoa";
+import { EmailClient } from "../clients/EmailClient";
+import { OrgController } from "./OrgController";
+import { AuthorizedUser } from "../clients/OpenIdClient";
 
 // ====================
 // Type Definitions
@@ -25,7 +28,7 @@ interface ATSSubteamConfigRequest {
 // Team-level application request with ordered role preferences
 interface ATSTeamApplicationRequest {
     teamPk: string;
-    rolePreferences: string[];  // Ordered array: ["1st choice", "2nd choice", ...]
+    rolePreferences: { role: string, subteamPk: string }[];  // Ordered array
     profile: ApplicantProfile;
     responses: Record<string, string>;
 }
@@ -37,7 +40,7 @@ interface KanbanApplicationCard {
     name: string;
     email: string;
     column: string;
-    rolePreferences: string[];  // Ordered role preferences
+    rolePreferences: { role: string, subteamPk: string }[];  // Ordered role preferences
     appliedAt: Date;
     stage: ApplicationStage;
     profile: Record<string, string>;
@@ -55,10 +58,14 @@ const MIN_RESPONSE_WORDS = 10;
 @Route("/api/ats")
 export class ATSController extends Controller {
     private readonly authentikClient: AuthentikClient;
+    private readonly emailClient: EmailClient;
+    private readonly orgController: OrgController;
 
     constructor() {
         super()
         this.authentikClient = new AuthentikClient()
+        this.emailClient = new EmailClient()
+        this.orgController = new OrgController()
     }
 
     @Get("resume/upload-url")
@@ -517,15 +524,21 @@ export class ATSController extends Controller {
     async updateApplicationStage(
         @Request() req: express.Request,
         @Path() applicationId: string,
-        @Body() body: { stage: ApplicationStage, interviewLink?: string, hiredRole?: string }
+        @Body() body: { stage: ApplicationStage, interviewLink?: string, interviewGuidelines?: string, hiredRole?: string, hiredSubteamPk?: string }
     ) {
         try {
-            const { stage, interviewLink, hiredRole } = body;
+            const { stage, interviewLink, interviewGuidelines, hiredRole, hiredSubteamPk } = body;
 
             const application = await Application.findById(applicationId);
             if (!application) {
                 this.setStatus(404);
                 return { error: "NotFound", message: "Application not found" };
+            }
+
+            const applicant = await Applicant.findById(application.applicantId);
+            if (!applicant) {
+                this.setStatus(404);
+                return { error: "NotFound", message: "Applicant not found" };
             }
 
             const currentStage = application.stage;
@@ -537,7 +550,7 @@ export class ATSController extends Controller {
 
             // Transition Validation
             const VALID_TRANSITIONS: Record<string, ApplicationStage[]> = {
-                [ApplicationStage.NEW_APPLICATIONS]: [ApplicationStage.INTERVIEW, ApplicationStage.REJECTED],
+                [ApplicationStage.APPLIED]: [ApplicationStage.INTERVIEW, ApplicationStage.REJECTED],
                 [ApplicationStage.INTERVIEW]: [ApplicationStage.POTENTIAL_HIRE, ApplicationStage.HIRED, ApplicationStage.REJECTED],
                 [ApplicationStage.POTENTIAL_HIRE]: [ApplicationStage.HIRED, ApplicationStage.REJECTED],
                 [ApplicationStage.HIRED]: [],
@@ -550,6 +563,30 @@ export class ATSController extends Controller {
                 return { error: "BadRequest", message: `Invalid transition from ${currentStage} to ${stage}` };
             }
 
+            // Mandatory Field Checks
+            if (stage === ApplicationStage.INTERVIEW) {
+                if (!interviewLink) {
+                    this.setStatus(400);
+                    return { error: "BadRequest", message: "Interview Link is required for Interview stage" };
+                }
+
+                if (!interviewGuidelines || interviewGuidelines.length < 50 || interviewGuidelines.length > 500) {
+                    this.setStatus(400);
+                    return { error: "BadRequest", message: "Interview Guidelines are required (50-500 characters)" };
+                }
+            }
+
+            if (stage === ApplicationStage.HIRED) {
+                if (!hiredRole || !hiredSubteamPk) {
+                    this.setStatus(400);
+                    return { error: "BadRequest", message: "Hired Role and Subteam are required for Hired stage" };
+                }
+
+                /* Add Hired Role and Hired Subteam PK to the Application */
+                application.hiredRole = hiredRole;
+                application.hiredSubteamPk = hiredSubteamPk;
+            }
+
             // Update stage and history
             application.stage = stage;
             application.stageHistory.push({
@@ -558,27 +595,57 @@ export class ATSController extends Controller {
                 changedBy: `${req.session.authorizedUser?.name} (${req.session.authorizedUser?.username})`
             });
 
-            // Handle Stage Specific Logic & Emails
-            if (stage === ApplicationStage.INTERVIEW) {
-                // TODO: Send Interview Email
-                // Use body.interviewLink if provided
-                if (interviewLink) {
-                    // e.g. mailer.sendInterviewInvite(application.applicantId, interviewLink);
-                }
-            } else if (stage === ApplicationStage.POTENTIAL_HIRE) {
-                // TODO: Send Potential Hire Email
-            } else if (stage === ApplicationStage.HIRED) {
-                // Update hired role if provided
-                if (hiredRole) {
-                    application.hiredRole = hiredRole;
-                }
-                // TODO: Send Hired/Onboarding Email
-            } else if (stage === ApplicationStage.REJECTED) {
-                // TODO: Send Rejection Email
-            }
-
-            console.log("EMAILS SENT")
+            /* Save the Application and Send Emails */
             await application.save();
+
+            /* Get Parent Team Information and Handle Stage Specific Logic */
+            const teamInfo = await this.authentikClient.getGroupInfo(application.teamPk);
+            if (stage === ApplicationStage.INTERVIEW) {
+                await this.emailClient.send({
+                    to: applicant.email,
+                    cc: [req.session.authorizedUser!.email],
+                    replyTo: [req.session.authorizedUser!.email],
+                    subject: `Next Steps: ${teamInfo.attributes.friendlyName} Interview`,
+                    templateName: "RecruitInterviewRequest",
+                    templateVars: {
+                        applicantName: applicant.fullName,
+                        interviewerName: req.session.authorizedUser!.name,
+                        teamName: teamInfo.attributes.friendlyName,
+                        interviewLink: interviewLink,
+                        interviewGuidelines: interviewGuidelines
+                    }
+                })
+            } else if (stage === ApplicationStage.POTENTIAL_HIRE) {
+                await this.emailClient.send({
+                    to: applicant.email,
+                    cc: [req.session.authorizedUser!.email],
+                    replyTo: [req.session.authorizedUser!.email],
+                    subject: `Waitlisted for ${teamInfo.attributes.friendlyName}`,
+                    templateName: "RecruitPotentialHireInfo",
+                    templateVars: {
+                        applicantName: applicant.fullName,
+                        teamName: teamInfo.attributes.friendlyName,
+                        contactName: req.session.authorizedUser!.name
+                    }
+                })
+            } else if (stage === ApplicationStage.HIRED) {
+                this.processHiredStageTransition(
+                    req.session.authorizedUser!, teamInfo,
+                    application, applicant
+                );
+            } else if (stage === ApplicationStage.REJECTED) {
+                await this.emailClient.send({
+                    to: applicant.email,
+                    cc: [req.session.authorizedUser!.email],
+                    replyTo: [req.session.authorizedUser!.email],
+                    subject: `Update on ${teamInfo.attributes.friendlyName}`,
+                    templateName: "RecruitApplicationDeclined",
+                    templateVars: {
+                        applicantName: applicant.fullName,
+                        teamName: teamInfo.attributes.friendlyName,
+                    }
+                })
+            }
 
             return {
                 message: "Stage updated successfully",
@@ -689,12 +756,14 @@ export class ATSController extends Controller {
             }
 
             // 4. Validate all selected roles are available
-            for (const role of rolePreferences) {
-                if (!allAvailableRoles.has(role)) {
+            for (const pref of rolePreferences) {
+                // Check if the subteam actually offers this role
+                const subteamConfig = await SubteamConfig.findOne({ subteamPk: pref.subteamPk }).exec();
+                if (!subteamConfig || !subteamConfig.isRecruiting || !subteamConfig.roles.includes(pref.role)) {
                     this.setStatus(400);
                     return {
                         error: "InvalidRole",
-                        message: `Role '${role}' is not available for this team`
+                        message: `Role '${pref.role}' is not available in the specified subteam`
                     };
                 }
             }
@@ -703,10 +772,14 @@ export class ATSController extends Controller {
             for (const subteamPk of teamStatus.recruitingSubteamPks) {
                 const config = await SubteamConfig.findOne({ subteamPk }).exec();
                 if (config && config.isRecruiting) {
-                    for (const role of rolePreferences) {
-                        if (config.roles.includes(role)) {
-                            const roleQuestions = config.roleSpecificQuestions.get(role) || [];
-                            roleQuestions.forEach(q => allQuestions.add(q));
+                    if (config && config.isRecruiting) {
+                        for (const pref of rolePreferences) {
+                            if (pref.subteamPk === subteamPk) { // Only check if this preference belongs to this subteam
+                                if (config.roles.includes(pref.role)) {
+                                    const roleQuestions = config.roleSpecificQuestions.get(pref.role) || [];
+                                    roleQuestions.forEach(q => allQuestions.add(q));
+                                }
+                            }
                         }
                     }
                 }
@@ -825,11 +898,11 @@ export class ATSController extends Controller {
                 applicantId: updatedApplicant._id,
                 teamPk: teamPk,
                 rolePreferences: rolePreferences,  // Ordered array of roles
-                stage: ApplicationStage.NEW_APPLICATIONS,
+                stage: ApplicationStage.APPLIED,
                 responses: new Map(Object.entries(responses)),
                 appliedAt: new Date(),
                 stageHistory: [{
-                    stage: ApplicationStage.NEW_APPLICATIONS,
+                    stage: ApplicationStage.APPLIED,
                     changedAt: new Date()
                 }]
             });
@@ -892,5 +965,40 @@ export class ATSController extends Controller {
             this.setStatus(500);
             return { error: "ServerError", message: "Failed to update profile" };
         }
+    }
+
+    /* ==== APPLICATION STAGE CHANGE EMAIL HELPERS ==== */
+    async processHiredStageTransition(authorizedUser: AuthorizedUser, teamInfo: GetGroupInfoResponse, application: IApplication, applicant: IApplicant) {
+        /* If Applicant is an internal member, we do not send onboard invites! */
+        const applicantEmail = applicant.email;
+        this.authentikClient.getUserPkFromEmail(applicantEmail).then(async (userPk) => {
+            /* We didn't fail so, Add the Member to the Team & Send Email */
+            await this.orgController.addTeamMember(application.hiredSubteamPk!, { userPk });
+            await this.emailClient.send({
+                to: applicantEmail,
+                cc: [authorizedUser.email],
+                replyTo: [authorizedUser.email],
+                subject: `Congrats! You're accepted to ${teamInfo.attributes.friendlyName}`,
+                templateName: "RecruitExistingMemberAcceptance",
+                templateVars: {
+                    inviteeName: applicant.fullName,
+                    invitorName: authorizedUser.name,
+                    teamName: teamInfo.attributes.friendlyName,
+                    roleTitle: application.hiredRole!,
+                }
+            })
+        }).catch(async () => {
+            /* Onboard the User */
+            await this.orgController.createInvite(
+                { session: { authorizedUser } },
+                {
+                    inviteeName: applicant.fullName,
+                    inviteeEmail: applicantEmail,
+                    roleTitle: application.hiredRole!,
+                    teamPk: application.teamPk,
+                    subteamPk: application.hiredSubteamPk!
+                }
+            )
+        })
     }
 }

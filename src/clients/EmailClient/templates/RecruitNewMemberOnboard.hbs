@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Congrats on your offer to {{teamName}}</title>
+</head>
+{{> header}}
+
+<body style="font-family: Arial, sans-serif; color: #333;">
+  <p>Hey {{inviteeName}},<br>You've met App Dev's high bar and are among the top 5% of our massive application pool!
+    That's an insane acheivement as an undergrad 🥳
+  </p>
+  <p>We'd love to let you know that
+    <b>{{invitorName}}</b> has offered you a position on the
+    <b>{{teamName}}</b> team as a <b>{{roleTitle}}</b>.
+  </p>
+  <p>Since it's your first time at App Dev, we'd want to reiterate
+    that your time and effort means a lot to us and we'd really want you onboard to help expand this awesome community
+    of thinkers and innovators.</p>
+  <p>We've generated a customized invite link for you which is valid for the next <b>48 hours</b>. To initiate the
+    onboarding process, please follow the instructions at <a href="{{onboardUrl}}">{{onboardUrl}}</a>.</p>
+  <p>If you have any issues with the onboarding process or if you will not be able to commit to this position, please
+    contact {{invitorName}} by replying to this email ASAP.</p>
+</body>
+{{> footer}}
+
+</html>
