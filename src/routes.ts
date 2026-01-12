@@ -401,6 +401,7 @@ const models: TsoaRoute.Models = {
             "rolePreferences": {"dataType":"array","array":{"dataType":"nestedObjectLiteral","nestedProperties":{"subteamPk":{"dataType":"string","required":true},"role":{"dataType":"string","required":true}}},"required":true},
             "appliedAt": {"dataType":"datetime","required":true},
             "stage": {"ref":"ApplicationStage","required":true},
+            "stageHistory": {"dataType":"array","array":{"dataType":"nestedObjectLiteral","nestedProperties":{"changedBy":{"dataType":"string"},"changedAt":{"dataType":"datetime","required":true},"stage":{"ref":"ApplicationStage","required":true}}}},
             "profile": {"ref":"Record_string.string_","required":true},
             "responses": {"ref":"Record_string.string_","required":true},
             "hiredRole": {"dataType":"union","subSchemas":[{"dataType":"string"},{"dataType":"undefined"}],"required":true},

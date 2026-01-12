@@ -43,6 +43,11 @@ interface KanbanApplicationCard {
     rolePreferences: { role: string, subteamPk: string }[];  // Ordered role preferences
     appliedAt: Date;
     stage: ApplicationStage;
+    stageHistory?: {
+        stage: ApplicationStage;
+        changedAt: Date;
+        changedBy?: string;
+    }[];
     profile: Record<string, string>;
     responses: Record<string, string>;
     hiredRole: string | undefined;
@@ -452,6 +457,7 @@ export class ATSController extends Controller {
                 rolePreferences: app.rolePreferences,
                 appliedAt: app.appliedAt,
                 stage: app.stage,
+                stageHistory: app.stageHistory,
                 profile: app.applicantId.profile as any,
                 responses: app.responses as any,
                 hiredRole: app.hiredRole || undefined
