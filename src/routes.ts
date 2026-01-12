@@ -374,14 +374,14 @@ const models: TsoaRoute.Models = {
         "additionalProperties": false,
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "ApplicationStage": {
+        "dataType": "refEnum",
+        "enums": ["New Applications","Interview","Rejected","Potential Hire","Hired"],
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
     "mongoose.FlattenMaps_ITeamRecruitingStatus_": {
         "dataType": "refAlias",
         "type": {"dataType":"nestedObjectLiteral","nestedProperties":{},"validators":{}},
-    },
-    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-    "ApplicationStage": {
-        "dataType": "refEnum",
-        "enums": ["New Applications","Rejected","Interview","Rejected After Interview","Hired"],
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
     "Record_string.string_": {
@@ -1404,6 +1404,35 @@ export function RegisterRoutes(app: Router) {
             }
         });
         // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsATSController_getApplicationStages: Record<string, TsoaRoute.ParameterSchema> = {
+        };
+        app.get('/api/ats/stages',
+            ...(fetchMiddlewares<RequestHandler>(ATSController)),
+            ...(fetchMiddlewares<RequestHandler>(ATSController.prototype.getApplicationStages)),
+
+            async function ATSController_getApplicationStages(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsATSController_getApplicationStages, request, response });
+
+                const controller = new ATSController();
+
+              await templateService.apiHandler({
+                methodName: 'getApplicationStages',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
         const argsATSController_getTeamDetails: Record<string, TsoaRoute.ParameterSchema> = {
                 teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
         };
@@ -1589,8 +1618,9 @@ export function RegisterRoutes(app: Router) {
         });
         // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
         const argsATSController_updateApplicationStage: Record<string, TsoaRoute.ParameterSchema> = {
+                req: {"in":"request","name":"req","required":true,"dataType":"object"},
                 applicationId: {"in":"path","name":"applicationId","required":true,"dataType":"string"},
-                body: {"in":"body","name":"body","required":true,"dataType":"nestedObjectLiteral","nestedProperties":{"column":{"dataType":"string","required":true}}},
+                body: {"in":"body","name":"body","required":true,"dataType":"nestedObjectLiteral","nestedProperties":{"hiredRole":{"dataType":"string"},"interviewLink":{"dataType":"string"},"stage":{"ref":"ApplicationStage","required":true}}},
         };
         app.put('/api/ats/applications/:applicationId/stage',
             authenticateMiddleware([{"oidc":[]}]),

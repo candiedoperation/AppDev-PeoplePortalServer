@@ -290,6 +290,18 @@ export class ATSController extends Controller {
         return recruitingTeams;
     }
 
+    @Get("stages")
+    @SuccessResponse(200)
+    async getApplicationStages() {
+        // Return the ApplicationStage enum as an array of {id, name} objects
+        const stages = Object.entries(ApplicationStage).map(([key, value]) => ({
+            id: value,
+            name: value
+        }));
+
+        return stages;
+    }
+
     @Get("teams/{teamId}")
     @SuccessResponse(200)
     async getTeamDetails(@Path() teamId: string) {
@@ -429,7 +441,7 @@ export class ATSController extends Controller {
                 applicantId: app.applicantId._id.toString(),
                 name: app.applicantId.fullName || 'Unknown Applicant',
                 email: app.applicantId.email || '',
-                column: this.stageToColumn(app.stage),
+                column: app.stage,  // Use the enum value directly
                 rolePreferences: app.rolePreferences,
                 appliedAt: app.appliedAt,
                 stage: app.stage,
@@ -502,10 +514,13 @@ export class ATSController extends Controller {
     @Put("applications/{applicationId}/stage")
     @Security("oidc")
     @SuccessResponse(200, "Stage updated")
-    async updateApplicationStage(@Path() applicationId: string, @Body() body: { column: string }) {
+    async updateApplicationStage(
+        @Request() req: express.Request,
+        @Path() applicationId: string,
+        @Body() body: { stage: ApplicationStage, interviewLink?: string, hiredRole?: string }
+    ) {
         try {
-            const { column } = body;
-            const newStage = this.columnToStage(column);
+            const { stage, interviewLink, hiredRole } = body;
 
             const application = await Application.findById(applicationId);
             if (!application) {
@@ -513,22 +528,64 @@ export class ATSController extends Controller {
                 return { error: "NotFound", message: "Application not found" };
             }
 
+            const currentStage = application.stage;
+
+            // Idempotency check
+            if (currentStage === stage) {
+                return { message: "Stage already set", application: { id: application._id, stage: application.stage } };
+            }
+
+            // Transition Validation
+            const VALID_TRANSITIONS: Record<string, ApplicationStage[]> = {
+                [ApplicationStage.NEW_APPLICATIONS]: [ApplicationStage.INTERVIEW, ApplicationStage.REJECTED],
+                [ApplicationStage.INTERVIEW]: [ApplicationStage.POTENTIAL_HIRE, ApplicationStage.HIRED, ApplicationStage.REJECTED],
+                [ApplicationStage.POTENTIAL_HIRE]: [ApplicationStage.HIRED, ApplicationStage.REJECTED],
+                [ApplicationStage.HIRED]: [],
+                [ApplicationStage.REJECTED]: []
+            };
+
+            const allowed = VALID_TRANSITIONS[currentStage] || [];
+            if (!allowed.includes(stage)) {
+                this.setStatus(400);
+                return { error: "BadRequest", message: `Invalid transition from ${currentStage} to ${stage}` };
+            }
+
             // Update stage and history
-            application.stage = newStage;
+            application.stage = stage;
             application.stageHistory.push({
-                stage: newStage,
+                stage: stage,
                 changedAt: new Date(),
-                changedBy: "System/Recruiter" // TODO: Add actual user info from session
+                changedBy: `${req.session.authorizedUser?.name} (${req.session.authorizedUser?.username})`
             });
 
+            // Handle Stage Specific Logic & Emails
+            if (stage === ApplicationStage.INTERVIEW) {
+                // TODO: Send Interview Email
+                // Use body.interviewLink if provided
+                if (interviewLink) {
+                    // e.g. mailer.sendInterviewInvite(application.applicantId, interviewLink);
+                }
+            } else if (stage === ApplicationStage.POTENTIAL_HIRE) {
+                // TODO: Send Potential Hire Email
+            } else if (stage === ApplicationStage.HIRED) {
+                // Update hired role if provided
+                if (hiredRole) {
+                    application.hiredRole = hiredRole;
+                }
+                // TODO: Send Hired/Onboarding Email
+            } else if (stage === ApplicationStage.REJECTED) {
+                // TODO: Send Rejection Email
+            }
+
+            console.log("EMAILS SENT")
             await application.save();
 
             return {
                 message: "Stage updated successfully",
                 application: {
                     id: application._id,
-                    stage: this.stageToColumn(application.stage),
-                    // Return other needed fields if necessary
+                    stage: application.stage,
+                    hiredRole: application.hiredRole
                 }
             };
         } catch (err) {
@@ -567,7 +624,7 @@ export class ATSController extends Controller {
                     teamPk: app.teamPk,
                     teamName: teamName,
                     rolePreferences: app.rolePreferences,
-                    stage: this.stageToColumn(app.stage),
+                    stage: app.stage,
                     appliedAt: app.appliedAt,
                     hiredRole: app.hiredRole
                 };
@@ -582,37 +639,6 @@ export class ATSController extends Controller {
         }
     }
 
-
-    private stageToColumn(stage: ApplicationStage): string {
-        switch (stage) {
-            case ApplicationStage.NEW_APPLICATIONS:
-                return 'applied';
-            case ApplicationStage.INTERVIEW:
-                return 'interviewing';
-            case ApplicationStage.HIRED:
-                return 'accepted';
-            case ApplicationStage.REJECTED:
-            case ApplicationStage.REJECTED_AFTER_INTERVIEW:
-                return 'rejected';
-            default:
-                return 'applied';
-        }
-    }
-
-    private columnToStage(column: string): ApplicationStage {
-        switch (column) {
-            case 'applied':
-                return ApplicationStage.NEW_APPLICATIONS;
-            case 'interviewing':
-                return ApplicationStage.INTERVIEW;
-            case 'accepted':
-                return ApplicationStage.HIRED;
-            case 'rejected':
-                return ApplicationStage.REJECTED;
-            default:
-                return ApplicationStage.NEW_APPLICATIONS;
-        }
-    }
 
     @Post("applications/apply")
     @Security("ats_otp")

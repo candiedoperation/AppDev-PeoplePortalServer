@@ -2,9 +2,9 @@ import { Document, Schema, model } from "mongoose";
 
 export enum ApplicationStage {
   NEW_APPLICATIONS = 'New Applications',
-  REJECTED = 'Rejected',
   INTERVIEW = 'Interview',
-  REJECTED_AFTER_INTERVIEW = 'Rejected After Interview',
+  REJECTED = 'Rejected',
+  POTENTIAL_HIRE = 'Potential Hire',
   HIRED = 'Hired'
 }
 
