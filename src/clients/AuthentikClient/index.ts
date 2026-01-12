@@ -272,7 +272,7 @@ export class AuthentikClient {
         }
     }
 
-    public getUserPkFromEmail = async (email: string): Promise<number> => {
+    public getUserInfoFromEmail = async (email: string): Promise<UserInformationBrief> => {
         var RequestConfig: any = {
             ...this.AxiosBaseConfig,
             method: 'get',
@@ -291,7 +291,15 @@ export class AuthentikClient {
                 throw new AuthentikClientError("User Search Length is Invalid!")
 
             const user = users[0]
-            return +user.pk
+            return {
+                pk: user.pk,
+                username: user.username,
+                name: user.name,
+                email: user.email,
+                memberSince: user.date_joined,
+                active: user.is_active,
+                attributes: user.attributes,
+            }
         } catch (e) {
             log.error(AuthentikClient.TAG, "Get User PK Request Failed with Error: ", e)
             throw new AuthentikClientError("Get User PK Request Failed")

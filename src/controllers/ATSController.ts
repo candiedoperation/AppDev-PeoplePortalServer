@@ -2,7 +2,7 @@ import { Body, Request, Controller, Delete, Get, Path, Post, Put, Route, Success
 import { SubteamConfig, ISubteamConfig } from "../models/SubteamConfig";
 import { TeamRecruitingStatus, ITeamRecruitingStatus } from "../models/TeamRecruitingStatus";
 import { AuthentikClient } from "../clients/AuthentikClient";
-import { GetGroupInfoResponse } from "../clients/AuthentikClient/models";
+import { GetGroupInfoResponse, UserInformationBrief } from "../clients/AuthentikClient/models";
 import { Applicant, IApplicant, ApplicantProfile } from '../models/Applicant';
 import { Application, IApplication, ApplicationStage } from "../models/Application";
 import { Security } from "tsoa";
@@ -458,6 +458,7 @@ export class ATSController extends Controller {
                 appliedAt: app.appliedAt,
                 stage: app.stage,
                 stageHistory: app.stageHistory,
+                appDevInternalPk: app.appDevInternalPk,
                 profile: app.applicantId.profile as any,
                 responses: app.responses as any,
                 hiredRole: app.hiredRole || undefined
@@ -899,6 +900,15 @@ export class ATSController extends Controller {
                 { upsert: true, new: true, setDefaultsOnInsert: true }
             ).exec();
 
+            // 9.5 Check Previous App Dev History, if exists!
+            let appDevInternalPk = null;
+            try {
+                const internalUser = await this.authentikClient.getUserInfoFromEmail(userEmail)
+                appDevInternalPk = internalUser.pk
+            } catch (_e) {
+                /* Not previously in App Dev */
+            }
+
             // 10. Create application with ordered role preferences
             const application = await Application.create({
                 applicantId: updatedApplicant._id,
@@ -907,6 +917,7 @@ export class ATSController extends Controller {
                 stage: ApplicationStage.APPLIED,
                 responses: new Map(Object.entries(responses)),
                 appliedAt: new Date(),
+                appDevInternalPk,
                 stageHistory: [{
                     stage: ApplicationStage.APPLIED,
                     changedAt: new Date()
@@ -977,9 +988,9 @@ export class ATSController extends Controller {
     async processHiredStageTransition(authorizedUser: AuthorizedUser, teamInfo: GetGroupInfoResponse, application: IApplication, applicant: IApplicant) {
         /* If Applicant is an internal member, we do not send onboard invites! */
         const applicantEmail = applicant.email;
-        this.authentikClient.getUserPkFromEmail(applicantEmail).then(async (userPk) => {
+        this.authentikClient.getUserInfoFromEmail(applicantEmail).then(async (user: UserInformationBrief) => {
             /* We didn't fail so, Add the Member to the Team & Send Email */
-            await this.orgController.addTeamMember(application.hiredSubteamPk!, { userPk });
+            await this.orgController.addTeamMember(application.hiredSubteamPk!, { userPk: +user.pk });
             await this.emailClient.send({
                 to: applicantEmail,
                 cc: [authorizedUser.email],

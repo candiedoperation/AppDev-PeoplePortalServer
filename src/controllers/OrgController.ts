@@ -159,10 +159,8 @@ export class OrgController extends Controller {
     @Security("oidc")
     async createInvite(@Request() req: express.Request | ExpressRequestSessionShim, @Body() inviteReq: APITeamInviteCreateRequest) {
         const authorizedUser = req.session.authorizedUser!;
-        const inviterPk = await this.authentikClient.getUserPkFromEmail(authorizedUser.email);
-
         const teamInfo = await this.getTeamInfo(inviteReq.teamPk)
-        const invitorInfo = await this.getPersonInfo(inviterPk) /* inviterPk should be obtained from SSO */
+        const invitorInfo = await this.authentikClient.getUserInfoFromEmail(authorizedUser.email)
 
         /* Verify Team Owner Status */
         // if (!teamInfo.team.users.includes(inviterPk)) {
@@ -177,7 +175,7 @@ export class OrgController extends Controller {
             roleTitle: inviteReq.roleTitle,
             teamName: teamInfo.team.attributes.friendlyName,
             subteamPk: inviteReq.subteamPk,
-            inviterPk: inviterPk,
+            inviterPk: invitorInfo.pk,
             expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000)
         })
 

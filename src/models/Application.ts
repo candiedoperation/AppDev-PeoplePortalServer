@@ -22,6 +22,7 @@ export interface IApplication extends Document {
   }>;
   hiredRole?: string;
   hiredSubteamPk?: string;
+  appDevInternalPk?: number;
 }
 
 const ApplicationSchema = new Schema<IApplication>({
@@ -52,6 +53,7 @@ const ApplicationSchema = new Schema<IApplication>({
     default: new Map()
   },
   appliedAt: { type: Date, default: Date.now, required: true },
+  appDevInternalPk: { type: Number, required: false },
   stageHistory: [{
     stage: {
       type: String,
