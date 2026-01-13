@@ -21,8 +21,8 @@ import { OpenIdClient } from "./clients/OpenIdClient";
 import jwt from "jsonwebtoken"
 
 export async function NativeExpressOIDCAuthPort(
-    req: express.Request, 
-    res: express.Response, 
+    req: express.Request,
+    res: express.Response,
     next: express.NextFunction
 ) {
 
@@ -41,9 +41,9 @@ export async function NativeExpressOIDCAuthPort(
 }
 
 export function expressAuthentication(
-  request: express.Request,
-  securityName: string,
-  scopes?: string[]
+    request: express.Request,
+    securityName: string,
+    scopes?: string[]
 ): Promise<any> {
     if (securityName == "oidc") {
         return new Promise(async (resolve, reject) => {
@@ -58,7 +58,7 @@ export function expressAuthentication(
                     request.session.accessToken = authHeader ?? ""
                     request.session.authorizedUser = userData
                 }
-                
+
                 resolve({})
             } catch (e) {
                 reject({})
@@ -70,7 +70,7 @@ export function expressAuthentication(
         }
 
         try {
-            jwt.verify(request.session.tempsession.jwt, process.env.JWT_SECRET!);
+            jwt.verify(request.session.tempsession.jwt, process.env.PEOPLEPORTAL_TOKEN_SECRET!);
             return Promise.resolve({})
         } catch (error) {
             delete request.session.tempsession;
@@ -84,7 +84,7 @@ export function expressAuthentication(
 function oidcAuthVerify(req: express.Request, scopes?: string[]): boolean {
     let tokenExpiry = req.session.tokenExpiry
     return (
-        tokenExpiry != undefined && 
+        tokenExpiry != undefined &&
         new Date() < tokenExpiry,
         req.session.authorizedUser != undefined
     )

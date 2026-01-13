@@ -64,11 +64,15 @@ ApiRouter.use("/api/docs", swaggerUi.serve, async (req: Request, res: Response) 
 RegisterRoutes(ApiRouter);
 app.use(ApiRouter);
 
-app.get("/onboard/*splat", (req, res) => {
+app.get(["/onboard", "/onboard/*splat"], (req, res) => {
   res.sendFile(path.join(__dirname, "ui", "index.html"))
 })
 
-app.use(express.static(path.join(__dirname, "ui")))
+app.get(["/apply", "/apply/*splat"], (req, res) => {
+  res.sendFile(path.join(__dirname, "ui", "index.html"))
+})
+
+app.use(express.static(path.join(__dirname, "ui"), { index: false }))
 
 app.get("*splat", NativeExpressOIDCAuthPort, (req, res) => {
   res.sendFile(path.join(__dirname, "ui", "index.html"))

@@ -30,6 +30,7 @@ import { SlackClient } from '../clients/SlackClient';
 import { AWSClient } from '../clients/AWSClient';
 import { sanitizeUserFullName } from '../utils/strings';
 import { BindleController, EnabledBindlePermissions } from '../controllers/BindleController';
+import { AuthorizedUser } from '../clients/OpenIdClient';
 
 export interface EnabledRootSettings {
     [key: string]: boolean
@@ -73,11 +74,11 @@ interface APITeamMemberAddResponse {
 }
 
 interface APITeamInviteCreateRequest {
-    inviteName: string;
-    inviteEmail: string;
+    inviteeName: string;
+    inviteeEmail: string;
     roleTitle: string;
     teamPk: string;
-    inviterPk: number;
+    subteamPk: string;
 }
 
 interface APITeamInviteGetResponse {
@@ -85,6 +86,7 @@ interface APITeamInviteGetResponse {
     inviteEmail: string;
     roleTitle: string;
     teamPk: string;
+    subteamPk: string;
     inviterPk: number;
     expiresAt: Date;
 }
@@ -94,6 +96,10 @@ interface APITeamInviteAcceptRequest {
     major: string;
     expectedGrad: Date;
     phoneNumber: string;
+}
+
+interface ExpressRequestSessionShim {
+    session: { authorizedUser: AuthorizedUser }
 }
 
 @Route("/api/org")
@@ -151,10 +157,10 @@ export class OrgController extends Controller {
     @Post("invites/new")
     @SuccessResponse(201)
     @Security("oidc")
-    async createInvite(@Body() req: APITeamInviteCreateRequest) {
-        const inviterPk = req.inviterPk;
-        const teamInfo = await this.getTeamInfo(req.teamPk)
-        const invitorInfo = await this.getPersonInfo(inviterPk) /* inviterPk should be obtained from SSO */
+    async createInvite(@Request() req: express.Request | ExpressRequestSessionShim, @Body() inviteReq: APITeamInviteCreateRequest) {
+        const authorizedUser = req.session.authorizedUser!;
+        const teamInfo = await this.getTeamInfo(inviteReq.teamPk)
+        const invitorInfo = await this.authentikClient.getUserInfoFromEmail(authorizedUser.email)
 
         /* Verify Team Owner Status */
         // if (!teamInfo.team.users.includes(inviterPk)) {
@@ -164,26 +170,27 @@ export class OrgController extends Controller {
 
         /* Create New Invite */
         const createdInvite = await Invite.create({
-            inviteName: req.inviteName,
-            inviteEmail: req.inviteEmail,
-            roleTitle: req.roleTitle,
-            teamPk: req.teamPk,
-            inviterPk: req.inviterPk,
+            inviteName: inviteReq.inviteeName,
+            inviteEmail: inviteReq.inviteeEmail,
+            roleTitle: inviteReq.roleTitle,
+            teamName: teamInfo.team.attributes.friendlyName,
+            subteamPk: inviteReq.subteamPk,
+            inviterPk: invitorInfo.pk,
             expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000)
         })
 
         /* Send an Email to the Invitee and the Invitor */
         await this.emailClient.send({
-            to: req.inviteEmail,
+            to: inviteReq.inviteeEmail,
             cc: [invitorInfo.email],
             replyTo: [invitorInfo.email],
-            subject: `${teamInfo.team.attributes.friendlyName} Team Invitation`,
-            templateName: "invite",
+            subject: `Congrats! You're accepted to ${teamInfo.team.attributes.friendlyName}`,
+            templateName: "RecruitNewMemberOnboard",
             templateVars: {
-                inviteName: req.inviteName,
+                inviteeName: inviteReq.inviteeName,
                 invitorName: invitorInfo.name,
                 teamName: teamInfo.team.attributes.friendlyName,
-                roleTitle: req.roleTitle,
+                roleTitle: inviteReq.roleTitle,
                 onboardUrl: `${process.env.PEOPLEPORTAL_BASE_URL}/onboard/${createdInvite._id}`
             }
         })
@@ -212,21 +219,24 @@ export class OrgController extends Controller {
         if (!slackPresence)
             throw new Error("User has not joined the Slack Workspace!")
 
-        /* Create the New User */
+        /* Create the New User & add to Group */
         await this.authentikClient.createNewUser({
             name: invite.inviteName,
             email: invite.inviteEmail,
-            groupPk: invite.teamPk,
+            groupPk: invite.subteamPk,
             password: req.password,
             attributes: {
                 major: req.major,
                 expectedGrad: req.expectedGrad,
                 phoneNumber: req.phoneNumber,
                 roles: {
-                    [invite.teamPk]: invite.roleTitle
+                    [invite.subteamPk]: invite.roleTitle
                 }
             }
         })
+
+        /* Delete the Invite */
+        await invite.deleteOne()
     }
 
     @Post("tools/verifyslack")

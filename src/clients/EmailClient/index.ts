@@ -19,6 +19,8 @@
 import nodemailer, { Transporter } from "nodemailer";
 import hbs, { TemplateOptions } from "nodemailer-express-handlebars";
 import path from "path";
+import fs from "fs";
+import Handlebars from "handlebars";
 import { EmailSendRequest } from "./models";
 import { Options as NodemailerOptions } from "nodemailer/lib/mailer";
 
@@ -52,6 +54,9 @@ export class EmailClient {
     }
 
     async send(request: EmailSendRequest) {
+        if (process.env.PEOPLEPORTAL_EMAIL_CONREROUTE)
+            return this.sendInterceptAction(request);
+
         try {
             return await this.transporter.sendMail({
                 from: request.from ?? process.env.PEOPLEPORTAL_SMTP_USER,
@@ -67,5 +72,44 @@ export class EmailClient {
             console.error(e)
             throw e
         }
+    }
+
+    /**
+     * Helper to log email details to console instead of sending
+     */
+    private sendInterceptAction(request: EmailSendRequest) {
+        let resolvedBody = "No Template specified";
+        if (request.templateName) {
+            try {
+                /* Register Partials for Dev Mode */
+                const templatesDir = path.resolve(__dirname, "templates");
+                const files = fs.readdirSync(templatesDir);
+                files.forEach(file => {
+                    if (file.endsWith(".hbs")) {
+                        const partialName = path.basename(file, ".hbs");
+                        const partialContent = fs.readFileSync(path.join(templatesDir, file), "utf-8");
+                        Handlebars.registerPartial(partialName, partialContent);
+                    }
+                });
+
+                const templatePath = path.resolve(__dirname, "templates", request.templateName + ".hbs");
+                if (fs.existsSync(templatePath)) {
+                    const source = fs.readFileSync(templatePath, "utf-8");
+                    const template = Handlebars.compile(source);
+                    resolvedBody = template(request.templateVars);
+                } else {
+                    resolvedBody = `Template file not found at: ${templatePath}`;
+                }
+            } catch (e: any) {
+                resolvedBody = `Error resolving template: ${e.message}`;
+            }
+        }
+
+        console.log(`Intercepted Email Send:`);
+        console.log(`From: ${request.from ?? process.env.PEOPLEPORTAL_SMTP_USER}`);
+        console.log(`To: ${request.to}`);
+        console.log(`cc: ${request.cc ?? 'None'}`);
+        console.log(`Subject: ${request.subject}`);
+        console.log(`Body Preview:\n${resolvedBody}`);
     }
 }

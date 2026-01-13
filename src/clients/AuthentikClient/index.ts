@@ -272,9 +272,43 @@ export class AuthentikClient {
         }
     }
 
+    public getUserInfoFromEmail = async (email: string): Promise<UserInformationBrief> => {
+        var RequestConfig: any = {
+            ...this.AxiosBaseConfig,
+            method: 'get',
+            url: `/api/v3/core/users/`,
+            params: {
+                email,
+                type: 'internal',
+            }
+        }
+
+        try {
+            const res = await axios.request(RequestConfig)
+            const users = res.data.results
+
+            if (users.length != 1)
+                throw new AuthentikClientError("User Search Length is Invalid!")
+
+            const user = users[0]
+            return {
+                pk: user.pk,
+                username: user.username,
+                name: user.name,
+                email: user.email,
+                memberSince: user.date_joined,
+                active: user.is_active,
+                attributes: user.attributes,
+            }
+        } catch (e) {
+            log.error(AuthentikClient.TAG, "Get User PK Request Failed with Error: ", e)
+            throw new AuthentikClientError("Get User PK Request Failed")
+        }
+    }
+
     public createNewUser = async (request: CreateUserRequest): Promise<boolean> => {
         if (!request.email.endsWith("@terpmail.umd.edu"))
-            throw new Error("Portal Currently Supports Terpmail Addresses Only!")
+            throw new Error("People Portal Currently Supports Terpmail Addresses Only!")
 
         let username = request.email.replace("@terpmail.umd.edu", "")
         var RequestConfigAddUser: any = {
@@ -310,8 +344,8 @@ export class AuthentikClient {
             await axios.request(RequestConfigSetPassword)
             return true
         } catch (e) {
-            log.error(AuthentikClient.TAG, "Create Team Request Failed with Error: ", e)
-            throw new AuthentikClientError("Get Team Request Failed")
+            log.error(AuthentikClient.TAG, "Create New User Failed with Error: ", e)
+            throw new AuthentikClientError("Create New User Failed")
         }
     }
 

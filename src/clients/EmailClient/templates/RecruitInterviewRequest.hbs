@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Next Steps: Interview Request for {{teamName}}</title>
+</head>
+{{> header}}
+
+<body style="font-family: Arial, sans-serif; color: #333;">
+    <p>Hey {{applicantName}},<br>
+        Thank you so much for your interest in the App Dev Club. We're eager to explore the potential of having you join
+        the <b>{{teamName}}</b> team and thus, invite you to interview with us. If you're no longer interested in
+        joining us, please reply
+        to this email as soon as possible.
+    </p>
+
+    <p>We're really limited on spots so, please select your earliest availablity to interview with
+        <b>{{interviewerName}}</b>
+        by using this link: <a href="{{interviewLink}}">{{interviewLink}}</a>.
+    </p>
+
+    <p>Lastly, here's some additional information from your interviewer:<br>
+        {{interviewGuidelines}}
+    </p>
+
+    <p>If you have any questions or conflicts, please reply directly to this email. Looking forward to meeting you and
+        thank you for your interest towards App Dev!</p>
+</body>
+{{> footer}}
+
+</html>
