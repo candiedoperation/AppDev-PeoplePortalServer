@@ -25,6 +25,7 @@ import { Application } from '../models/Application';
 import jwt from "jsonwebtoken"
 import { generateSecureRandomString } from '../utils/strings';
 import { AuthentikClient } from '../clients/AuthentikClient';
+import { EmailClient } from '../clients/EmailClient';
 
 interface OtpInitRequest {
     email: string;
@@ -38,6 +39,12 @@ interface OtpVerifyRequest {
 
 @Route("/api/auth")
 export class AuthController extends Controller {
+    private emailClient: EmailClient
+    public constructor() {
+        super()
+        this.emailClient = new EmailClient()
+    }
+
     @Get("userinfo")
     @Security("oidc")
     @SuccessResponse(200)
@@ -104,9 +111,18 @@ export class AuthController extends Controller {
         req.session.tempsession.otpName = name;
         req.session.tempsession.otpExpiry = Date.now() + 5 * 60 * 1000; // 5 minutes
 
-        console.log(`OTP for ${email}: ${otp}`);
+        /* Send OTP Via Email to User */
+        await this.emailClient.send({
+            to: email,
+            subject: 'App Dev Verification Code',
+            templateName: 'AuthOtpSendCode',
+            templateVars: {
+                name,
+                otpCode: otp
+            }
+        })
 
-        return { message: "OTP sent successfully" };
+        return { message: "Verification Code sent successfully" };
     }
 
     @Post("otpverify")
