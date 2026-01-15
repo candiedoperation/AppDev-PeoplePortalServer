@@ -207,29 +207,34 @@ export class AuthController extends Controller {
             // Fetch subteam and parent names from Authentik
             const authentikClient = new AuthentikClient();
             const applicationsWithNames = await Promise.all(applications.map(async (app: any) => {
+                let teamName = app.teamPk;
                 try {
-                    const subteamInfo = await authentikClient.getGroupInfo(app.subteamPk);
-                    let parentTeamName = "";
-                    try {
-                        const parentInfo = await authentikClient.getGroupInfo(subteamInfo.parentPk);
-                        parentTeamName = parentInfo.attributes.friendlyName || parentInfo.name;
-                    } catch (pe) {
-                        console.error(`Failed to fetch parent info for ${subteamInfo.parentPk}:`, pe);
-                    }
-
-                    return {
-                        ...app,
-                        subteamName: subteamInfo.attributes.friendlyName || subteamInfo.name,
-                        parentTeamName: parentTeamName
-                    };
+                    // 1. Fetch Parent Team Name
+                    const teamInfo = await authentikClient.getGroupInfo(app.teamPk);
+                    teamName = teamInfo.attributes?.friendlyName || teamInfo.name;
                 } catch (e) {
-                    console.error(`Failed to fetch subteam info for ${app.subteamPk}:`, e);
-                    return {
-                        ...app,
-                        subteamName: app.subteamPk, // Fallback to PK
-                        parentTeamName: ""
-                    };
+                    console.error(`Failed to fetch team info for ${app.teamPk}`, e);
                 }
+
+                // 2. Fetch Subteam Names for Preferences
+                const rolePreferencesWithNames = await Promise.all((app.rolePreferences || []).map(async (pref: any) => {
+                    let subteamName = pref.subteamPk;
+                    try {
+                        const subteamInfo = await authentikClient.getGroupInfo(pref.subteamPk);
+                        subteamName = subteamInfo.attributes?.friendlyName || subteamInfo.name;
+                    } catch (e) {
+                        console.error(`Failed to fetch subteam info for ${pref.subteamPk}`, e);
+                    }
+                    return { ...pref, subteamName };
+                }));
+
+                // 3. Map subteam preferences (legacy support or if frontend needs it)
+                // For the new UI, we mostly care about rolePreferencesWithNames
+                return {
+                    ...app,
+                    teamName: teamName,
+                    rolePreferences: rolePreferencesWithNames
+                };
             }));
 
             return {

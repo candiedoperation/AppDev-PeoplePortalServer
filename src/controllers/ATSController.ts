@@ -693,11 +693,23 @@ export class ATSController extends Controller {
                     console.error(`Failed to fetch team info for ${app.teamPk}`, e);
                 }
 
+                // Enrich role preferences with subteam names
+                const rolePreferencesWithNames = await Promise.all((app.rolePreferences || []).map(async (pref: any) => {
+                    let subteamName = pref.subteamPk;
+                    try {
+                        const subteamInfo = await this.authentikClient.getGroupInfo(pref.subteamPk);
+                        subteamName = subteamInfo.attributes?.friendlyName || subteamInfo.name;
+                    } catch (e) {
+                        console.error(`Failed to fetch subteam info for ${pref.subteamPk}`, e);
+                    }
+                    return { ...pref, subteamName };
+                }));
+
                 return {
                     id: app._id,
                     teamPk: app.teamPk,
                     teamName: teamName,
-                    rolePreferences: app.rolePreferences,
+                    rolePreferences: rolePreferencesWithNames,
                     stage: app.stage,
                     appliedAt: app.appliedAt,
                     hiredRole: app.hiredRole
