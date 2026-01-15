@@ -16,24 +16,21 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-import { InstallProvider } from '@slack/oauth';
+import { WebClient } from '@slack/web-api';
 import { BindlePermissionMap } from '../../controllers/BindleController';
 import { SharedResourceClient } from '..';
 import { GetGroupInfoResponse } from '../AuthentikClient/models';
 
 export class SlackClient implements SharedResourceClient {
     private static readonly TAG = "SlackClient"
+    private readonly slackClient: WebClient;
 
     private readonly supportedBindles: BindlePermissionMap = {
-        
+
     }
 
     constructor() {
-        // this.installer = new InstallProvider({
-        //     clientId: process.env.PEOPLEPORTAL_SLACK_CLIENTID!,
-        //     clientSecret: process.env.PEOPLEPORTAL_SLACK_CLIENTSECRET!,
-        //     stateSecret: process.env.PEOPLEPORTAL_SLACK_SIGNINGSECRET!,
-        // });
+        this.slackClient = new WebClient(process.env.PEOPLEPORTAL_SLACK_BOT_TOKEN);
     }
 
     getResourceName(): string {
@@ -49,7 +46,15 @@ export class SlackClient implements SharedResourceClient {
         return true
     }
 
-    public async validateUserPresence(email: string) {
-        return true
+    public async validateUserPresence(email: string): Promise<boolean> {
+        try {
+            const result = await this.slackClient.users.lookupByEmail({ email });
+            return !!result.user;
+        } catch (error: any) {
+            if (error?.data?.error === 'users_not_found') {
+                return false;
+            }
+            throw new Error(`Slack verification failed: ${error.message}`);
+        }
     }
 }
