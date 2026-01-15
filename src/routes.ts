@@ -278,6 +278,15 @@ const models: TsoaRoute.Models = {
         "additionalProperties": false,
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "APIUpdateTeamRequest": {
+        "dataType": "refObject",
+        "properties": {
+            "friendlyName": {"dataType":"string","validators":{"minLength":{"value":1}}},
+            "description": {"dataType":"string","validators":{"minLength":{"value":1}}},
+        },
+        "additionalProperties": {"dataType":"any"},
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
     "JsonPrimitive": {
         "dataType": "refAlias",
         "type": {"dataType":"union","subSchemas":[{"dataType":"string"},{"dataType":"double"},{"dataType":"boolean"},{"dataType":"enum","enums":[null]}],"validators":{}},
@@ -914,6 +923,38 @@ export function RegisterRoutes(app: Router) {
             }
         });
         // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsOrgController_removeTeamMember: Record<string, TsoaRoute.ParameterSchema> = {
+                teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
+                req: {"in":"body","name":"req","required":true,"dataType":"nestedObjectLiteral","nestedProperties":{"userPk":{"dataType":"double","required":true}}},
+        };
+        app.post('/api/org/teams/:teamId/removemember',
+            authenticateMiddleware([{"oidc":[]}]),
+            ...(fetchMiddlewares<RequestHandler>(OrgController)),
+            ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.removeTeamMember)),
+
+            async function OrgController_removeTeamMember(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsOrgController_removeTeamMember, request, response });
+
+                const controller = new OrgController();
+
+              await templateService.apiHandler({
+                methodName: 'removeTeamMember',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 201,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
         const argsOrgController_createSubTeam: Record<string, TsoaRoute.ParameterSchema> = {
                 teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
                 req: {"in":"body","name":"req","required":true,"ref":"APICreateSubTeamRequest"},
@@ -998,6 +1039,38 @@ export function RegisterRoutes(app: Router) {
 
               await templateService.apiHandler({
                 methodName: 'syncOrgBindles',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsOrgController_updateTeamAttributes: Record<string, TsoaRoute.ParameterSchema> = {
+                teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
+                conf: {"in":"body","name":"conf","required":true,"ref":"APIUpdateTeamRequest"},
+        };
+        app.patch('/api/org/teams/:teamId',
+            authenticateMiddleware([{"oidc":[]}]),
+            ...(fetchMiddlewares<RequestHandler>(OrgController)),
+            ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.updateTeamAttributes)),
+
+            async function OrgController_updateTeamAttributes(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsOrgController_updateTeamAttributes, request, response });
+
+                const controller = new OrgController();
+
+              await templateService.apiHandler({
+                methodName: 'updateTeamAttributes',
                 controller,
                 response,
                 next,

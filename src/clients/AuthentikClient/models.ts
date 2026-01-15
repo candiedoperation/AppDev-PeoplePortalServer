@@ -101,6 +101,11 @@ export interface AddGroupMemberRequest {
     userPk: number
 }
 
+export interface RemoveGroupMemberRequest {
+    groupId: string,
+    userPk: number
+}
+
 export interface CreateUserRequest {
     name: string;
     email: string;

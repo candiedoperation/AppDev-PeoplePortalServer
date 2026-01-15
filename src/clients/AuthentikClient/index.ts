@@ -18,7 +18,7 @@
 
 import axios from "axios"
 import log from "loglevel"
-import { AddGroupMemberRequest, AuthentikClientError, CreateTeamRequest, CreateTeamResponse, CreateUserRequest, GetGroupInfoResponse as GetGroupInfoResponse, GetTeamsListOptions as GetGroupsListOptions, GetTeamsListResponse as GetGroupsListResponse, GetUserListOptions, GetUserListResponse, TeamAttributeDefinition, TeamInformationBrief, UserInformationBrief } from "./models"
+import { AddGroupMemberRequest, AuthentikClientError, CreateTeamRequest, CreateTeamResponse, CreateUserRequest, GetGroupInfoResponse as GetGroupInfoResponse, GetTeamsListOptions as GetGroupsListOptions, GetTeamsListResponse as GetGroupsListResponse, GetUserListOptions, GetUserListResponse, RemoveGroupMemberRequest, TeamAttributeDefinition, TeamInformationBrief, UserInformationBrief } from "./models"
 import { randomUUID } from "crypto"
 import { sanitizeGroupName } from "../../utils/strings"
 import { EnabledRootSettings } from "../../controllers/OrgController"
@@ -218,7 +218,7 @@ export class AuthentikClient {
         }
     }
 
-    private updateGroupAttributes = async (teamId: string, updatePayload: Partial<TeamAttributeDefinition>): Promise<boolean> => {
+    public updateGroupAttributes = async (teamId: string, updatePayload: Partial<TeamAttributeDefinition>): Promise<boolean> => {
         let groupInfo = await this.getGroupInfo(teamId);
         var RequestConfig: any = {
             ...this.AxiosBaseConfig,
@@ -269,6 +269,23 @@ export class AuthentikClient {
         } catch (e) {
             log.error(AuthentikClient.TAG, "Add Team Member Request Failed with Error: ", e)
             throw new AuthentikClientError("Add Team Member Request Failed")
+        }
+    }
+
+    public removeGroupMember = async (request: RemoveGroupMemberRequest): Promise<boolean> => {
+        var RequestConfig: any = {
+            ...this.AxiosBaseConfig,
+            method: 'post',
+            url: `/api/v3/core/groups/${request.groupId}/remove_user/`,
+            data: { pk: request.userPk }
+        }
+
+        try {
+            await axios.request(RequestConfig)
+            return true
+        } catch (e) {
+            log.error(AuthentikClient.TAG, "Remove Team Member Request Failed with Error: ", e)
+            throw new AuthentikClientError("Remove Team Member Request Failed")
         }
     }
 

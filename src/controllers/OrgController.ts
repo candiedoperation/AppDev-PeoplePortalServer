@@ -18,7 +18,7 @@
 
 import * as express from 'express'
 import { Request, Body, Controller, Get, Patch, Path, Post, Queries, Res, Route, SuccessResponse, Put, Security } from "tsoa";
-import { AddGroupMemberRequest, CreateTeamRequest, CreateTeamResponse, GetGroupInfoResponse, GetTeamsListOptions, GetTeamsListResponse, GetUserListOptions, GetUserListResponse, SeasonType, TeamType, UserInformationBrief } from "../clients/AuthentikClient/models";
+import { AddGroupMemberRequest, CreateTeamRequest, CreateTeamResponse, GetGroupInfoResponse, GetTeamsListOptions, GetTeamsListResponse, GetUserListOptions, GetUserListResponse, RemoveGroupMemberRequest, SeasonType, TeamType, UserInformationBrief } from "../clients/AuthentikClient/models";
 import { AuthentikClient } from "../clients/AuthentikClient";
 import { UUID } from "crypto";
 import { IInvite, Invite } from "../models/Invites";
@@ -61,6 +61,15 @@ interface APICreateTeamRequest {
     seasonType: SeasonType,
     seasonYear: number,
     description: string
+}
+
+interface APIUpdateTeamRequest {
+    /** @minLength 1 */
+    friendlyName?: string,
+    /** @minLength 1 */
+    description?: string,
+    /** @minLength 1 */
+    [key: string]: any
 }
 
 interface APITeamInfoResponse {
@@ -384,6 +393,17 @@ export class OrgController extends Controller {
         })
     }
 
+    @Post("teams/{teamId}/removemember")
+    @SuccessResponse(201)
+    @Security("oidc")
+    async removeTeamMember(@Path() teamId: string, @Body() req: { userPk: number }) {
+        /* Needs Is Team owner Middleware?! */
+        await this.removeTeamMemberWrapper({
+            groupId: teamId,
+            userPk: req.userPk
+        })
+    }
+
     @Post("teams/{teamId}/subteam")
     @SuccessResponse(201)
     @Security("oidc")
@@ -477,4 +497,59 @@ export class OrgController extends Controller {
             slackAdditionComplete: false
         }
     }
+
+    async removeTeamMemberWrapper(request: RemoveGroupMemberRequest): Promise<void> {
+        const userInfo = await this.authentikClient.getUserInfo(request.userPk)
+        const groupInfo = await this.authentikClient.getGroupInfo(request.groupId)
+
+        /* Get Parent Team Name if available, otherwise fallback to current group */
+        let teamName = groupInfo.attributes.friendlyName ?? groupInfo.name
+        if (groupInfo.parentPk) {
+            const parentInfo = await this.authentikClient.getGroupInfo(groupInfo.parentPk)
+            teamName = parentInfo.attributes.friendlyName ?? parentInfo.name
+        }
+
+        await this.authentikClient.removeGroupMember(request)
+
+        /* Send Email Notification */
+        await this.emailClient.send({
+            to: userInfo.email,
+            subject: `Update regarding your role in ${teamName}`,
+            templateName: "SubteamMemberRemoval",
+            templateVars: {
+                memberName: userInfo.name,
+                teamName: teamName
+            }
+        })
+
+        /* DO SLACK and GIT REPO here! */
+    }
+
+    @Patch("teams/{teamId}")
+    @SuccessResponse(200)
+    @Security("oidc")
+    async updateTeamAttributes(@Path() teamId: string, @Body() conf: APIUpdateTeamRequest) {
+        /* Strictly restrict updates to only name and description to prevent attribute pollution */
+        const allowedFields = ["friendlyName", "description"];
+        const filteredConf: any = {};
+        for (const key of allowedFields) {
+            if (conf[key] !== undefined) {
+                if (conf[key].trim() === "") {
+                    this.setStatus(400)
+                    return {
+                        error: "InvalidRequest",
+                        message: "Attributes cannot be blank"
+                    };
+                }
+                filteredConf[key] = conf[key];
+            }
+        }
+
+        if (Object.keys(filteredConf).length === 0) {
+            this.setStatus(400);
+            return { error: "InvalidRequest", message: "No valid fields provided for update" };
+        }
+        await this.authentikClient.updateGroupAttributes(teamId, filteredConf)
+    }
+
 }
