@@ -18,7 +18,7 @@
 
 import axios from "axios"
 import log from "loglevel"
-import { AddGroupMemberRequest, AuthentikClientError, CreateTeamRequest, CreateTeamResponse, CreateUserRequest, GetGroupInfoResponse as GetGroupInfoResponse, GetTeamsListOptions as GetGroupsListOptions, GetTeamsListResponse as GetGroupsListResponse, GetUserListOptions, GetUserListResponse, RemoveGroupMemberRequest, TeamAttributeDefinition, TeamInformationBrief, UserInformationBrief } from "./models"
+import { AddGroupMemberRequest, AuthentikClientError, CreateTeamRequest, CreateTeamResponse, CreateUserRequest, GetGroupInfoResponse as GetGroupInfoResponse, GetTeamsListOptions as GetGroupsListOptions, GetTeamsListResponse as GetGroupsListResponse, GetUserListOptions, GetUserListResponse, RemoveGroupMemberRequest, TeamAttributeDefinition, TeamInformationBrief, UserAttributeDefinition, UserInformationBrief } from "./models"
 import { randomUUID } from "crypto"
 import { sanitizeGroupName } from "../../utils/strings"
 import { EnabledRootSettings } from "../../controllers/OrgController"
@@ -253,6 +253,29 @@ export class AuthentikClient {
             teamId,
             { bindlePermissions }
         )
+    }
+
+    public updateUserAttributes = async (userId: number, updatePayload: Partial<UserAttributeDefinition>): Promise<boolean> => {
+        let userInfo = await this.getUserInfo(userId);
+        var RequestConfig: any = {
+            ...this.AxiosBaseConfig,
+            method: 'patch',
+            url: `/api/v3/core/users/${userId}/`,
+            data: {
+                attributes: {
+                    ...userInfo.attributes,
+                    ...updatePayload
+                }
+            }
+        }
+
+        try {
+            await axios.request(RequestConfig)
+            return true
+        } catch (e) {
+            log.error(AuthentikClient.TAG, "Update User Attributes Failed with Error: ", e)
+            throw new AuthentikClientError("Update User Attributes Failed")
+        }
     }
 
     public addGroupMember = async (request: AddGroupMemberRequest): Promise<boolean> => {

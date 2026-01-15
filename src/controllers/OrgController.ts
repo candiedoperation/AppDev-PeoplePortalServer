@@ -509,6 +509,13 @@ export class OrgController extends Controller {
             teamName = parentInfo.attributes.friendlyName ?? parentInfo.name
         }
 
+        /* Remove the Role Attribute from Authentik if it exists */
+        if (userInfo.attributes.roles && userInfo.attributes.roles[request.groupId]) {
+            const updatedRoles = { ...userInfo.attributes.roles }
+            delete updatedRoles[request.groupId]
+            await this.authentikClient.updateUserAttributes(request.userPk, { roles: updatedRoles })
+        }
+
         await this.authentikClient.removeGroupMember(request)
 
         /* Send Email Notification */
