@@ -69,7 +69,7 @@ interface APIUpdateTeamRequest {
     /** @minLength 1 */
     description?: string,
     /** @minLength 1 */
-    [key: string]: any
+    [key: string]: string
 }
 
 interface APITeamInfoResponse {
