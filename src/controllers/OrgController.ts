@@ -518,17 +518,6 @@ export class OrgController extends Controller {
 
         await this.authentikClient.removeGroupMember(request)
 
-        /* Send Email Notification */
-        await this.emailClient.send({
-            to: userInfo.email,
-            subject: `Update regarding your role in ${teamName}`,
-            templateName: "SubteamMemberRemoval",
-            templateVars: {
-                memberName: userInfo.name,
-                teamName: teamName
-            }
-        })
-
         /* DO SLACK and GIT REPO here! */
     }
 
