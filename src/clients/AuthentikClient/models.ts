@@ -36,6 +36,7 @@ export interface TeamAttributeDefinition {
     seasonType: SeasonType,
     seasonYear: number,
     peoplePortalCreation?: boolean,
+    flaggedForDeletion?: boolean,
     description: string,
     rootTeamSettings: {
         /* The key is the setting name (Ex. AwsAccount, AppleDevAccount, etc.) */

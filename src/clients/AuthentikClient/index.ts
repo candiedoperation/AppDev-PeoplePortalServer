@@ -165,10 +165,16 @@ export class AuthentikClient {
             const res = await axios.request(RequestConfig)
             const teams = res.data.results
 
-            if (teams.length != 1)
-                throw new AuthentikClientError("Team Search Length is Invalid!")
+            /* Filter for Exact Match */
+            const exactMatches = teams.filter((t: any) => t.name === teamName)
 
-            const team = teams[0]
+            if (exactMatches.length < 1)
+                throw new AuthentikClientError("Team Not Found!")
+
+            if (exactMatches.length > 1)
+                throw new AuthentikClientError("Multiple Exact Matches Found!")
+
+            const team = exactMatches[0]
             return team.pk
         } catch (e) {
             log.error(AuthentikClient.TAG, "Get Teams PK Request Failed with Error: ", e)
@@ -312,6 +318,23 @@ export class AuthentikClient {
         }
     }
 
+    public removeAllTeamMembers = async (groupId: string): Promise<boolean> => {
+        var RequestConfig: any = {
+            ...this.AxiosBaseConfig,
+            method: 'patch',
+            url: `/api/v3/core/groups/${groupId}/`,
+            data: { users: [] }
+        }
+
+        try {
+            await axios.request(RequestConfig)
+            return true
+        } catch (e) {
+            log.error(AuthentikClient.TAG, "Remove All Team Members Request Failed with Error: ", e)
+            throw new AuthentikClientError("Remove All Team Members Request Failed")
+        }
+    }
+
     public getUserInfoFromEmail = async (email: string): Promise<UserInformationBrief> => {
         var RequestConfig: any = {
             ...this.AxiosBaseConfig,
@@ -327,10 +350,16 @@ export class AuthentikClient {
             const res = await axios.request(RequestConfig)
             const users = res.data.results
 
-            if (users.length != 1)
-                throw new AuthentikClientError("User Search Length is Invalid!")
+            /* Filter for Exact Match */
+            const exactMatches = users.filter((u: any) => u.email === email)
 
-            const user = users[0]
+            if (exactMatches.length < 1)
+                throw new AuthentikClientError("User Not Found!")
+
+            if (exactMatches.length > 1)
+                throw new AuthentikClientError("Multiple Exact Matches Found!")
+
+            const user = exactMatches[0]
             return {
                 pk: user.pk,
                 username: user.username,

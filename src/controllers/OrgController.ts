@@ -17,7 +17,7 @@
 */
 
 import * as express from 'express'
-import { Request, Body, Controller, Get, Patch, Path, Post, Queries, Res, Route, SuccessResponse, Put, Security } from "tsoa";
+import { Request, Body, Controller, Get, Patch, Path, Post, Queries, Res, Route, SuccessResponse, Put, Security, Delete } from "tsoa";
 import { AddGroupMemberRequest, CreateTeamRequest, CreateTeamResponse, GetGroupInfoResponse, GetTeamsListOptions, GetTeamsListResponse, GetUserListOptions, GetUserListResponse, RemoveGroupMemberRequest, SeasonType, TeamType, UserInformationBrief } from "../clients/AuthentikClient/models";
 import { AuthentikClient } from "../clients/AuthentikClient";
 import { UUID } from "crypto";
@@ -409,6 +409,11 @@ export class OrgController extends Controller {
     @Security("oidc")
     async createSubTeam(@Path() teamId: string, @Body() req: APICreateSubTeamRequest): Promise<CreateTeamResponse> {
         const parentInfo = await this.authentikClient.getGroupInfo(teamId)
+
+        if (parentInfo.subteams && parentInfo.subteams.length >= 15) {
+            this.setStatus(400);
+            throw new Error("Maximum number of subteams (15) reached for this team.");
+        }
         const createdSubTeam = await this.authentikClient.createNewTeam({
             parent: teamId,
             parentName: parentInfo.attributes.friendlyName,
@@ -454,7 +459,6 @@ export class OrgController extends Controller {
             case TeamType.BOOTCAMP: {
                 await this.createSubTeam(newTeam.pk, { friendlyName: 'Learners', description: 'Bootcamp Students' })
                 await this.createSubTeam(newTeam.pk, { friendlyName: 'Educators', description: 'Bootcamp Teachers' })
-                await this.createSubTeam(newTeam.pk, { friendlyName: 'Mentors', description: 'Mentors for Bootcamp' })
                 await this.createSubTeam(newTeam.pk, { friendlyName: 'Interviewers', description: 'Interviewers for Bootcamp' })
                 return newTeam
             }
@@ -546,6 +550,27 @@ export class OrgController extends Controller {
             return { error: "InvalidRequest", message: "No valid fields provided for update" };
         }
         await this.authentikClient.updateGroupAttributes(teamId, filteredConf)
+    }
+
+    @Delete("teams/{teamId}")
+    @SuccessResponse(200)
+    @Security("oidc")
+    async deleteTeam(@Path() teamId: string) {
+        /* 
+           This API performs a soft-delete by flagging the team for deletion.
+           If the team is a subteam (has a parent), it removes all members to immediately revoke access.
+           Root teams are only flagged, as their deletion is more complex.
+        */
+        const teamInfo = await this.authentikClient.getGroupInfo(teamId);
+
+        /* 1. Set flaggedForDeletion to true */
+        await this.authentikClient.updateGroupAttributes(teamId, { flaggedForDeletion: true });
+
+        /* 2. If subteam, remove all members */
+        if (teamInfo.parentPk)
+            await this.authentikClient.removeAllTeamMembers(teamId);
+
+        // sync bindles
     }
 
 }
