@@ -865,7 +865,7 @@ export function RegisterRoutes(app: Router) {
                 conf: {"in":"body","name":"conf","required":true,"dataType":"nestedObjectLiteral","nestedProperties":{},"additionalProperties":{"ref":"EnabledRootSettings"}},
         };
         app.patch('/api/org/teams/:teamId/updateconf',
-            authenticateMiddleware([{"oidc":[]}]),
+            authenticateMiddleware([{"bindles":["corp:rootsettings"]}]),
             ...(fetchMiddlewares<RequestHandler>(OrgController)),
             ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.updateRootTeamSetting)),
 
@@ -1056,7 +1056,7 @@ export function RegisterRoutes(app: Router) {
                 conf: {"in":"body","name":"conf","required":true,"ref":"APIUpdateTeamRequest"},
         };
         app.patch('/api/org/teams/:teamId',
-            authenticateMiddleware([{"oidc":[]}]),
+            authenticateMiddleware([{"bindles":["corp:rootsettings"]}]),
             ...(fetchMiddlewares<RequestHandler>(OrgController)),
             ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.updateTeamAttributes)),
 

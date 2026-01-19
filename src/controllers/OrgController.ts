@@ -350,7 +350,7 @@ export class OrgController extends Controller {
 
     @Patch("teams/{teamId}/updateconf")
     @SuccessResponse(201)
-    @Security("oidc")
+    @Security("bindles", ["corp:rootsettings"])
     async updateRootTeamSetting(@Path() teamId: string, @Body() conf: { [key: string]: EnabledRootSettings }) {
         /* Filter for only the available settings */
         const applySettingsList: { [key: string]: EnabledRootSettings } = {};
@@ -414,6 +414,7 @@ export class OrgController extends Controller {
             this.setStatus(400);
             throw new Error("Maximum number of subteams (15) reached for this team.");
         }
+
         const createdSubTeam = await this.authentikClient.createNewTeam({
             parent: teamId,
             parentName: parentInfo.attributes.friendlyName,
@@ -527,7 +528,7 @@ export class OrgController extends Controller {
 
     @Patch("teams/{teamId}")
     @SuccessResponse(200)
-    @Security("oidc")
+    @Security("bindles", ["corp:rootsettings"])
     async updateTeamAttributes(@Path() teamId: string, @Body() conf: APIUpdateTeamRequest) {
         /* Strictly restrict updates to only name and description to prevent attribute pollution */
         const allowedFields = ["friendlyName", "description"];

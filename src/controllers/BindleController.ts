@@ -2,6 +2,9 @@ import { Controller, Get, Route, SuccessResponse } from "tsoa";
 import { SharedResourceClient } from "../clients";
 import { ENABLED_SHARED_RESOURCES } from "../config";
 
+import { GetGroupInfoResponse } from "../clients/AuthentikClient/models";
+import { PeoplePortalClient } from "../clients/PeoplePortalClient";
+
 export interface EnabledBindlePermissions {
     /* Name of the Perm (ex. repo:allowcreate) */
     [key: string]: boolean
@@ -57,5 +60,41 @@ export class BindleController extends Controller {
         }
 
         return sanitizedBindlePermissions;
+    }
+
+    /**
+     * Calculates granular permissions from subteam memberships interactively.
+     * Team Owners bypass this check in the middleware. Scoped to People Portal
+     * bindles only.
+     * 
+     * @param targetTeam Team Information from Authentik Client
+     * @param userGroups User's group membership from OIDC Session
+     * @returns Set of Bindle Permissions (Ex. corp:membermgmt)
+     */
+    public static getEffectivePermissionSet(targetTeam: GetGroupInfoResponse, userGroups: string[]): Set<string> {
+        /* Add Group Structures to a Set for O(1) lookup, takes O(n) time */
+        const activePermissions = new Set<string>();
+        const userGroupSet = new Set(userGroups);
+
+        /* 1. Iterate through Subteams */
+        if (targetTeam.subteams) {
+            for (const subteam of targetTeam.subteams) {
+                /* 2. Check if user is in this subteam */
+                if (userGroupSet.has(subteam.pk)) {
+                    /* 3. Merge Enabled Bindles (PeoplePortal Only) */
+                    const bindlePermissions = subteam.attributes.bindlePermissions;
+                    if (bindlePermissions) {
+                        const clientBindles = bindlePermissions[PeoplePortalClient.TAG];
+                        if (clientBindles) {
+                            for (const [bindle, enabled] of Object.entries(clientBindles)) {
+                                if (enabled) activePermissions.add(bindle);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        return activePermissions;
     }
 }
