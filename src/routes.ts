@@ -42,6 +42,13 @@ const models: TsoaRoute.Models = {
     "PaginationDefinition": {
         "dataType": "refObject",
         "properties": {
+            "next": {"dataType":"double","required":true},
+            "previous": {"dataType":"double","required":true},
+            "count": {"dataType":"double","required":true},
+            "current": {"dataType":"double","required":true},
+            "total_pages": {"dataType":"double","required":true},
+            "start_index": {"dataType":"double","required":true},
+            "end_index": {"dataType":"double","required":true},
         },
         "additionalProperties": false,
     },
@@ -133,18 +140,28 @@ const models: TsoaRoute.Models = {
     "GetTeamsListResponse": {
         "dataType": "refObject",
         "properties": {
-            "pagination": {"ref":"PaginationDefinition","required":true},
             "teams": {"dataType":"array","array":{"dataType":"refObject","ref":"TeamInformationBrief"},"required":true},
+            "nextCursor": {"dataType":"string"},
         },
         "additionalProperties": false,
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-    "GetTeamsListOptions": {
+    "APIGetTeamsListOptions": {
         "dataType": "refObject",
         "properties": {
+            "search": {"dataType":"string"},
             "subgroupsOnly": {"dataType":"boolean"},
             "includeUsers": {"dataType":"boolean"},
-            "search": {"dataType":"string"},
+            "limit": {"dataType":"double"},
+            "cursor": {"dataType":"string"},
+        },
+        "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "GetTeamsForUsernameResponse": {
+        "dataType": "refObject",
+        "properties": {
+            "teams": {"dataType":"array","array":{"dataType":"refObject","ref":"TeamInformationBrief"},"required":true},
         },
         "additionalProperties": false,
     },
@@ -193,6 +210,7 @@ const models: TsoaRoute.Models = {
             "name": {"dataType":"string","required":true},
             "users": {"dataType":"array","array":{"dataType":"refObject","ref":"UserInformationBrief"},"required":true},
             "parentPk": {"dataType":"string","required":true},
+            "parentInfo": {"ref":"GetGroupInfoResponse"},
             "subteamPkList": {"dataType":"array","array":{"dataType":"string"},"required":true},
             "subteams": {"dataType":"array","array":{"dataType":"refObject","ref":"GetGroupInfoResponse"},"required":true},
             "attributes": {"ref":"TeamAttributeDefinition","required":true},
@@ -581,7 +599,7 @@ export function RegisterRoutes(app: Router) {
         });
         // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
         const argsOrgController_getTeams: Record<string, TsoaRoute.ParameterSchema> = {
-                options: {"in":"queries","name":"options","required":true,"ref":"GetTeamsListOptions"},
+                options: {"in":"queries","name":"options","required":true,"ref":"APIGetTeamsListOptions"},
         };
         app.get('/api/org/teams',
             authenticateMiddleware([{"oidc":[]}]),
@@ -600,6 +618,37 @@ export function RegisterRoutes(app: Router) {
 
               await templateService.apiHandler({
                 methodName: 'getTeams',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsOrgController_getMyTeams: Record<string, TsoaRoute.ParameterSchema> = {
+                req: {"in":"request","name":"req","required":true,"dataType":"object"},
+        };
+        app.get('/api/org/myteams',
+            authenticateMiddleware([{"oidc":[]}]),
+            ...(fetchMiddlewares<RequestHandler>(OrgController)),
+            ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.getMyTeams)),
+
+            async function OrgController_getMyTeams(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsOrgController_getMyTeams, request, response });
+
+                const controller = new OrgController();
+
+              await templateService.apiHandler({
+                methodName: 'getMyTeams',
                 controller,
                 response,
                 next,
@@ -801,7 +850,7 @@ export function RegisterRoutes(app: Router) {
                 bindleConf: {"in":"body","name":"bindleConf","required":true,"dataType":"nestedObjectLiteral","nestedProperties":{},"additionalProperties":{"ref":"EnabledBindlePermissions"}},
         };
         app.patch('/api/org/teams/:teamId/bindles',
-            authenticateMiddleware([{"oidc":[]}]),
+            authenticateMiddleware([{"bindles":["corp:rootsettings"]}]),
             ...(fetchMiddlewares<RequestHandler>(OrgController)),
             ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.updateTeamBindles)),
 
@@ -897,7 +946,7 @@ export function RegisterRoutes(app: Router) {
                 req: {"in":"body","name":"req","required":true,"dataType":"nestedObjectLiteral","nestedProperties":{"userPk":{"dataType":"double","required":true}}},
         };
         app.post('/api/org/teams/:teamId/addmember',
-            authenticateMiddleware([{"oidc":[]}]),
+            authenticateMiddleware([{"bindles":["corp:membermgmt"]}]),
             ...(fetchMiddlewares<RequestHandler>(OrgController)),
             ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.addTeamMember)),
 
@@ -929,7 +978,7 @@ export function RegisterRoutes(app: Router) {
                 req: {"in":"body","name":"req","required":true,"dataType":"nestedObjectLiteral","nestedProperties":{"userPk":{"dataType":"double","required":true}}},
         };
         app.post('/api/org/teams/:teamId/removemember',
-            authenticateMiddleware([{"oidc":[]}]),
+            authenticateMiddleware([{"bindles":["corp:membermgmt"]}]),
             ...(fetchMiddlewares<RequestHandler>(OrgController)),
             ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.removeTeamMember)),
 
@@ -961,7 +1010,7 @@ export function RegisterRoutes(app: Router) {
                 req: {"in":"body","name":"req","required":true,"ref":"APICreateSubTeamRequest"},
         };
         app.post('/api/org/teams/:teamId/subteam',
-            authenticateMiddleware([{"oidc":[]}]),
+            authenticateMiddleware([{"bindles":["corp:subteamaccess"]}]),
             ...(fetchMiddlewares<RequestHandler>(OrgController)),
             ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.createSubTeam)),
 

@@ -18,7 +18,7 @@
 
 import axios from "axios"
 import log from "loglevel"
-import { AddGroupMemberRequest, AuthentikClientError, CreateTeamRequest, CreateTeamResponse, CreateUserRequest, GetGroupInfoResponse as GetGroupInfoResponse, GetTeamsListOptions as GetGroupsListOptions, GetTeamsListResponse as GetGroupsListResponse, GetUserListOptions, GetUserListResponse, RemoveGroupMemberRequest, TeamAttributeDefinition, TeamInformationBrief, UserAttributeDefinition, UserInformationBrief } from "./models"
+import { AddGroupMemberRequest, AuthentikClientError, AuthentikServerVersion, CreateTeamRequest, CreateTeamResponse, CreateUserRequest, GetGroupInfoRequestOptions, GetGroupInfoResponse as GetGroupInfoResponse, GetTeamsListOptions as GetGroupsListOptions, GetTeamsListResponse as GetGroupsListResponse, GetTeamsForUsernameResponse, GetUserListOptions, GetUserListResponse, RemoveGroupMemberRequest, TeamAttributeDefinition, TeamInformationBrief, UserAttributeDefinition, UserInformationBrief, AuthentikFilterCursor } from "./models"
 import { randomUUID } from "crypto"
 import { sanitizeGroupName } from "../../utils/strings"
 import { EnabledRootSettings } from "../../controllers/OrgController"
@@ -36,12 +36,38 @@ export class AuthentikClient {
         }
     }
 
+    /* Server Version Compatibility */
+    private static readonly MIN_SERVER_VERSION = "2025.12.0" /* Breaking Changes from 2025.8+ */
+    private static readonly MAX_SERVER_VERSION = "2025.12.1"
+
     constructor() {
         if (!this.AxiosBaseConfig.baseURL)
             throw new Error("Authentik Backend URL is Invalid!")
 
         if (!this.AUTHENTIK_TOKEN)
             throw new Error("Authentik Token is Invalid!")
+    }
+
+    public static validateAuthentikConnection = async () => {
+        const client = new AuthentikClient();
+        var RequestConfig: any = {
+            ...client.AxiosBaseConfig,
+            method: 'get',
+            url: `/api/v3/admin/version/`,
+        }
+
+        try {
+            const res = await axios.request(RequestConfig)
+            const version = new AuthentikServerVersion(res.data.version_current);
+            if (!version.isAtLeast(AuthentikClient.MIN_SERVER_VERSION) || !version.isAtMost(AuthentikClient.MAX_SERVER_VERSION))
+                throw new AuthentikClientError(`Authentik Server Version ${version} is not compatible with People Portal. Please ensure the server is greater than ${AuthentikClient.MIN_SERVER_VERSION} and less than ${AuthentikClient.MAX_SERVER_VERSION}`);
+
+            /* Log Authentik Connection */
+            log.info(AuthentikClient.TAG, `Connection Validated to Authentik v${version}`);
+        } catch (e) {
+            log.error(AuthentikClient.TAG, "Authentik Connection Validation Failed: ", e);
+            throw new AuthentikClientError("Critical: Failed to validate Authentik Connection or Version.");
+        }
     }
 
     public getUserInfo = async (userId: number): Promise<UserInformationBrief> => {
@@ -111,38 +137,176 @@ export class AuthentikClient {
         }
     }
 
-    public getGroupsList = async (options: GetGroupsListOptions): Promise<GetGroupsListResponse> => {
+    public getTeamsForUsername = async (username: string): Promise<GetTeamsForUsernameResponse> => {
         var RequestConfig: any = {
             ...this.AxiosBaseConfig,
             method: 'get',
             url: '/api/v3/core/groups/',
             params: {
                 include_users: false,
-                is_superuser: false
+                is_superuser: false,
+                include_parents: true, /* For Subteams, We return the Parent Team */
+                include_children: false, /* We don't need subteams */
+                members_by_username: username, /* Fetch Groups with Username as Member */
+                page_size: 10000,
             }
         }
 
-        if (options.includeUsers)
-            RequestConfig.params.include_users = options.includeUsers
-
-        if (options.search)
-            RequestConfig.params.search = options.search
-
         try {
             const res = await axios.request(RequestConfig)
-            const filteredResults = res.data.results.filter((entry: any) => entry.attributes.peoplePortalCreation && ((options.subgroupsOnly) ? entry.parent : !entry.parent))
-            const teamListArray: TeamInformationBrief[] = filteredResults.map((team: any) => ({
-                name: team.name,
-                pk: team.pk,
-                parent: team.parent,
-                ...team.attributes
-            }))
+            const teamMap = new Map<string, TeamInformationBrief>();
 
-            /* Return Mapped List */
+            for (const group of res.data.results) {
+                /* Filter by People Portal Creation */
+                if (!group.attributes?.peoplePortalCreation)
+                    continue;
+
+                const parentPk = group.parents?.[0] ?? null;
+
+                if (parentPk) {
+                    /* It's a Subteam, so we append the Parent Team */
+                    const parentTeam = group.parents_obj?.[0];
+
+                    /* Safety Check */
+                    if (!parentTeam) continue;
+
+                    /* Add Parent to Map (Deduplicates) */
+                    teamMap.set(parentTeam.pk, {
+                        name: parentTeam.name,
+                        pk: parentTeam.pk,
+                        parent: null, /* Parent of a Parent is null (Root Team) */
+                        ...parentTeam.attributes
+                    });
+                } else {
+                    /* It's a Root Team */
+                    teamMap.set(group.pk, {
+                        name: group.name,
+                        pk: group.pk,
+                        parent: null,
+                        ...group.attributes
+                    });
+                }
+            }
+
             return {
-                pagination: res.data.pagination,
-                teams: teamListArray
+                teams: Array.from(teamMap.values())
             };
+        } catch (e) {
+            log.error(AuthentikClient.TAG, "Get Group List for User Request Failed with Error: ", e)
+            throw new AuthentikClientError("Get Group List for User Request Failed")
+        }
+    }
+
+    /**
+     * Fetches list of groups from Authentik and filters for People Portal Creations,
+     * filters out subteams and returns only root level groups. Method provides infinite
+     * scrolling support via Base64 encoded cursor pagination.
+     * 
+     * @param options Get Groups Options
+     * @returns List of Groups
+     */
+    public getGroupsList = async (options: GetGroupsListOptions): Promise<GetGroupsListResponse> => {
+        /* Default Limits */
+        const limit = options.limit ?? 20;
+
+        /* Initial Cursor State */
+        let currentCursor: AuthentikFilterCursor = {
+            authentikPage: 1,
+            authentikIndex: 0,
+            searchHash: Buffer.from(options.search ?? "").toString('base64')
+        };
+
+        /* Decode Cursor if provided */
+        if (options.cursor) {
+            try {
+                const decoded = JSON.parse(Buffer.from(options.cursor, 'base64').toString('ascii'));
+
+                /* Check Search Hash Consistency */
+                const currentSearchHash = Buffer.from(options.search ?? "").toString('base64');
+                if (decoded.searchHash === currentSearchHash) {
+                    currentCursor = decoded;
+                }
+            } catch (e) {
+                log.warn(AuthentikClient.TAG, "Invalid Cursor Provided, resetting to start.");
+            }
+        }
+
+        const collectedTeams: TeamInformationBrief[] = [];
+        let hasMorePages = true;
+
+        try {
+            while (collectedTeams.length < limit && hasMorePages) {
+                var RequestConfig: any = {
+                    ...this.AxiosBaseConfig,
+                    method: 'get',
+                    url: '/api/v3/core/groups/',
+                    params: {
+                        include_users: false,
+                        is_superuser: false,
+                        page: currentCursor.authentikPage,
+                        page_size: 100, /* Fetch larger chunks internally */
+                        ordering: 'name', /* Standard Order for Streaming */
+                    }
+                }
+
+                if (options.includeUsers)
+                    RequestConfig.params.include_users = options.includeUsers
+
+                if (options.search)
+                    RequestConfig.params.search = options.search
+
+                const res = await axios.request(RequestConfig);
+                const results = res.data.results;
+                const totalPages = Math.ceil(res.data.pagination.count / 100);
+
+                /* Iterate current page starting from cursor index */
+                for (let i = currentCursor.authentikIndex; i < results.length; i++) {
+                    const entry = results[i];
+
+                    /* Filter Logic */
+                    const parentPk = entry.parent ?? entry.parents?.[0] ?? null;  /* 01-19-2026 (@atheesh): Filtering Patches to support Authentik v2025.12+ */
+                    const isMatch = entry.attributes.peoplePortalCreation && ((options.subgroupsOnly) ? parentPk : !parentPk);
+
+                    if (isMatch) {
+                        collectedTeams.push({
+                            name: entry.name,
+                            pk: entry.pk,
+                            parent: parentPk,
+                            ...entry.attributes
+                        });
+                    }
+
+                    /* Advance Cursor Index */
+                    currentCursor.authentikIndex = i + 1;
+
+                    /* If limit reached, break loop */
+                    if (collectedTeams.length >= limit) {
+                        break;
+                    }
+                }
+
+                /* Check if we need to advance to next page */
+                if (collectedTeams.length < limit) {
+                    if (currentCursor.authentikPage < totalPages) {
+                        currentCursor.authentikPage++;
+                        currentCursor.authentikIndex = 0; /* Reset index for new page */
+                    } else {
+                        hasMorePages = false; /* EOF */
+                    }
+                }
+            }
+
+            /* Construct Next Cursor */
+            let nextCursor: string | undefined = undefined;
+            if (hasMorePages) {
+                nextCursor = Buffer.from(JSON.stringify(currentCursor)).toString('base64');
+            }
+
+            return {
+                teams: collectedTeams,
+                ...(nextCursor && { nextCursor })
+            };
+
         } catch (e) {
             log.error(AuthentikClient.TAG, "Get Teams List Request Failed with Error: ", e)
             throw new AuthentikClientError("Get Team Request Failed")
@@ -182,14 +346,16 @@ export class AuthentikClient {
         }
     }
 
-    public getGroupInfo = async (teamId: string): Promise<GetGroupInfoResponse> => {
+    public getGroupInfo = async (teamId: string, options?: GetGroupInfoRequestOptions): Promise<GetGroupInfoResponse> => {
         var RequestConfig: any = {
             ...this.AxiosBaseConfig,
             method: 'get',
             url: `/api/v3/core/groups/${teamId}/`,
             params: {
-                include_users: true,
-                include_children: true
+                /* Avoid Breaking Changes of Including Request Options, Default to True */
+                include_users: options?.includeUsers ?? true,
+                include_children: options?.includeChildren ?? true,
+                include_parents: options?.includeParentInfo ?? false
             }
         }
 
@@ -197,10 +363,12 @@ export class AuthentikClient {
             const res = await axios.request(RequestConfig)
             const subteams = res.data.children_obj
 
-            /* Populate Users Within SubTeams */
-            for (let subteam of subteams) {
-                const subteamInfo = await this.getGroupInfo(subteam.pk)
-                subteam.users = subteamInfo.users
+            /* Populate Users Within Subteams, Optional to Avoid Breaking Changes */
+            if (!(options?.disableSubteamMemberPopulate)) {
+                for (let subteam of subteams) {
+                    const subteamInfo = await this.getGroupInfo(subteam.pk)
+                    subteam.users = subteamInfo.users
+                }
             }
 
             return {
@@ -208,7 +376,8 @@ export class AuthentikClient {
                 name: res.data.name,
                 subteamPkList: res.data.children,
                 subteams: res.data.children_obj,
-                parentPk: res.data.parent,
+                parentPk: res.data.parent ?? res.data.parents?.[0] ?? null, /* People Portal Legacy Single Parent Patch */
+                parentInfo: res.data.parents_obj ? res.data.parents_obj[0] : null, /* Authentik 2025.12+ Only */
                 attributes: res.data.attributes,
                 users: res.data.users_obj.map((user: any) => ({
                     pk: user.pk,
@@ -224,7 +393,16 @@ export class AuthentikClient {
         }
     }
 
-    public updateGroupAttributes = async (teamId: string, updatePayload: Partial<TeamAttributeDefinition>): Promise<boolean> => {
+    /**
+     * Private method to update any group attributes. 
+     * Warning: Shouldn't be made public and inputs need to be sanitized as it
+     * executes directly on the Authentik Backend!
+     * 
+     * @param teamId Target Team ID
+     * @param updatePayload Raw, Sanitized Update Payload
+     * @returns True if the update was successful
+     */
+    private updateGroupAttributes = async (teamId: string, updatePayload: Partial<TeamAttributeDefinition>): Promise<boolean> => {
         let groupInfo = await this.getGroupInfo(teamId);
         var RequestConfig: any = {
             ...this.AxiosBaseConfig,
@@ -247,6 +425,14 @@ export class AuthentikClient {
         }
     }
 
+    /**
+     * Method to sanitize and update the Root Team Settings.
+     * Internally calls updateGroupAttributes.
+     * 
+     * @param teamId Target Team ID
+     * @param teamSettings Unsanitized Root Team Settings
+     * @returns True if update was successful
+     */
     public updateRootTeamSettings = async (teamId: string, teamSettings: { [key: string]: EnabledRootSettings }): Promise<boolean> => {
         return await this.updateGroupAttributes(
             teamId,
@@ -254,6 +440,14 @@ export class AuthentikClient {
         )
     }
 
+    /**
+     * Method to Update Team Bindle Permissions.
+     * Internally calls updateGroupAttributes.
+     * 
+     * @param teamId Target Team ID
+     * @param bindlePermissions Unsanitized Bindle Perissions Map
+     * @returns True if update was successful
+     */
     public updateBindlePermissions = async (teamId: string, bindlePermissions: { [key: string]: EnabledBindlePermissions }): Promise<boolean> => {
         return await this.updateGroupAttributes(
             teamId,
@@ -261,6 +455,55 @@ export class AuthentikClient {
         )
     }
 
+    /**
+     * Flags a group for deletion.
+     * Internally calls updateGroupAttributes.
+     * 
+     * @param teamId Target Team ID
+     * @returns True if update was successful
+     */
+    public flagGroupForDeletion = async (teamId: string): Promise<boolean> => {
+        return await this.updateGroupAttributes(
+            teamId,
+            { flaggedForDeletion: true }
+        )
+    }
+
+    /**
+     * Validates and updates group information (Friendly Name & Description).
+     * 
+     * @param teamId Target Team ID
+     * @param conf Configuration object containing potential updates
+     */
+    public updateGroupInformation = async (teamId: string, conf: { [key: string]: string | undefined }) => {
+        /* Strictly restrict updates to only name and description to prevent attribute pollution */
+        const allowedFields = ["friendlyName", "description"];
+        const filteredConf: any = {};
+
+        for (const key of allowedFields) {
+            if (conf[key] !== undefined) {
+                if (conf[key]!.trim() === "") {
+                    throw new Error("Attributes cannot be blank");
+                }
+                filteredConf[key] = conf[key];
+            }
+        }
+
+        if (Object.keys(filteredConf).length === 0) {
+            throw new Error("No valid fields provided for update");
+        }
+
+        await this.updateGroupAttributes(teamId, filteredConf);
+    }
+
+    /**
+     * Method to update User Attibutes in the Authentik Backend.
+     * Requires verified update payload of type Partial<UserAttributeDefinition>
+     * 
+     * @param userId Target User ID
+     * @param updatePayload Verified Update Payload
+     * @returns True if update was successful
+     */
     public updateUserAttributes = async (userId: number, updatePayload: Partial<UserAttributeDefinition>): Promise<boolean> => {
         let userInfo = await this.getUserInfo(userId);
         var RequestConfig: any = {
@@ -452,7 +695,7 @@ export class AuthentikClient {
             data: {
                 is_superuser: false,
                 name: (request.parent) ? `${sanitizeGroupName(request.parentName!)}${teamName}` : teamName,
-                parent: request.parent,
+                parents: request.parent ? [request.parent] : [], /* Patched for Authentik v2025.12+ */
                 attributes: teamAttributes
             }
         }

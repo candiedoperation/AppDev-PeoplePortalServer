@@ -18,7 +18,7 @@
 
 import * as express from 'express'
 import { Request, Body, Controller, Get, Patch, Path, Post, Queries, Res, Route, SuccessResponse, Put, Security, Delete } from "tsoa";
-import { AddGroupMemberRequest, CreateTeamRequest, CreateTeamResponse, GetGroupInfoResponse, GetTeamsListOptions, GetTeamsListResponse, GetUserListOptions, GetUserListResponse, RemoveGroupMemberRequest, SeasonType, TeamType, UserInformationBrief } from "../clients/AuthentikClient/models";
+import { AddGroupMemberRequest, CreateTeamRequest, CreateTeamResponse, GetGroupInfoResponse, GetTeamsListOptions, GetTeamsListResponse, GetUserListOptions, GetUserListResponse, RemoveGroupMemberRequest, SeasonType, TeamType, UserInformationBrief, GetTeamsForUsernameResponse } from "../clients/AuthentikClient/models";
 import { AuthentikClient } from "../clients/AuthentikClient";
 import { UUID } from "crypto";
 import { IInvite, Invite } from "../models/Invites";
@@ -107,6 +107,15 @@ interface APITeamInviteAcceptRequest {
     phoneNumber: string;
 }
 
+interface APIGetTeamsListOptions {
+    search?: string,
+    subgroupsOnly?: boolean,
+    includeUsers?: boolean,
+
+    limit?: number;
+    cursor?: string;
+}
+
 interface ExpressRequestSessionShim {
     session: { authorizedUser: AuthorizedUser }
 }
@@ -159,8 +168,15 @@ export class OrgController extends Controller {
     @Get("teams")
     @SuccessResponse(200)
     @Security("oidc")
-    async getTeams(@Queries() options: GetTeamsListOptions): Promise<GetTeamsListResponse> {
+    async getTeams(@Queries() options: APIGetTeamsListOptions): Promise<GetTeamsListResponse> {
         return await this.authentikClient.getGroupsList(options)
+    }
+
+    @Get("myteams")
+    @SuccessResponse(200)
+    @Security("oidc")
+    async getMyTeams(@Request() req: express.Request): Promise<GetTeamsForUsernameResponse> {
+        return await this.authentikClient.getTeamsForUsername(req.session.authorizedUser!.username)
     }
 
     @Post("invites/new")
@@ -170,12 +186,6 @@ export class OrgController extends Controller {
         const authorizedUser = req.session.authorizedUser!;
         const teamInfo = await this.getTeamInfo(inviteReq.teamPk)
         const invitorInfo = await this.authentikClient.getUserInfoFromEmail(authorizedUser.email)
-
-        /* Verify Team Owner Status */
-        // if (!teamInfo.team.users.includes(inviterPk)) {
-        //     this.setStatus(403);
-        //     throw new Error(`You're not authorized to perform Team Management options for the resource ${teamInfo.team.name}`)
-        // }
 
         /* Create New Invite */
         const createdInvite = await Invite.create({
@@ -258,7 +268,7 @@ export class OrgController extends Controller {
     @SuccessResponse(200)
     @Security("oidc")
     async getTeamInfo(@Path() teamId: string): Promise<APITeamInfoResponse> {
-        const primaryTeam = await this.authentikClient.getGroupInfo(teamId)
+        const primaryTeam = await this.authentikClient.getGroupInfo(teamId);
 
         /* Recursive Team Population Logic for Authentik Versions less than 2025.8 */
         // const subteamList = await this.authentikClient.getGroupsList({
@@ -288,7 +298,7 @@ export class OrgController extends Controller {
 
     @Patch("teams/{teamId}/bindles")
     @SuccessResponse(201)
-    @Security("oidc")
+    @Security("bindles", ["corp:rootsettings"])
     async updateTeamBindles(@Path() teamId: string, @Body() bindleConf: { [key: string]: EnabledBindlePermissions }) {
         /**
          * WARNING
@@ -384,7 +394,7 @@ export class OrgController extends Controller {
 
     @Post("teams/{teamId}/addmember")
     @SuccessResponse(201)
-    @Security("oidc")
+    @Security("bindles", ["corp:membermgmt"])
     async addTeamMember(@Path() teamId: string, @Body() req: { userPk: number }) {
         /* Needs Is Team owner Middleware?! */
         await this.addTeamMemberWrapper({
@@ -395,7 +405,7 @@ export class OrgController extends Controller {
 
     @Post("teams/{teamId}/removemember")
     @SuccessResponse(201)
-    @Security("oidc")
+    @Security("bindles", ["corp:membermgmt"])
     async removeTeamMember(@Path() teamId: string, @Body() req: { userPk: number }) {
         /* Needs Is Team owner Middleware?! */
         await this.removeTeamMemberWrapper({
@@ -406,7 +416,7 @@ export class OrgController extends Controller {
 
     @Post("teams/{teamId}/subteam")
     @SuccessResponse(201)
-    @Security("oidc")
+    @Security("bindles", ["corp:subteamaccess"])
     async createSubTeam(@Path() teamId: string, @Body() req: APICreateSubTeamRequest): Promise<CreateTeamResponse> {
         const parentInfo = await this.authentikClient.getGroupInfo(teamId)
 
@@ -507,6 +517,14 @@ export class OrgController extends Controller {
         const userInfo = await this.authentikClient.getUserInfo(request.userPk)
         const groupInfo = await this.authentikClient.getGroupInfo(request.groupId)
 
+        /* Check if we're removing the last owner from a Root Team */
+        if (!this.isGroupSubteam(groupInfo)) {
+            if (groupInfo.users.length <= 1) {
+                this.setStatus(409);
+                throw new Error("Cannot Remove the last Team Owner. Add someone else to remove yourself.");
+            }
+        }
+
         /* Get Parent Team Name if available, otherwise fallback to current group */
         let teamName = groupInfo.attributes.friendlyName ?? groupInfo.name
         if (groupInfo.parentPk) {
@@ -531,26 +549,7 @@ export class OrgController extends Controller {
     @Security("bindles", ["corp:rootsettings"])
     async updateTeamAttributes(@Path() teamId: string, @Body() conf: APIUpdateTeamRequest) {
         /* Strictly restrict updates to only name and description to prevent attribute pollution */
-        const allowedFields = ["friendlyName", "description"];
-        const filteredConf: any = {};
-        for (const key of allowedFields) {
-            if (conf[key] !== undefined) {
-                if (conf[key].trim() === "") {
-                    this.setStatus(400)
-                    return {
-                        error: "InvalidRequest",
-                        message: "Attributes cannot be blank"
-                    };
-                }
-                filteredConf[key] = conf[key];
-            }
-        }
-
-        if (Object.keys(filteredConf).length === 0) {
-            this.setStatus(400);
-            return { error: "InvalidRequest", message: "No valid fields provided for update" };
-        }
-        await this.authentikClient.updateGroupAttributes(teamId, filteredConf)
+        await this.authentikClient.updateGroupInformation(teamId, conf);
     }
 
     @Delete("teams/{teamId}")
@@ -565,7 +564,7 @@ export class OrgController extends Controller {
         const teamInfo = await this.authentikClient.getGroupInfo(teamId);
 
         /* 1. Set flaggedForDeletion to true */
-        await this.authentikClient.updateGroupAttributes(teamId, { flaggedForDeletion: true });
+        await this.authentikClient.flagGroupForDeletion(teamId);
 
         /* 2. If subteam, remove all members */
         if (teamInfo.parentPk)
@@ -574,4 +573,7 @@ export class OrgController extends Controller {
         // sync bindles
     }
 
+    private isGroupSubteam(group: GetGroupInfoResponse): boolean {
+        return !!group.parentPk;
+    }
 }

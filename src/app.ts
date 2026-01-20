@@ -29,6 +29,7 @@ import expressSession from 'express-session'
 import { generateSecureRandomString } from "./utils/strings";
 import path from "path";
 import { NativeExpressOIDCAuthPort } from "./auth";
+import { AuthentikClient } from "./clients/AuthentikClient";
 
 if (!process.env.PEOPLEPORTAL_TOKEN_SECRET)
   process.env.PEOPLEPORTAL_TOKEN_SECRET = generateSecureRandomString(16)
@@ -103,7 +104,9 @@ app.use(function errorHandler(
 });
 
 app.listen(PORT, async () => {
+  /* Validate Connections */
   await OpenIdClient.init()
+  await AuthentikClient.validateAuthentikConnection()
   await mongoose.connect(process.env.PEOPLEPORTAL_MONGO_URL!)
   console.log(`Server running at http://localhost:${PORT}`);
 });

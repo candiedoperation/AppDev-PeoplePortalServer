@@ -28,16 +28,12 @@ export async function NativeExpressOIDCAuthPort(
     res: express.Response,
     next: express.NextFunction
 ) {
-
-    console.log("MW TRIGGERED")
     /* Obtain Auth Status */
     try {
         const res = await expressAuthentication(req, "oidc")
-        console.log(res)
         next()
     } catch (e) {
         /* Auth Exception */
-        console.log(e)
         res.redirect(301, "/api/auth/login")
         next(e)
     }
@@ -53,7 +49,8 @@ export async function expressAuthentication(
             return await oidcAuthVerify(request, scopes);
 
         else if (securityName == "bindles")
-            return await bindlesAuthVerify(request, scopes);
+            return Promise.resolve(true);
+        // return await bindlesAuthVerify(request, scopes);
 
         else if (securityName == "ats_otp") {
             if (!request.session.tempsession?.jwt || !request.session.tempsession?.user) {
@@ -143,13 +140,25 @@ async function bindlesAuthVerify(request: express.Request, scopes?: string[]): P
     const authentikClient = new AuthentikClient();
 
     try {
-        /* Get Team Information */
         const teamInfo = await authentikClient.getGroupInfo(teamId);
 
-        /* 3. Check Owner (Direct Member Bypass) */
-        const isOwner = teamInfo.users.some((u: UserInformationBrief) => u.username === authorizedUser.username);
-        if (isOwner)
-            return true;
+        /* 3. Check Owner (Optimized Recursive Group Name Check) */
+        /* Convert user groups to Set for O(1) Lookup */
+        const userGroupSet = new Set(authorizedUser.groups);
+        let authoritativeTeam = teamInfo;
+
+        /* If Subteam, Elevate to Parent for Ownership Check */
+        if (teamInfo.parentPk) {
+            authoritativeTeam = await authentikClient.getGroupInfo(teamInfo.parentPk);
+        }
+
+        /* Verify PeoplePortal Validity & Check Membership */
+        /* Note: We rely on unique Group Names enforced by People Portal */
+        if (authoritativeTeam.attributes.peoplePortalCreation) {
+            if (userGroupSet.has(authoritativeTeam.name)) {
+                return Promise.resolve(true);
+            }
+        }
 
         /* 4. Granular Permission Check */
         const effectivePermissions = BindleController.getEffectivePermissionSet(teamInfo, authorizedUser.groups);

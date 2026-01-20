@@ -60,8 +60,21 @@ export interface UserAttributeDefinition {
     }
 }
 
-export interface PaginationDefinition {
+export interface AuthentikFilterCursor {
+    authentikPage: number;
+    authentikIndex: number;
+    searchHash: string;
+}
 
+
+export interface PaginationDefinition {
+    next: number;
+    previous: number;
+    count: number;
+    current: number;
+    total_pages: number;
+    start_index: number;
+    end_index: number;
 }
 
 /* Teams API Models */
@@ -73,7 +86,13 @@ export interface GetUserListOptions {
 export interface GetTeamsListOptions {
     subgroupsOnly?: boolean,
     includeUsers?: boolean,
-    search?: string
+    search?: string,
+    limit?: number,
+    cursor?: string
+}
+
+export interface GetTeamsForUsernameResponse {
+    teams: TeamInformationBrief[]
 }
 
 export interface TeamInformationBrief {
@@ -83,8 +102,15 @@ export interface TeamInformationBrief {
 }
 
 export interface GetTeamsListResponse {
-    pagination: PaginationDefinition,
-    teams: TeamInformationBrief[]
+    teams: TeamInformationBrief[],
+    nextCursor?: string
+}
+
+export interface GetGroupInfoRequestOptions {
+    includeParentInfo?: boolean,
+    includeChildren?: boolean,
+    includeUsers?: boolean,
+    disableSubteamMemberPopulate?: boolean
 }
 
 export interface GetGroupInfoResponse {
@@ -92,6 +118,7 @@ export interface GetGroupInfoResponse {
     name: string,
     users: UserInformationBrief[],
     parentPk: string,
+    parentInfo?: GetGroupInfoResponse, /* Optional to Avoid Breaking Changes */
     subteamPkList: string[],
     subteams: GetGroupInfoResponse[],
     attributes: TeamAttributeDefinition
@@ -158,5 +185,45 @@ export class AuthentikClientError extends Error {
     constructor(message: string) {
         super(message)
         this.name = "AuthentikClientError"
+    }
+}
+
+export class AuthentikServerVersion {
+    private version: string;
+    constructor(version: string) {
+        this.version = version;
+    }
+
+    /**
+     * Compares two Authentik Version Strings
+     * 
+     * @param v1 Authentik Version String
+     * @param v2 Authentik Version String
+     * @returns -1, 0 or 1 for numeric comparison
+     */
+    private static compare(v1: string, v2: string): number {
+        const p1 = v1.split('.').map(Number);
+        const p2 = v2.split('.').map(Number);
+        const len = Math.max(p1.length, p2.length);
+
+        for (let i = 0; i < len; i++) {
+            const n1 = p1[i] || 0;
+            const n2 = p2[i] || 0;
+            if (n1 > n2) return 1;
+            if (n1 < n2) return -1;
+        }
+        return 0;
+    }
+
+    public isAtLeast(other: string): boolean {
+        return AuthentikServerVersion.compare(this.version, other) >= 0;
+    }
+
+    public isAtMost(other: string): boolean {
+        return AuthentikServerVersion.compare(this.version, other) <= 0;
+    }
+
+    public toString(): string {
+        return this.version;
     }
 }
