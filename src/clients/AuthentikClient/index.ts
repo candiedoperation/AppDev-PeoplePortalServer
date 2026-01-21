@@ -148,7 +148,7 @@ export class AuthentikClient {
                 include_parents: true, /* For Subteams, We return the Parent Team */
                 include_children: false, /* We don't need subteams */
                 members_by_username: username, /* Fetch Groups with Username as Member */
-                page_size: 10000,
+                page_size: 1000,
             }
         }
 

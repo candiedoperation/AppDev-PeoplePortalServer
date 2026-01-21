@@ -17,7 +17,7 @@
 */
 
 import * as express from 'express'
-import { Request, Body, Controller, Get, Patch, Path, Post, Queries, Res, Route, SuccessResponse, Put, Security, Delete } from "tsoa";
+import { Request, Body, Controller, Get, Patch, Path, Post, Queries, Res, Route, SuccessResponse, Put, Security, Delete, Tags } from "tsoa";
 import { AddGroupMemberRequest, CreateTeamRequest, CreateTeamResponse, GetGroupInfoResponse, GetTeamsListOptions, GetTeamsListResponse, GetUserListOptions, GetUserListResponse, RemoveGroupMemberRequest, SeasonType, TeamType, UserInformationBrief, GetTeamsForUsernameResponse } from "../clients/AuthentikClient/models";
 import { AuthentikClient } from "../clients/AuthentikClient";
 import { UUID } from "crypto";
@@ -112,7 +112,9 @@ interface APIGetTeamsListOptions {
     subgroupsOnly?: boolean,
     includeUsers?: boolean,
 
+    /** @default 20 */
     limit?: number;
+    /** Base-64 Encoded Cursor */
     cursor?: string;
 }
 
@@ -141,14 +143,30 @@ export class OrgController extends Controller {
         }
     }
 
+    /**
+     * Fetches the list of people in the organization.
+     * Uses the Authentik Client for internal filtering.
+     * 
+     * @param options Options for searching and pagination
+     * @returns Paginated List of People in the Organization
+     */
     @Get("people")
+    @Tags("People Management")
     @SuccessResponse(200)
     @Security("oidc")
     async getPeople(@Queries() options: GetUserListOptions): Promise<GetUserListResponse> {
         return await this.authentikClient.getUserList(options)
     }
 
+    /**
+     * Fetches basic user information and additional attributes set
+     * by People Portal, given the user's primary key ID.
+     * 
+     * @param personId Internal User ID
+     * @returns User Information
+     */
     @Get("people/{personId}")
+    @Tags("People Management")
     @SuccessResponse(200)
     @Security("oidc")
     async getPersonInfo(@Path() personId: number): Promise<APIUserInfoResponse> {
@@ -158,30 +176,72 @@ export class OrgController extends Controller {
         }
     }
 
+    /**
+     * Provides the list of available root team settings supported
+     * by People Portal teams.
+     * 
+     * @returns Team Settings List
+     */
     @Get("teamsettings")
+    @Tags("Team Configuration")
     @SuccessResponse(200)
     @Security("oidc")
     async listRootTeamSettings() {
         return this.teamSettingList;
     }
 
+    /**
+     * Fetches the list of all People Portal teams in the organization.
+     * API includes a Base64-encoded cursor for pagination to assist with
+     * post fetch filtering from Authentik and infinite scrolling.
+     * 
+     * @param options Get Team List Options
+     * @returns Cursor-Paginated List of Teams
+     */
     @Get("teams")
+    @Tags("Team Management")
     @SuccessResponse(200)
     @Security("oidc")
     async getTeams(@Queries() options: APIGetTeamsListOptions): Promise<GetTeamsListResponse> {
         return await this.authentikClient.getGroupsList(options)
     }
 
+    /**
+     * Fetches the list of all People Portal teams in the organization that
+     * the user is a member of. Uses the Request Session Cookie for user
+     * information. **List size is capped to 1000.**
+     * 
+     * @param req Express Request Object
+     * @returns Non-Paginated List of Teams
+     */
     @Get("myteams")
+    @Tags("Team Management")
     @SuccessResponse(200)
     @Security("oidc")
     async getMyTeams(@Request() req: express.Request): Promise<GetTeamsForUsernameResponse> {
         return await this.authentikClient.getTeamsForUsername(req.session.authorizedUser!.username)
     }
 
+    /**
+     * Creates a new invite for a user to join a team. To call the API,
+     * the user must either be a team owner or have the corp:membermgmt
+     * bindle. The invitee is automatically sent an email with a unique
+     * invite link for onboarding.
+     * 
+     * Bindle Exceptions:
+     * - This function supports being called by the ATS Module allowing
+     *   the ATS to create invites on behalf of the requester.
+     * 
+     * - The ATS module is enforced to require the corp:hiringaccess bindle
+     *   to offset for the bindle exception.
+     * 
+     * @param req Express Request Object
+     * @param inviteReq Invite Create Request
+     */
     @Post("invites/new")
+    @Tags("User Onboarding", "Team Management")
     @SuccessResponse(201)
-    @Security("oidc")
+    @Security("bindles", ["corp:membermgmt"])
     async createInvite(@Request() req: express.Request | ExpressRequestSessionShim, @Body() inviteReq: APITeamInviteCreateRequest) {
         const authorizedUser = req.session.authorizedUser!;
         const teamInfo = await this.getTeamInfo(inviteReq.teamPk)
@@ -195,7 +255,7 @@ export class OrgController extends Controller {
             teamName: teamInfo.team.attributes.friendlyName,
             subteamPk: inviteReq.subteamPk,
             inviterPk: invitorInfo.pk,
-            expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000)
+            expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000) /* 48 Hours */
         })
 
         /* Send an Email to the Invitee and the Invitor */
@@ -216,6 +276,7 @@ export class OrgController extends Controller {
     }
 
     @Get("invites/{inviteId}")
+    @Tags("User Onboarding")
     @SuccessResponse(200)
     async getInviteInfo(@Path() inviteId: string): Promise<APITeamInviteGetResponse> {
         const invite = await Invite.findById(inviteId).lean<APITeamInviteGetResponse>().exec()
@@ -226,6 +287,7 @@ export class OrgController extends Controller {
     }
 
     @Put("invites/{inviteId}")
+    @Tags("User Onboarding")
     @SuccessResponse(201)
     async acceptInvite(@Path() inviteId: string, @Body() req: APITeamInviteAcceptRequest) {
         const invite = await Invite.findById(inviteId).exec()
@@ -259,12 +321,14 @@ export class OrgController extends Controller {
     }
 
     @Post("tools/verifyslack")
+    @Tags("Generic Organization Tools")
     @SuccessResponse(200)
     async verifySlack(@Body() req: { email: string }): Promise<boolean> {
         return await this.slackClient.validateUserPresence(req.email)
     }
 
     @Get("teams/{teamId}")
+    @Tags("Team Configuration")
     @SuccessResponse(200)
     @Security("oidc")
     async getTeamInfo(@Path() teamId: string): Promise<APITeamInfoResponse> {
@@ -289,6 +353,7 @@ export class OrgController extends Controller {
     }
 
     @Get("teams/{teamId}/bindles")
+    @Tags("Team Configuration", "Bindle Authorization Layer")
     @SuccessResponse(200)
     @Security("oidc")
     async getTeamBindles(@Path() teamId: string): Promise<{ [key: string]: EnabledBindlePermissions }> {
@@ -297,6 +362,7 @@ export class OrgController extends Controller {
     }
 
     @Patch("teams/{teamId}/bindles")
+    @Tags("Team Configuration", "Bindle Authorization Layer")
     @SuccessResponse(201)
     @Security("bindles", ["corp:rootsettings"])
     async updateTeamBindles(@Path() teamId: string, @Body() bindleConf: { [key: string]: EnabledBindlePermissions }) {
@@ -312,6 +378,7 @@ export class OrgController extends Controller {
     }
 
     @Get("teams/{teamId}/awsaccess")
+    @Tags("Team External Integrations")
     @SuccessResponse(201)
     @Security("oidc")
     async fetchAWSAccessCredentials(@Request() req: express.Request, @Path() teamId: string) {
@@ -359,6 +426,7 @@ export class OrgController extends Controller {
     }
 
     @Patch("teams/{teamId}/updateconf")
+    @Tags("Team Configuration")
     @SuccessResponse(201)
     @Security("bindles", ["corp:rootsettings"])
     async updateRootTeamSetting(@Path() teamId: string, @Body() conf: { [key: string]: EnabledRootSettings }) {
@@ -393,6 +461,7 @@ export class OrgController extends Controller {
     }
 
     @Post("teams/{teamId}/addmember")
+    @Tags("Team Management")
     @SuccessResponse(201)
     @Security("bindles", ["corp:membermgmt"])
     async addTeamMember(@Path() teamId: string, @Body() req: { userPk: number }) {
@@ -404,6 +473,7 @@ export class OrgController extends Controller {
     }
 
     @Post("teams/{teamId}/removemember")
+    @Tags("Team Management")
     @SuccessResponse(201)
     @Security("bindles", ["corp:membermgmt"])
     async removeTeamMember(@Path() teamId: string, @Body() req: { userPk: number }) {
@@ -415,6 +485,7 @@ export class OrgController extends Controller {
     }
 
     @Post("teams/{teamId}/subteam")
+    @Tags("Subteam Management")
     @SuccessResponse(201)
     @Security("bindles", ["corp:subteamaccess"])
     async createSubTeam(@Path() teamId: string, @Body() req: APICreateSubTeamRequest): Promise<CreateTeamResponse> {
@@ -442,6 +513,7 @@ export class OrgController extends Controller {
     }
 
     @Post("teams/create")
+    @Tags("Team Management")
     @SuccessResponse(201)
     @Security("oidc")
     async createTeam(@Body() req: APICreateTeamRequest): Promise<CreateTeamResponse> {
@@ -477,6 +549,7 @@ export class OrgController extends Controller {
     }
 
     @Patch("teams/{teamId}/syncbindles")
+    @Tags("Team Configuration", "Bindle Authorization Layer")
     @SuccessResponse(200)
     @Security("oidc")
     async syncOrgBindles(@Request() req: Request, @Path() teamId: string) {
@@ -545,6 +618,7 @@ export class OrgController extends Controller {
     }
 
     @Patch("teams/{teamId}")
+    @Tags("Team Configuration")
     @SuccessResponse(200)
     @Security("bindles", ["corp:rootsettings"])
     async updateTeamAttributes(@Path() teamId: string, @Body() conf: APIUpdateTeamRequest) {
@@ -553,6 +627,7 @@ export class OrgController extends Controller {
     }
 
     @Delete("teams/{teamId}")
+    @Tags("Team Management")
     @SuccessResponse(200)
     @Security("oidc")
     async deleteTeam(@Path() teamId: string) {

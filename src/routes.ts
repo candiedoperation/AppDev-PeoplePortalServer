@@ -152,7 +152,7 @@ const models: TsoaRoute.Models = {
             "search": {"dataType":"string"},
             "subgroupsOnly": {"dataType":"boolean"},
             "includeUsers": {"dataType":"boolean"},
-            "limit": {"dataType":"double"},
+            "limit": {"dataType":"double","default":20},
             "cursor": {"dataType":"string"},
         },
         "additionalProperties": false,
@@ -665,7 +665,7 @@ export function RegisterRoutes(app: Router) {
                 inviteReq: {"in":"body","name":"inviteReq","required":true,"ref":"APITeamInviteCreateRequest"},
         };
         app.post('/api/org/invites/new',
-            authenticateMiddleware([{"oidc":[]}]),
+            authenticateMiddleware([{"bindles":["corp:membermgmt"]}]),
             ...(fetchMiddlewares<RequestHandler>(OrgController)),
             ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.createInvite)),
 

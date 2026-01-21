@@ -17,7 +17,7 @@
 */
 
 import * as express from 'express'
-import { Request, Controller, Get, Route, SuccessResponse, Security, Post, Body } from "tsoa";
+import { Request, Controller, Get, Route, SuccessResponse, Security, Post, Body, Tags } from "tsoa";
 import { OpenIdClient } from '../clients/OpenIdClient';
 import { UserInfoResponse } from 'openid-client';
 import { Applicant } from '../models/Applicant';
@@ -46,6 +46,7 @@ export class AuthController extends Controller {
     }
 
     @Get("userinfo")
+    @Tags("Core Authentication")
     @Security("oidc")
     @SuccessResponse(200)
     async getUserInfo(@Request() req: express.Request): Promise<UserInfoResponse> {
@@ -57,6 +58,7 @@ export class AuthController extends Controller {
     }
 
     @Get("login")
+    @Tags("Core Authentication")
     @SuccessResponse(302, "Redirect")
     async handleLogin(@Request() req: express.Request) {
         let authFlowResponse = OpenIdClient.startAuthFlow()
@@ -70,6 +72,7 @@ export class AuthController extends Controller {
     }
 
     @Get("redirect")
+    @Tags("Core Authentication")
     @SuccessResponse(302, "Redirect")
     async handleRedirect(@Request() req: express.Request) {
         try {
@@ -90,6 +93,7 @@ export class AuthController extends Controller {
     }
 
     @Post("otpinit")
+    @Tags("Guest Authentication")
     @SuccessResponse(200)
     async otpInitRequest(@Body() body: OtpInitRequest, @Request() req: express.Request) {
         const { email, name } = body;
@@ -126,6 +130,7 @@ export class AuthController extends Controller {
     }
 
     @Post("otpverify")
+    @Tags("Guest Authentication")
     @SuccessResponse(200)
     async otpVerifyRequest(@Body() body: OtpVerifyRequest, @Request() req: express.Request) {
         const { email, otp } = body;
@@ -178,6 +183,7 @@ export class AuthController extends Controller {
     }
 
     @Get("verifyotpsession")
+    @Tags("Guest Authentication")
     @SuccessResponse(200)
     async otpVerifySession(@Request() req: express.Request) {
         const tempsession = req.session.tempsession;
@@ -250,6 +256,7 @@ export class AuthController extends Controller {
     }
 
     @Post("logout")
+    @Tags("Core Authentication")
     @SuccessResponse(200)
     async handleLogout(@Request() req: express.Request) {
         return new Promise((resolve) => {

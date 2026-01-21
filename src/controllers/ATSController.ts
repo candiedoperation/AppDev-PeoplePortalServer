@@ -1,4 +1,4 @@
-import { Body, Request, Controller, Delete, Get, Path, Post, Put, Route, SuccessResponse } from "tsoa";
+import { Body, Request, Controller, Delete, Get, Path, Post, Put, Route, SuccessResponse, Tags } from "tsoa";
 import { SubteamConfig, ISubteamConfig } from "../models/SubteamConfig";
 import { TeamRecruitingStatus, ITeamRecruitingStatus } from "../models/TeamRecruitingStatus";
 import { AuthentikClient } from "../clients/AuthentikClient";
@@ -74,6 +74,7 @@ export class ATSController extends Controller {
     }
 
     @Get("resume/upload-url")
+    @Tags("Applicant Portal")
     @Security("ats_otp")
     @SuccessResponse(200)
     async getResumeUploadUrl(@Request() request: any, @Query() fileName: string, @Query() contentType: string) {
@@ -153,6 +154,7 @@ export class ATSController extends Controller {
     }
 
     @Get("resume/download")
+    @Tags("Recruitment Actions")
     @Security("ats_otp")
     @SuccessResponse(307, "Temporary Redirect")
     async getResumeDownloadUrl(@Request() request: any, @Query() key: string) {
@@ -192,6 +194,7 @@ export class ATSController extends Controller {
     }
 
     @Get("config/{subteamId}")
+    @Tags("Recruitment Configuration")
     @SuccessResponse(200)
     async getSubTeamATSConfig(@Path() subteamId: string) {
         const config = await SubteamConfig.findOne({ subteamPk: subteamId }).lean().exec() as any;
@@ -227,6 +230,7 @@ export class ATSController extends Controller {
     }
 
     @Post("config/{subteamId}")
+    @Tags("Recruitment Configuration")
     @SuccessResponse(200, "Created or Updated")
     async createOrUpdateSubteamConfig(@Path() subteamId: string, @Body() body: ATSSubteamConfigRequest) {
         const { isRecruiting, roles, roleSpecificQuestions } = body;
@@ -268,6 +272,7 @@ export class ATSController extends Controller {
     }
 
     @Get("openteams")
+    @Tags("Applicant Portal")
     @SuccessResponse(200)
     async getAllRecruitingTeams() {
         const recruitingTeams: any[] = await TeamRecruitingStatus.find({ isRecruiting: true }).lean().exec();
@@ -303,6 +308,7 @@ export class ATSController extends Controller {
     }
 
     @Get("stages")
+    @Tags("Recruitment Actions")
     @SuccessResponse(200)
     async getApplicationStages() {
         // Return the ApplicationStage enum as an array of {id, name} objects
@@ -315,6 +321,7 @@ export class ATSController extends Controller {
     }
 
     @Get("teams/{teamId}")
+    @Tags("Applicant Portal")
     @SuccessResponse(200)
     async getTeamDetails(@Path() teamId: string) {
         try {
@@ -372,6 +379,7 @@ export class ATSController extends Controller {
     }
 
     @Get("openteams/{teamId}")
+    @Tags("Applicant Portal")
     @SuccessResponse(200)
     async getTeamRecruitingStatus(@Path() teamId: string) {
         const teamStatus = await TeamRecruitingStatus.findOne({ teamPk: teamId }).lean().exec();
@@ -385,6 +393,7 @@ export class ATSController extends Controller {
     }
 
     @Put("openteams/{teamId}/{subteamId}")
+    @Tags("Applicant Portal")
     @SuccessResponse(200)
     async addSubteamToRecruiting(@Path() teamId: string, @Path() subteamId: string) {
         const updatedTeam = await TeamRecruitingStatus.findOneAndUpdate(
@@ -409,6 +418,7 @@ export class ATSController extends Controller {
     }
 
     @Delete("openteams/{teamId}/{subteamId}")
+    @Tags("Applicant Portal")
     @SuccessResponse(200)
     async removeSubteamFromRecruiting(@Path() teamId: string, @Path() subteamId: string) {
         const updatedTeam = await TeamRecruitingStatus.findOneAndUpdate(
@@ -435,6 +445,7 @@ export class ATSController extends Controller {
     }
 
     @Get("applications/{teamId}")
+    @Tags("Recruitment Actions")
     @Security("oidc")
     @SuccessResponse(200)
     async getTeamApplications(@Path() teamId: string): Promise<KanbanApplicationCard[]> {
@@ -473,6 +484,7 @@ export class ATSController extends Controller {
     }
 
     @Get("applications/applicant/{applicantId}/resume")
+    @Tags("Recruitment Actions")
     @Security("oidc")
     @SuccessResponse(200)
     async getApplicantUrls(@Path() applicantId: string) {
@@ -526,6 +538,7 @@ export class ATSController extends Controller {
 
 
     @Put("applications/{applicationId}/stage")
+    @Tags("Recruitment Actions")
     @Security("oidc")
     @SuccessResponse(200, "Stage updated")
     async updateApplicationStage(
@@ -670,6 +683,7 @@ export class ATSController extends Controller {
     }
 
     @Get("applications/applicant/{applicantId}/applications")
+    @Tags("Recruitment Actions")
     @Security("oidc")
     @SuccessResponse(200)
     async getApplicantApplications(@Path() applicantId: string) {
@@ -727,6 +741,7 @@ export class ATSController extends Controller {
 
 
     @Post("applications/apply")
+    @Tags("Applicant Portal")
     @Security("ats_otp")
     @SuccessResponse(201, "Application submitted")
     async applyToTeam(
@@ -957,6 +972,7 @@ export class ATSController extends Controller {
     }
 
     @Post("profile")
+    @Tags("Applicant Portal")
     @Security("ats_otp")
     @SuccessResponse(200, "Profile Updated")
     async updateProfile(@Body() body: ApplicantProfile, @Request() request: any) {

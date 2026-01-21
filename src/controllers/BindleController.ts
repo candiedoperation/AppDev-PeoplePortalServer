@@ -1,4 +1,4 @@
-import { Controller, Get, Route, SuccessResponse } from "tsoa";
+import { Controller, Get, Route, SuccessResponse, Tags } from "tsoa";
 import { SharedResourceClient } from "../clients";
 import { ENABLED_SHARED_RESOURCES } from "../config";
 
@@ -32,12 +32,27 @@ export class BindleController extends Controller {
         return definitions;
     })();
 
+    /**
+     * Fetches the list of globally available Bindle Settings constructed
+     * from enabled shared resources.
+     * 
+     * @returns List of available Bindle Permissions
+     */
     @Get("definitions")
+    @Tags("Bindle Authorization Layer")
     @SuccessResponse(200)
     async getDefinitions(): Promise<{ [key: string]: BindlePermissionMap }> {
         return BindleController.bindleDefinition;
     }
 
+    /**
+     * Given a list of bindle permissions, this function will sanitize the input
+     * by removing any bindle permissions that are not supported by the enabled
+     * shared resources.
+     * 
+     * @param bindlePermissions Input Bindle Permission Map
+     * @returns Sanitized Bindle Permission Map
+     */
     public static sanitizeBindlePermissions = (bindlePermissions: { [key: string]: EnabledBindlePermissions }): { [key: string]: EnabledBindlePermissions } => {
         const sanitizedBindlePermissions: { [key: string]: EnabledBindlePermissions } = {};
         for (const clientName in bindlePermissions) {
