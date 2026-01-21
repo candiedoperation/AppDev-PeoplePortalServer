@@ -10,6 +10,11 @@ export class PeoplePortalClient implements SharedResourceClient {
             description: "Enabling this allows members in this subteam to recruit new members to your team",
         },
 
+        "corp:awsaccess": {
+            friendlyName: "AWS Console Access",
+            description: "Enabling this allows members in this subteam to access the AWS Console",
+        },
+
         "corp:rootsettings": {
             friendlyName: "Allow Team Settings Management",
             description: "Enabling this allows members in this subteam to modify team settings",
@@ -18,6 +23,11 @@ export class PeoplePortalClient implements SharedResourceClient {
         "corp:subteamaccess": {
             friendlyName: "Allow Subteam Management",
             description: "Enabling this allows members in this subteam to create, modify and delete subteams",
+        },
+
+        "corp:permissionsmgmt": {
+            friendlyName: "Allow Permission Management",
+            description: "Enabling this allows members to modify all permissions for all subteams",
         },
 
         "corp:membermgmt": {

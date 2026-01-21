@@ -850,7 +850,7 @@ export function RegisterRoutes(app: Router) {
                 bindleConf: {"in":"body","name":"bindleConf","required":true,"dataType":"nestedObjectLiteral","nestedProperties":{},"additionalProperties":{"ref":"EnabledBindlePermissions"}},
         };
         app.patch('/api/org/teams/:teamId/bindles',
-            authenticateMiddleware([{"bindles":["corp:rootsettings"]}]),
+            authenticateMiddleware([{"bindles":["corp:permissionsmgmt"]}]),
             ...(fetchMiddlewares<RequestHandler>(OrgController)),
             ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.updateTeamBindles)),
 
@@ -882,7 +882,7 @@ export function RegisterRoutes(app: Router) {
                 teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
         };
         app.get('/api/org/teams/:teamId/awsaccess',
-            authenticateMiddleware([{"oidc":[]}]),
+            authenticateMiddleware([{"bindles":["corp:awsaccess"]}]),
             ...(fetchMiddlewares<RequestHandler>(OrgController)),
             ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.fetchAWSAccessCredentials)),
 

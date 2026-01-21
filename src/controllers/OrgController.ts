@@ -224,7 +224,7 @@ export class OrgController extends Controller {
 
     /**
      * Creates a new invite for a user to join a team. To call the API,
-     * the user must either be a team owner or have the corp:membermgmt
+     * the user must either be a team owner or have the `corp:membermgmt`
      * bindle. The invitee is automatically sent an email with a unique
      * invite link for onboarding.
      * 
@@ -232,7 +232,7 @@ export class OrgController extends Controller {
      * - This function supports being called by the ATS Module allowing
      *   the ATS to create invites on behalf of the requester.
      * 
-     * - The ATS module is enforced to require the corp:hiringaccess bindle
+     * - The ATS module is enforced to require the `corp:hiringaccess` bindle
      *   to offset for the bindle exception.
      * 
      * @param req Express Request Object
@@ -275,6 +275,13 @@ export class OrgController extends Controller {
         })
     }
 
+    /**
+     * Public API since Invite IDs are unique and can't be guessed. Additionally,
+     * temporary authentication through OTP is supported but would need an overhaul.
+     * 
+     * @param inviteId Invite UUID
+     * @returns Invite Information
+     */
     @Get("invites/{inviteId}")
     @Tags("User Onboarding")
     @SuccessResponse(200)
@@ -286,6 +293,15 @@ export class OrgController extends Controller {
         return invite
     }
 
+    /**
+     * Accepts an invite to join a team. The invitee must provide a password
+     * and major. The invitee is automatically added to the team and given
+     * the role specified in the invite. Slack and other verification checks
+     * are in place.
+     * 
+     * @param inviteId Invite UUID
+     * @param req Accept Invite Request
+     */
     @Put("invites/{inviteId}")
     @Tags("User Onboarding")
     @SuccessResponse(201)
@@ -320,6 +336,13 @@ export class OrgController extends Controller {
         await invite.deleteOne()
     }
 
+    /**
+     * Verifies if a user is a member of the Slack Workspace. Uses the
+     * Slack Shared Resources Client for operations.
+     * 
+     * @param req Verify Slack Request
+     * @returns True if the user is a member of the Slack Workspace, false otherwise
+     */
     @Post("tools/verifyslack")
     @Tags("Generic Organization Tools")
     @SuccessResponse(200)
@@ -327,6 +350,14 @@ export class OrgController extends Controller {
         return await this.slackClient.validateUserPresence(req.email)
     }
 
+    /**
+     * Provides information about a specific team in the organization. Includes
+     * subteams, users and attributes. Access granted to all OIDC authenticated
+     * users without any bindle restrictions.
+     * 
+     * @param teamId Team ID
+     * @returns Team Information
+     */
     @Get("teams/{teamId}")
     @Tags("Team Configuration")
     @SuccessResponse(200)
@@ -352,6 +383,14 @@ export class OrgController extends Controller {
         }
     }
 
+    /**
+     * Provides a list of available bindles, collated from shared resources,
+     * that are supported by teams. This feature is usually populated and used
+     * in a subteam-level context.
+     * 
+     * @param teamId Team ID
+     * @returns Bindle Permissions Map
+     */
     @Get("teams/{teamId}/bindles")
     @Tags("Team Configuration", "Bindle Authorization Layer")
     @SuccessResponse(200)
@@ -361,26 +400,45 @@ export class OrgController extends Controller {
         return teamInfo.attributes.bindlePermissions ?? {}; /* Legacy Teams don't have bindles! */
     }
 
+    /**
+     * Updates the bindle permissions for a team. This method is used in a
+     * subteam-level context. Team Owners can update subteam level permissions
+     * and other members need to hold the `corp:permissionsmgmt` bindle.
+     * 
+     * **WARNING:**
+     * This method does not sync the bindles for users across the shared resources.
+     * A seperate team bindle sync call needs to be made to sync bindles for all subteams and
+     * users in a team.
+     * 
+     * @param teamId Team or Subteam ID
+     * @param bindleConf Bindle Permissions Map
+     */
     @Patch("teams/{teamId}/bindles")
     @Tags("Team Configuration", "Bindle Authorization Layer")
     @SuccessResponse(201)
-    @Security("bindles", ["corp:rootsettings"])
+    @Security("bindles", ["corp:permissionsmgmt"])
     async updateTeamBindles(@Path() teamId: string, @Body() bindleConf: { [key: string]: EnabledBindlePermissions }) {
-        /**
-         * WARNING
-         * This method does not sync the bindles for users across the shared resources.
-         * A seperate team bindle sync call needs to be made to sync bindles for all subteams and
-         * users in a team.
-         */
-
         const bindlePermissions = BindleController.sanitizeBindlePermissions(bindleConf);
         await this.authentikClient.updateBindlePermissions(teamId, bindlePermissions);
     }
 
+    /**
+     * Generates a temporary link to access the team's AWS Console. Account Provisioning
+     * is handled by AWSClient and Root Team Settings. Access is moderated by the Bindle
+     * Authorization Layer.
+     * 
+     * To enable AWS Access, the team owner or `corp:rootsettings` bindle is required. For 
+     * generating a console link from this API, the user must either be a Team Owner or
+     * hold the corp:awsaccess bindle.
+     * 
+     * @param req Express Request Object
+     * @param teamId Team ID
+     * @returns Temporary AWS Console Link
+     */
     @Get("teams/{teamId}/awsaccess")
     @Tags("Team External Integrations")
     @SuccessResponse(201)
-    @Security("oidc")
+    @Security("bindles", ["corp:awsaccess"])
     async fetchAWSAccessCredentials(@Request() req: express.Request, @Path() teamId: string) {
         const res = (req as any).res as express.Response
         res.setHeader('Content-Type', 'text/plain');
@@ -425,6 +483,13 @@ export class OrgController extends Controller {
         res.end()
     }
 
+    /**
+     * Updates the Root Team Settings for a Team. To perform this action, the user
+     * must either be a Team Owner or hold the `corp:rootsettings` bindle.
+     * 
+     * @param teamId Team ID
+     * @param conf Root Team Settings Map
+     */
     @Patch("teams/{teamId}/updateconf")
     @Tags("Team Configuration")
     @SuccessResponse(201)
@@ -460,6 +525,13 @@ export class OrgController extends Controller {
         }
     }
 
+    /**
+     * Adds an existing member to a team. To perform this action, the user must 
+     * either be a Team Owner or hold the `corp:membermgmt` bindle.
+     * 
+     * @param teamId Team ID
+     * @param req User PK
+     */
     @Post("teams/{teamId}/addmember")
     @Tags("Team Management")
     @SuccessResponse(201)
@@ -472,6 +544,13 @@ export class OrgController extends Controller {
         })
     }
 
+    /**
+     * Removes an existing member from a team. To perform this action, the user must 
+     * either be a Team Owner or hold the `corp:membermgmt` bindle.
+     * 
+     * @param teamId Team ID
+     * @param req User PK
+     */
     @Post("teams/{teamId}/removemember")
     @Tags("Team Management")
     @SuccessResponse(201)
@@ -484,6 +563,14 @@ export class OrgController extends Controller {
         })
     }
 
+    /**
+     * Creates a new subteam inside a team. To perform this action, the user must
+     * either be a Team Owner or hold the `corp:subteamaccess` bindle.
+     * 
+     * @param teamId Team ID
+     * @param req Subteam Information
+     * @returns Created Subteam Information
+     */
     @Post("teams/{teamId}/subteam")
     @Tags("Subteam Management")
     @SuccessResponse(201)
@@ -512,6 +599,7 @@ export class OrgController extends Controller {
         return createdSubTeam
     }
 
+    /** WARN: Fix Authorization? */
     @Post("teams/create")
     @Tags("Team Management")
     @SuccessResponse(201)

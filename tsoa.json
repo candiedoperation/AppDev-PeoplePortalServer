@@ -1,17 +1,25 @@
 {
   "entryFile": "src/app.ts",
   "noImplicitAdditionalProperties": "throw-on-extras",
-  "controllerPathGlobs": ["src/**/*Controller.ts"],
+  "controllerPathGlobs": [
+    "src/**/*Controller.ts"
+  ],
   "spec": {
     "outputDirectory": "dist",
     "specVersion": 3,
-
     "securityDefinitions": {
       "oidc": {
         "type": "openIdConnect",
         "openIdConnectUrl": "https://localhost:9443/application/o/swagger-test/.well-known/openid-configuration"
-        
       }
+    },
+    "name": "People Portal Server",
+    "description": "© 2025 Atheesh Thirumalairajan",
+    "license": "GNU General Public License Version 3",
+    "contact": {
+      "name": "Atheesh Thirumalairajan",
+      "email": "atheesh@atheesh.org",
+      "url": "https://github.com/candiedoperation/AppDev-PeoplePortalServer"
     }
   },
   "routes": {
