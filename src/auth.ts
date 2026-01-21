@@ -49,8 +49,7 @@ export async function expressAuthentication(
             return await oidcAuthVerify(request, scopes);
 
         else if (securityName == "bindles")
-            return Promise.resolve(true);
-        // return await bindlesAuthVerify(request, scopes);
+            return await bindlesAuthVerify(request, scopes);
 
         else if (securityName == "ats_otp") {
             if (!request.session.tempsession?.jwt || !request.session.tempsession?.user) {

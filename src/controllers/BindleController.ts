@@ -80,7 +80,7 @@ export class BindleController extends Controller {
         if (targetTeam.subteams) {
             for (const subteam of targetTeam.subteams) {
                 /* 2. Check if user is in this subteam */
-                if (userGroupSet.has(subteam.pk)) {
+                if (userGroupSet.has(subteam.name)) {
                     /* 3. Merge Enabled Bindles (PeoplePortal Only) */
                     const bindlePermissions = subteam.attributes.bindlePermissions;
                     if (bindlePermissions) {
