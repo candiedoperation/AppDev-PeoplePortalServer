@@ -365,15 +365,6 @@ const models: TsoaRoute.Models = {
         "additionalProperties": {"dataType":"union","subSchemas":[{"ref":"JsonValue"},{"dataType":"undefined"}]},
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-    "LoginQueryParams": {
-        "dataType": "refObject",
-        "properties": {
-            "redirect_uri": {"dataType":"string"},
-            "state": {"dataType":"string"},
-        },
-        "additionalProperties": false,
-    },
-    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
     "OtpInitRequest": {
         "dataType": "refObject",
         "properties": {
@@ -1235,7 +1226,8 @@ export function RegisterRoutes(app: Router) {
         // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
         const argsAuthController_handleLogin: Record<string, TsoaRoute.ParameterSchema> = {
                 req: {"in":"request","name":"req","required":true,"dataType":"object"},
-                queryParams: {"in":"queries","name":"queryParams","required":true,"ref":"LoginQueryParams"},
+                redirect_uri: {"in":"query","name":"redirect_uri","dataType":"string"},
+                state: {"in":"query","name":"state","dataType":"string"},
         };
         app.get('/api/auth/login',
             ...(fetchMiddlewares<RequestHandler>(AuthController)),

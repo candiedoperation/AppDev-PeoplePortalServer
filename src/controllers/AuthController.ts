@@ -17,7 +17,7 @@
 */
 
 import * as express from 'express'
-import { Request, Controller, Get, Route, SuccessResponse, Security, Post, Body, Tags, Queries } from "tsoa";
+import { Request, Controller, Get, Route, SuccessResponse, Security, Post, Body, Tags, Queries, Hidden, Query } from "tsoa";
 import { OpenIdClient } from '../clients/OpenIdClient';
 import { UserInfoResponse } from 'openid-client';
 import { Applicant } from '../models/Applicant';
@@ -37,15 +37,6 @@ interface OtpVerifyRequest {
     otp: string;
 }
 
-interface LoginQueryParams {
-    redirect_uri?: string;
-    state?: string;
-
-    /** @ignore (Used for OIDC Shim in API Docs) */
-    client_id?: string;
-    /** @ignore (Used for OIDC Shim in API Docs) */
-    response_type?: string;
-}
 
 @Route("/api/auth")
 export class AuthController extends Controller {
@@ -84,20 +75,29 @@ export class AuthController extends Controller {
      * to the /api/auth/redirect endpoint which handles the final steps as defined in the next method.
      * 
      * @param req Express Request Object
-     * @param queryParams Redirection and other OIDC State Parameters
+     * @param redirect_uri Post-Login Redirect URL 
      * @returns Redirects to the OpenID Connect Authorization Server
      */
     @Get("login")
     @Tags("Core Authentication")
     @SuccessResponse(302, "Redirect")
-    async handleLogin(@Request() req: express.Request, @Queries() queryParams: LoginQueryParams) {
+    async handleLogin(
+        @Request() req: express.Request,
+        @Query() redirect_uri?: string,
+
+        /** OpenID Connect Shim for API Docs. Ignored for other API Requests. */
+        @Query() state?: string,
+
+        /* These are hidden parameters used for OIDC Shim */
+        @Query() @Hidden() _client_id?: string,
+        @Query() @Hidden() _response_type?: string,
+    ) {
         /* Capture Redirect Context */
         req.session.tempsession = req.session.tempsession || {};
-
-        if (queryParams.redirect_uri) {
-            req.session.tempsession.redirect_uri = queryParams.redirect_uri;
-            if (queryParams.state)
-                req.session.tempsession.state = queryParams.state;
+        if (redirect_uri) {
+            req.session.tempsession.redirect_uri = redirect_uri;
+            if (state)
+                req.session.tempsession.state = state;
         }
 
         let authFlowResponse = OpenIdClient.startAuthFlow()
