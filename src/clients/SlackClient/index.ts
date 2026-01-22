@@ -20,10 +20,25 @@ import { WebClient } from '@slack/web-api';
 import { BindlePermissionMap } from '../../controllers/BindleController';
 import { SharedResourceClient } from '..';
 import { GetGroupInfoResponse } from '../AuthentikClient/models';
+import { computeStringArrStateDiff } from '../../utils/operations';
 
 export class SlackClient implements SharedResourceClient {
     private static readonly TAG = "SlackClient"
     private readonly slackClient: WebClient;
+    private botUserId: string | undefined;
+
+    private async executeWithRateLimitRetry<T>(operation: () => Promise<T>): Promise<T> {
+        try {
+            return await operation();
+        } catch (error: any) {
+            if (error?.code === 'slack_web_api_rate_limited_error' || error?.data?.error === 'ratelimited') {
+                console.warn(`Slack rate limit hit. Waiting 3 seconds before retrying...`);
+                await new Promise(resolve => setTimeout(resolve, 3000));
+                return await operation();
+            }
+            throw error;
+        }
+    }
 
     private readonly supportedBindles: BindlePermissionMap = {
 
@@ -31,6 +46,16 @@ export class SlackClient implements SharedResourceClient {
 
     constructor() {
         this.slackClient = new WebClient(process.env.PEOPLEPORTAL_SLACK_BOT_TOKEN);
+    }
+
+    private async getBotUserId(): Promise<string> {
+        if (this.botUserId) return this.botUserId;
+        const result = await this.executeWithRateLimitRetry(() => this.slackClient.auth.test());
+        if (result.user_id) {
+            this.botUserId = result.user_id;
+            return result.user_id;
+        }
+        throw new Error("Could not fetch Bot User ID");
     }
 
     getResourceName(): string {
@@ -42,11 +67,34 @@ export class SlackClient implements SharedResourceClient {
     }
 
     async handleOrgBindleSync(org: GetGroupInfoResponse, callback: (updatedResourceCount: number, status: string) => void): Promise<boolean> {
+        // Cache for email -> userId mapping to avoid redundant API calls across channels
+        const userIdCache = new Map<string, string>();
+        const botId = await this.getBotUserId();
+
+        const resolveUserId = async (email: string): Promise<string | undefined> => {
+            if (userIdCache.has(email)) return userIdCache.get(email);
+            try {
+                const userLookup = await this.executeWithRateLimitRetry(() => this.slackClient.users.lookupByEmail({ email }));
+                const userId = userLookup.user?.id;
+                if (userId) {
+                    userIdCache.set(email, userId);
+                    return userId;
+                }
+            } catch (error: any) {
+                if (error?.data?.error !== 'users_not_found') {
+                    console.error(`Failed to resolve user ${email}`, error);
+                }
+            }
+            return undefined;
+        };
 
         for (const subteam of org.subteams) {
-            const channelName = `${org.attributes.friendlyName}-${subteam.attributes.friendlyName}`
+            const channelName = subteam.name
                 .toLowerCase()
-                .replace(/ /g, '-');
+                .replace(/[^a-z0-9-_]/g, '-') // Replace invalid chars with hyphen
+                .replace(/-+/g, '-')          // Collapse multiple hyphens
+                .replace(/^-|-$/g, '')        // Trim leading/trailing hyphens
+                .substring(0, 80);            // Enforce max length of 80 chars
 
             callback(0, `Processing Slack Channel: ${channelName}`);
 
@@ -54,14 +102,41 @@ export class SlackClient implements SharedResourceClient {
                 const channelId = await this.createOrGetChannel(channelName);
 
                 if (channelId) {
-                    // Add Subteam Members
-                    for (const user of subteam.users) {
-                        await this.addUserToChannel(channelId, user.email);
+                    // 1. Get Current Channel Members
+                    const currentMemberIds = await this.getChannelMembers(channelId);
+
+                    // 2. Resolve Target Members (Subteam + Org Owners)
+                    const targetUserIds = new Set<string>();
+
+                    const membersToResolve = [
+                        ...subteam.users,
+                        ...org.users
+                    ];
+
+                    for (const user of membersToResolve) {
+                        const uid = await resolveUserId(user.email);
+                        if (uid) targetUserIds.add(uid);
                     }
 
-                    // Add Team Owners (from the parent org)
-                    for (const user of org.users) {
-                        await this.addUserToChannel(channelId, user.email);
+                    // 3. Calculate Diff
+                    const { additions, deletions } = computeStringArrStateDiff(Array.from(targetUserIds), Array.from(currentMemberIds));
+
+                    // 4. Handle Additions
+                    for (const uid of additions) {
+                        await this.executeWithRateLimitRetry(() => this.slackClient.conversations.invite({
+                            channel: channelId,
+                            users: uid
+                        })).catch((e: any) => {
+                            if (e?.data?.error !== 'already_in_channel') {
+                                console.error(`Failed to add user ${uid} to channel ${channelName}`, e);
+                            }
+                        });
+                    }
+
+                    // 5. Handle Deletions
+                    for (const uid of deletions) {
+                        if (uid === botId) continue; // NEVER remove the bot
+                        await this.removeUserFromChannel(channelId, uid);
                     }
 
                     callback(0, `Synced Slack Channel: ${channelName}`);
@@ -79,10 +154,10 @@ export class SlackClient implements SharedResourceClient {
 
     private async createOrGetChannel(channelName: string): Promise<string | undefined> {
         try {
-            const result = await this.slackClient.conversations.create({
+            const result = await this.executeWithRateLimitRetry(() => this.slackClient.conversations.create({
                 name: channelName,
                 is_private: true
-            });
+            }));
             return result.channel?.id;
         } catch (error: any) {
             if (error?.data?.error === 'name_taken') {
@@ -90,11 +165,11 @@ export class SlackClient implements SharedResourceClient {
                     let cursor: string | undefined;
                     do {
                         const options: any = {
-                            types: 'public_channel,private_channel',
+                            types: 'private_channel',
                         };
                         if (cursor) options.cursor = cursor;
 
-                        const listResult: any = await this.slackClient.conversations.list(options);
+                        const listResult: any = await this.executeWithRateLimitRetry(() => this.slackClient.conversations.list(options));
 
                         const found = listResult.channels?.find((c: any) => c.name === channelName);
                         if (found) {
@@ -112,32 +187,46 @@ export class SlackClient implements SharedResourceClient {
                     console.error("Error listing channels to find existing one", listError);
                 }
             }
-            // console.error("Error creating channel", channelName, error);
+            console.error("Error creating channel", channelName, error);
             return undefined;
         }
     }
 
-    private async addUserToChannel(channelId: string, email: string) {
-        try {
-            const userLookup = await this.slackClient.users.lookupByEmail({ email });
-            const userId = userLookup.user?.id;
-            if (!userId) return;
+    private async getChannelMembers(channelId: string): Promise<Set<string>> {
+        const currentMemberIds = new Set<string>();
+        let cursor: string | undefined;
+        do {
+            const options: any = { channel: channelId };
+            if (cursor) options.cursor = cursor;
 
-            await this.slackClient.conversations.invite({
+            const membersResult: any = await this.executeWithRateLimitRetry(() => this.slackClient.conversations.members(options));
+            if (membersResult.members) {
+                for (const m of membersResult.members) currentMemberIds.add(m);
+            }
+            cursor = membersResult.response_metadata?.next_cursor;
+        } while (cursor);
+        return currentMemberIds;
+    }
+
+
+
+    private async removeUserFromChannel(channelId: string, userId: string) {
+        try {
+            await this.executeWithRateLimitRetry(() => this.slackClient.conversations.kick({
                 channel: channelId,
-                users: userId
-            });
+                user: userId
+            }));
         } catch (error: any) {
             const code = error?.data?.error;
-            if (code !== 'users_not_found' && code !== 'already_in_channel') {
-                console.error(`Failed to add user ${email} to channel ${channelId}`, error);
+            if (code !== 'not_in_channel' && code !== 'cant_kick_self') {
+                console.error(`Failed to remove user ${userId} from channel ${channelId}`, error);
             }
         }
     }
 
     public async validateUserPresence(email: string): Promise<boolean> {
         try {
-            const result = await this.slackClient.users.lookupByEmail({ email });
+            const result = await this.executeWithRateLimitRetry(() => this.slackClient.users.lookupByEmail({ email }));
             return !!result.user;
         } catch (error: any) {
             if (error?.data?.error === 'users_not_found') {
