@@ -41,11 +41,10 @@ interface LoginQueryParams {
     redirect_uri?: string;
     state?: string;
 
-    /* OAuth2 Standard Params (Auth Passthrough Only) */
+    /** @ignore (Used for OIDC Shim in API Docs) */
     client_id?: string;
+    /** @ignore (Used for OIDC Shim in API Docs) */
     response_type?: string;
-    scope?: string;
-    nonce?: string;
 }
 
 @Route("/api/auth")
@@ -56,6 +55,14 @@ export class AuthController extends Controller {
         this.emailClient = new EmailClient()
     }
 
+    /**
+     * Returns the user info of the currently authenticated user. Uses the
+     * Express Session Cookie and User Scopes provided by the OpenID Connect
+     * Authorization Server.
+     * 
+     * @param req Express Request Object
+     * @returns User Info Response
+     */
     @Get("userinfo")
     @Tags("Core Authentication")
     @Security("oidc")
@@ -68,6 +75,18 @@ export class AuthController extends Controller {
         return userInfo
     }
 
+    /**
+     * Primary endpoint to initiate the People Portal OIDC Authentication Flow. This routine
+     * accepts redirection parameters, generates the required Authentication Flow parameters
+     * from the OpenID Connect Authentication server and redirects to it to continue with authentication.
+     * 
+     * Once this process is completed, the OpenID Connect Authentication Server usually redirects
+     * to the /api/auth/redirect endpoint which handles the final steps as defined in the next method.
+     * 
+     * @param req Express Request Object
+     * @param queryParams Redirection and other OIDC State Parameters
+     * @returns Redirects to the OpenID Connect Authorization Server
+     */
     @Get("login")
     @Tags("Core Authentication")
     @SuccessResponse(302, "Redirect")
@@ -92,7 +111,7 @@ export class AuthController extends Controller {
     }
 
     /**
-     * Handles the OIDC callback, exchanges the code for a session, 
+     * Handles the OpenID Connect callback, exchanges the code for a session, 
      * and redirects the user to the requested endpoint or root.
      * 
      * **Non-standard Behavior:**
@@ -159,6 +178,15 @@ export class AuthController extends Controller {
         }
     }
 
+    /**
+     * Initiates Guest Authentication into People Portal. This routine generates
+     * a 6-digit Verification Code and sends it to the user's email. Primarily
+     * used for authentication during Recruitment Applications.
+     * 
+     * @param body Guest Authentication Initation Request
+     * @param req Express Request Object
+     * @returns Status Message
+     */
     @Post("otpinit")
     @Tags("Guest Authentication")
     @SuccessResponse(200)
@@ -196,6 +224,18 @@ export class AuthController extends Controller {
         return { message: "Verification Code sent successfully" };
     }
 
+    /**
+     * Verifies the 6-digit Verification Code sent to the user's email, signs a
+     * JSON Web Token (JWT) to establish an authenticated session and creates the
+     * user's guest profile in the database, if it doesn't exist.
+     * 
+     * The profile generation transforms the user from an unknown guest into a
+     * verified applicant in the database.
+     * 
+     * @param body Guest Authentication Verification Request
+     * @param req Express Request Object
+     * @returns Status Message
+     */
     @Post("otpverify")
     @Tags("Guest Authentication")
     @SuccessResponse(200)
@@ -249,6 +289,13 @@ export class AuthController extends Controller {
         };
     }
 
+    /**
+     * Verifies the guest authentication session and returns the user's profile.
+     * Additionally, we enumerate the user's ATS applications and return them.
+     * 
+     * @param req Express Request Object
+     * @returns User Profile and ATS Applications
+     */
     @Get("verifyotpsession")
     @Tags("Guest Authentication")
     @SuccessResponse(200)
@@ -322,6 +369,17 @@ export class AuthController extends Controller {
         }
     }
 
+    /**
+     * Destroys the User's session, Revokes any authentication cookies and
+     * returns the status message.
+     * 
+     * **Non-Standard Behavior:**
+     * Unlike usual implementations, we do not redirect to the OpenID Connect
+     * logout URL. This is left out for future implementation.
+     * 
+     * @param req Express Request Object
+     * @returns Status Message
+     */
     @Post("logout")
     @Tags("Core Authentication")
     @SuccessResponse(200)

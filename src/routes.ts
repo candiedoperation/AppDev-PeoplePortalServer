@@ -370,10 +370,6 @@ const models: TsoaRoute.Models = {
         "properties": {
             "redirect_uri": {"dataType":"string"},
             "state": {"dataType":"string"},
-            "client_id": {"dataType":"string"},
-            "response_type": {"dataType":"string"},
-            "scope": {"dataType":"string"},
-            "nonce": {"dataType":"string"},
         },
         "additionalProperties": false,
     },
