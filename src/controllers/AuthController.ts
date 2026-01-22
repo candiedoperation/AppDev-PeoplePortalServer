@@ -17,7 +17,7 @@
 */
 
 import * as express from 'express'
-import { Request, Controller, Get, Route, SuccessResponse, Security, Post, Body, Tags } from "tsoa";
+import { Request, Controller, Get, Route, SuccessResponse, Security, Post, Body, Tags, Queries } from "tsoa";
 import { OpenIdClient } from '../clients/OpenIdClient';
 import { UserInfoResponse } from 'openid-client';
 import { Applicant } from '../models/Applicant';
@@ -35,6 +35,17 @@ interface OtpInitRequest {
 interface OtpVerifyRequest {
     email: string;
     otp: string;
+}
+
+interface LoginQueryParams {
+    redirect_uri?: string;
+    state?: string;
+
+    /* OAuth2 Standard Params (Auth Passthrough Only) */
+    client_id?: string;
+    response_type?: string;
+    scope?: string;
+    nonce?: string;
 }
 
 @Route("/api/auth")
@@ -60,7 +71,16 @@ export class AuthController extends Controller {
     @Get("login")
     @Tags("Core Authentication")
     @SuccessResponse(302, "Redirect")
-    async handleLogin(@Request() req: express.Request) {
+    async handleLogin(@Request() req: express.Request, @Queries() queryParams: LoginQueryParams) {
+        /* Capture Redirect Context */
+        req.session.tempsession = req.session.tempsession || {};
+
+        if (queryParams.redirect_uri) {
+            req.session.tempsession.redirect_uri = queryParams.redirect_uri;
+            if (queryParams.state)
+                req.session.tempsession.state = queryParams.state;
+        }
+
         let authFlowResponse = OpenIdClient.startAuthFlow()
         if (!authFlowResponse)
             throw new Error("Failed to Compute OIDC Redirect URL")
@@ -71,6 +91,19 @@ export class AuthController extends Controller {
         return res.redirect(302, authFlowResponse.redirectUrl.toString())
     }
 
+    /**
+     * Handles the OIDC callback, exchanges the code for a session, 
+     * and redirects the user to the requested endpoint or root.
+     * 
+     * **Non-standard Behavior:**
+     * If the user is logging in via the API Docs, we inject a "Shim Token" (SessionCookieShimToken)
+     * into the URL fragment. This is to trick the API Docs into unlocking the authorized state.
+     * However, since all authentication and authorization works over the Session Cookie, 
+     * the shim doesn't impact security or the actual requests.
+     * 
+     * @param req Express Request Object
+     * @returns Express Redirection
+     */
     @Get("redirect")
     @Tags("Core Authentication")
     @SuccessResponse(302, "Redirect")
@@ -79,12 +112,46 @@ export class AuthController extends Controller {
             const fullURL = req.protocol + '://' + req.get('host') + req.originalUrl;
             let authorizationStamp = await OpenIdClient.issueAuthorizationStamps(new URL(fullURL), req.session.oidcState!)
             req.session.accessToken = authorizationStamp.accessToken
-            req.session.idToken = authorizationStamp.idToken
             req.session.authorizedUser = authorizationStamp.user
-            req.session.tokenExpiry = authorizationStamp.expiry
+            req.session.tokenExpiry = authorizationStamp.expiry.getTime()
+            if (authorizationStamp.idToken)
+                req.session.idToken = authorizationStamp.idToken
 
-            /* Redirect to Homepage */
+            /* Redirect Logic */
             const res = (req as any).res as express.Response
+            const tempsession = req.session.tempsession;
+
+            /* Case 1: OAuth2 Passthrough (API Docs Portal, Postman, etc.) */
+            if (tempsession?.redirect_uri) {
+                const redirectUri = new URL(tempsession.redirect_uri);
+                const currentOrigin = req.protocol + '://' + req.get('host');
+
+                /* Implicit Flow Injection for OAuth2 Docs */
+                /* If the redirect is for our own docs, we inject the dummy token directly using hash fragment */
+                if (redirectUri.origin === currentOrigin && redirectUri.pathname.startsWith('/api/docs')) {
+                    const hashParams = new URLSearchParams();
+                    hashParams.append("access_token", "SessionCookieShimToken");
+                    hashParams.append("token_type", "Bearer");
+                    hashParams.append("expires_in", "3600");
+
+                    if (tempsession.state)
+                        hashParams.append("state", tempsession.state);
+
+                    redirectUri.hash = hashParams.toString();
+                } else {
+                    /* Standard Code Flow for others (if needed later) or External Redirects */
+                    /* Note: We essentially only support our own docs for now */
+                    redirectUri.searchParams.append("code", generateSecureRandomString(16));
+                    if (tempsession.state)
+                        redirectUri.searchParams.append("state", tempsession.state);
+                }
+
+                /* Cleanup */
+                delete req.session.tempsession;
+                return res.redirect(302, redirectUri.toString());
+            }
+
+            /* Case 3: Default */
             return res.redirect(302, "/")
         } catch (e) {
             console.log(e)

@@ -74,14 +74,13 @@ export async function expressAuthentication(
 
 async function oidcAuthVerify(request: express.Request, scopes?: string[]): Promise<boolean> {
     try {
-        const authHeader = request.headers.authorization?.replace("Bearer ", "")
-        const authToken = authHeader || request.session.accessToken
+        const authToken = request.session.accessToken
         if (!authToken)
             return Promise.reject({ error: "No Token Provided" });
 
         const userData = await OpenIdClient.verifyAccessToken(authToken)
         if (!request.session.accessToken || !request.session.authorizedUser) {
-            request.session.accessToken = authHeader ?? ""
+            request.session.accessToken = authToken
             request.session.authorizedUser = userData
         }
 

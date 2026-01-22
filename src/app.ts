@@ -68,7 +68,6 @@ ApiRouter.use("/api/docs", apiReference({
   },
 
   showDeveloperTools: "never",
-  defaultOpenAllTags: true,
   theme: "kepler",
   hideClientButton: true,
 }));
