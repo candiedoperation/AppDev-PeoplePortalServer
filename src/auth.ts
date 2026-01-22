@@ -22,6 +22,8 @@ import jwt from "jsonwebtoken"
 import { BindleController } from "./controllers/BindleController";
 import { AuthentikClient } from "./clients/AuthentikClient";
 import { UserInformationBrief } from "./clients/AuthentikClient/models";
+import { ResourceAccessError } from "./utils/errors";
+import { formatBindleAccessError } from "./utils/strings";
 
 export async function NativeExpressOIDCAuthPort(
     req: express.Request,
@@ -53,7 +55,7 @@ export async function expressAuthentication(
 
         else if (securityName == "ats_otp") {
             if (!request.session.tempsession?.jwt || !request.session.tempsession?.user) {
-                return Promise.reject({ error: "Session is Invalid" });
+                return Promise.reject(new ResourceAccessError(401, "Session is Invalid"));
             }
 
             try {
@@ -61,7 +63,7 @@ export async function expressAuthentication(
                 return Promise.resolve(true)
             } catch (error) {
                 delete request.session.tempsession;
-                return Promise.reject({ error: "Invalid or expired token" });
+                return Promise.reject(new ResourceAccessError(401, "Invalid or expired token"));
             }
         }
 
@@ -76,7 +78,7 @@ async function oidcAuthVerify(request: express.Request, scopes?: string[]): Prom
     try {
         const authToken = request.session.accessToken
         if (!authToken)
-            return Promise.reject({ error: "No Token Provided" });
+            return Promise.reject(new ResourceAccessError(401, "No Token Provided"));
 
         const userData = await OpenIdClient.verifyAccessToken(authToken)
         if (!request.session.accessToken || !request.session.authorizedUser) {
@@ -87,7 +89,7 @@ async function oidcAuthVerify(request: express.Request, scopes?: string[]): Prom
         return Promise.resolve(true)
     } catch (e) {
         /* OIDC Authorization Failed! */
-        return Promise.reject({ error: "Invalid or expired token" })
+        return Promise.reject(new ResourceAccessError(401, "Invalid or expired token"));
     }
 }
 
@@ -104,10 +106,10 @@ async function bindlesAuthVerify(request: express.Request, scopes?: string[]): P
     /* 1. We Need OIDC Verification by Default (The Superset) */
     const isAuthenticated = await oidcAuthVerify(request, scopes);
     if (!isAuthenticated || !request.session.authorizedUser)
-        return Promise.reject({ error: "Invalid or expired token" });
+        return Promise.reject(new ResourceAccessError(401, "Invalid or expired token"));
 
     if (!scopes || scopes.length === 0) {
-        return Promise.reject({ error: "Bindle Security Check failed: No Scopes Defined" });
+        return Promise.reject(new ResourceAccessError(403, "Bindle Security Check failed: No Scopes Defined"));
     }
 
     /* 2. Resolve Team ID & Required Bindles */
@@ -131,7 +133,7 @@ async function bindlesAuthVerify(request: express.Request, scopes?: string[]): P
     }
 
     if (!teamId || requiredBindles.length === 0) {
-        return Promise.reject({ error: "Bindle Security Check failed: Could not resolve Team ID or missing Required Bindles" });
+        return Promise.reject(new ResourceAccessError(403, "Bindle Security Check failed: Could not resolve Team ID or missing Required Bindles"));
     }
 
     const authorizedUser: AuthorizedUser = request.session.authorizedUser;
@@ -162,15 +164,17 @@ async function bindlesAuthVerify(request: express.Request, scopes?: string[]): P
         const effectivePermissions = BindleController.getEffectivePermissionSet(teamInfo, authorizedUser.groups);
 
         /* Ensure User has ALL required bindles */
-        const hasAllPermissions = requiredBindles.every(bindle => effectivePermissions.has(bindle));
-        if (hasAllPermissions)
+        const missingBindles = requiredBindles.filter(bindle => !effectivePermissions.has(bindle));
+        if (missingBindles.length === 0)
             return Promise.resolve(true);
 
         /* Access Denied */
-        return Promise.reject({ error: "Bindle Permission Check Failed" });
+        const owners = authoritativeTeam.users.map(u => u.name);
+        return Promise.reject(new ResourceAccessError(403, formatBindleAccessError(owners, missingBindles)));
 
     } catch (e) {
         console.error("Bindle Permission Check Failed", e);
-        return Promise.reject({ error: "Bindle Permission Check Failed" });
+        if (e instanceof ResourceAccessError) return Promise.reject(e);
+        return Promise.reject(new ResourceAccessError(403, "Bindle Permission Check Failed"));
     }
 }

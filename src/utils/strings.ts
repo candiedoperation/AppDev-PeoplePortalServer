@@ -34,3 +34,21 @@ export function sanitizeUserFullName(fullName: string): string {
 
   return normalizeSegment(firstNameRaw) + normalizeSegment(lastNameRaw);
 }
+
+/**
+ * Formats a bindle access error message listing team owners and missing bindles.
+ */
+export function formatBindleAccessError(owners: string[], missingBindles: string[]): string {
+  const formatList = (items: string[], conjunction: string) => {
+    if (items.length === 0) return "";
+    if (items.length === 1) return items[0];
+    const last = items[items.length - 1];
+    const rest = items.slice(0, -1).join(", ");
+    return `${rest} ${conjunction} ${last}`;
+  };
+
+  const ownersStr = formatList(owners, "or");
+  const bindlesStr = formatList(missingBindles, "and");
+
+  return `You do not have permission to access this resource. Please ask ${ownersStr} to grant you the ${bindlesStr} bindle${missingBindles.length === 1 ? "" : "s"}.`;
+}

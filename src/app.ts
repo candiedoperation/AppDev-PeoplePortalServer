@@ -30,6 +30,7 @@ import { generateSecureRandomString } from "./utils/strings";
 import path from "path";
 import { NativeExpressOIDCAuthPort } from "./auth";
 import { AuthentikClient } from "./clients/AuthentikClient";
+import { ResourceAccessError } from "./utils/errors";
 
 if (!process.env.PEOPLEPORTAL_TOKEN_SECRET)
   process.env.PEOPLEPORTAL_TOKEN_SECRET = generateSecureRandomString(16)
@@ -125,6 +126,16 @@ app.use(function errorHandler(
       details: err?.fields
     });
   }
+
+  if (err instanceof ResourceAccessError) {
+    return res.status(err.status).json({
+      message: err.message,
+    });
+  }
+
+  // ... existing imports ...
+
+  // ... inside errorHandler ...
 
   if (err instanceof Error) {
     console.error(err)
