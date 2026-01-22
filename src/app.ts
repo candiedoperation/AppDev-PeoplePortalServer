@@ -62,14 +62,35 @@ ApiRouter.get("/api/docs/swagger.json", async (req, res) => {
   res.json(doc.default || doc);
 });
 
+/* Enable Documentation A */
 ApiRouter.use("/api/docs", apiReference({
   spec: {
     url: "/api/docs/swagger.json",
+    metaData: {
+      title: "People Portal Server",
+      description: "Public Server API Reference"
+    }
   },
 
   showDeveloperTools: "never",
   theme: "kepler",
   hideClientButton: true,
+  customCss: `
+    a[href="https://www.scalar.com"] {
+      display: none;
+    }
+
+    div.flex-col:nth-child(4) > div:nth-child(1)::before {
+      content: "© 2025 Atheesh Thirumalairajan";
+      font-size: small;
+      color: var(--scalar-color-3);
+    }
+  `,
+
+  authentication: {
+    /* Must Match Generated OpenAPI Spec from tsoa.json */
+    preferredSecurityScheme: 'OIDC Bindle Shim',
+  },
 }));
 
 /* Register & Setup Catch All Route for Public Dir */

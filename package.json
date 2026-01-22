@@ -11,7 +11,7 @@
   "keywords": [],
   "author": "Atheesh Thirumalairajan",
   "license": "GPL-3.0-only",
-  "description": "App Dev Club People Portal Server",
+  "description": "The engine behind People Portal. Orchestrates People and Team Management, Recruitment and Shared Resource Management workflows while enforcing dynamic permissions via a unified Bindle architecture.",
   "dependencies": {
     "@aws-sdk/client-budgets": "^3.940.0",
     "@aws-sdk/client-organizations": "^3.940.0",

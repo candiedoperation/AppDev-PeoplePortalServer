@@ -16,7 +16,7 @@
       }
     },
     "name": "People Portal Server",
-    "description": "© 2025 Atheesh Thirumalairajan",
+    "description": "The engine behind People Portal. Orchestrates People and Team Management, Recruitment and Shared Resource Management workflows while enforcing dynamic permissions via a unified Bindle architecture.",
     "license": "GNU General Public License Version 3",
     "contact": {
       "name": "Atheesh Thirumalairajan",
