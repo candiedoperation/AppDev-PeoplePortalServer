@@ -20,6 +20,7 @@ export class AppleAccountClient implements SharedResourceClient {
     }
 
     handleOrgBindleSync(org: GetGroupInfoResponse, callback: (updatedResourceCount: number, status: string) => void): Promise<boolean> {
-        throw new Error("Method not implemented.")
+        //throw new Error("Method not implemented.")
+        return Promise.resolve(true)
     }
 }
