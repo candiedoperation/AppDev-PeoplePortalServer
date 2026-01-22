@@ -20,7 +20,7 @@ import express, { Router, Request, Response, NextFunction } from "express"
 import cors from "cors"
 import dotenv from 'dotenv'
 import { RegisterRoutes } from "./routes";
-import swaggerUi from "swagger-ui-express";
+import { apiReference } from '@scalar/express-api-reference'
 import { ValidateError } from "tsoa";
 import bodyParser from "body-parser";
 import mongoose from "mongoose";
@@ -57,9 +57,21 @@ app.use(
 
 /* Register TSOA Routes */
 const ApiRouter = Router()
-ApiRouter.use("/api/docs", swaggerUi.serve, async (req: Request, res: Response) => {
-  return res.send(swaggerUi.generateHTML(await import("../dist/swagger.json")))
-})
+ApiRouter.get("/api/docs/swagger.json", async (req, res) => {
+  const doc = await import("../dist/swagger.json");
+  res.json(doc.default || doc);
+});
+
+ApiRouter.use("/api/docs", apiReference({
+  spec: {
+    url: "/api/docs/swagger.json",
+  },
+
+  showDeveloperTools: "never",
+  defaultOpenAllTags: true,
+  theme: "kepler",
+  hideClientButton: true,
+}));
 
 /* Register & Setup Catch All Route for Public Dir */
 RegisterRoutes(ApiRouter);
