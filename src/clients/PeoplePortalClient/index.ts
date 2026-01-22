@@ -5,14 +5,19 @@ import { GetGroupInfoResponse } from "../AuthentikClient/models"
 export class PeoplePortalClient implements SharedResourceClient {
     public static readonly TAG = "PeoplePortalClient"
     private readonly supportedBindles: BindlePermissionMap = {
+        "corp:awsaccess": {
+            friendlyName: "AWS Console Access",
+            description: "Enabling this allows members in this subteam to access the AWS Console",
+        },
+
         "corp:hiringaccess": {
             friendlyName: "Permit Recruitment",
             description: "Enabling this allows members in this subteam to recruit new members to your team",
         },
 
-        "corp:awsaccess": {
-            friendlyName: "AWS Console Access",
-            description: "Enabling this allows members in this subteam to access the AWS Console",
+        "corp:bindlesync": {
+            friendlyName: "Enable Permissions Sync",
+            description: "Enabling this allows members to sync shared permissions",
         },
 
         "corp:rootsettings": {

@@ -16,7 +16,7 @@
       }
     },
     "name": "People Portal Server",
-    "description": "The engine behind People Portal. Orchestrates People and Team Management, Recruitment and Shared Resource Management workflows while enforcing dynamic permissions via a unified Bindle architecture.",
+    "description": "The engine behind People Portal. Orchestrates People and Team Management, Recruitment and Shared Resource Management workflows while enforcing dynamic permissions via a custom authorization layer called Bindles.",
     "license": "GNU General Public License Version 3",
     "contact": {
       "name": "Atheesh Thirumalairajan",

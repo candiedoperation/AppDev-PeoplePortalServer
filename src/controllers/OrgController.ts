@@ -636,10 +636,19 @@ export class OrgController extends Controller {
         }
     }
 
+    /**
+     * Syncs Shared Permissions for a team. Internally, this routine will call
+     * `handleOrgBindleSync` for each shared resource that is enabled. For better
+     * User experience, this routine emits HTTP Server-Sent Events (SSEs) to the
+     * client to provide real-time progress updates.
+     * 
+     * @param req Express Request Object
+     * @param teamId Team ID
+     */
     @Patch("teams/{teamId}/syncbindles")
     @Tags("Team Configuration", "Bindle Authorization Layer")
     @SuccessResponse(200)
-    @Security("oidc")
+    @Security("bindles", ["corp:bindlesync"])
     async syncOrgBindles(@Request() req: Request, @Path() teamId: string) {
         const res = (req as any).res as express.Response
         res.setHeader('Content-Type', 'text/plain');
@@ -662,6 +671,58 @@ export class OrgController extends Controller {
         res.end()
     }
 
+    /**
+     * Updates the team's name and description. To perform this action,
+     * the user must either be a Team Owner or hold the `corp:rootsettings`
+     * bindle.
+     * 
+     * @param teamId Team ID
+     * @param conf Team Name and Description Update Payload
+     */
+    @Patch("teams/{teamId}")
+    @Tags("Team Configuration")
+    @SuccessResponse(200)
+    @Security("bindles", ["corp:rootsettings"])
+    async updateTeamAttributes(@Path() teamId: string, @Body() conf: APIUpdateTeamRequest) {
+        /* Strictly restrict updates to only name and description to prevent attribute pollution */
+        await this.authentikClient.updateGroupInformation(teamId, conf);
+    }
+
+    /**
+     * Performs a soft-delete by flagging the team for deletion. People Portal teams
+     * can never be deleted considering the potential impacts caused by deleted states
+     * on Shared Resources. Instead, the soft-delete mechanism follows these rules:
+     * 
+     * - If the team is a subteam (has a parent), it removes 
+     *   all members to immediately revoke access.
+     * 
+     * - If the team is a root team (has no parent), it is just
+     *   flagged for deletion as their deletion is overengineering.
+     * 
+     * To perform this action, the user must either be a Team Owner or hold the
+     * `corp:rootsettings` bindle.
+     * 
+     * @param teamId Team ID
+     */
+    @Delete("teams/{teamId}")
+    @Tags("Team Management")
+    @SuccessResponse(200)
+    @Security("oidc")
+    async deleteTeam(@Path() teamId: string) {
+        const teamInfo = await this.authentikClient.getGroupInfo(teamId);
+        await this.authentikClient.flagGroupForDeletion(teamId);
+
+        /* 2. If subteam, remove all members */
+        if (teamInfo.parentPk)
+            await this.authentikClient.removeAllTeamMembers(teamId);
+
+        // sync bindles
+    }
+
+    /* === HELPER ROUTINES === */
+    private isGroupSubteam(group: GetGroupInfoResponse): boolean {
+        return !!group.parentPk;
+    }
 
     /* Other Wrapper Functions */
     async addTeamMemberWrapper(request: AddGroupMemberRequest): Promise<APITeamMemberAddResponse> {
@@ -703,40 +764,5 @@ export class OrgController extends Controller {
         await this.authentikClient.removeGroupMember(request)
 
         /* DO SLACK and GIT REPO here! */
-    }
-
-    @Patch("teams/{teamId}")
-    @Tags("Team Configuration")
-    @SuccessResponse(200)
-    @Security("bindles", ["corp:rootsettings"])
-    async updateTeamAttributes(@Path() teamId: string, @Body() conf: APIUpdateTeamRequest) {
-        /* Strictly restrict updates to only name and description to prevent attribute pollution */
-        await this.authentikClient.updateGroupInformation(teamId, conf);
-    }
-
-    @Delete("teams/{teamId}")
-    @Tags("Team Management")
-    @SuccessResponse(200)
-    @Security("oidc")
-    async deleteTeam(@Path() teamId: string) {
-        /* 
-           This API performs a soft-delete by flagging the team for deletion.
-           If the team is a subteam (has a parent), it removes all members to immediately revoke access.
-           Root teams are only flagged, as their deletion is more complex.
-        */
-        const teamInfo = await this.authentikClient.getGroupInfo(teamId);
-
-        /* 1. Set flaggedForDeletion to true */
-        await this.authentikClient.flagGroupForDeletion(teamId);
-
-        /* 2. If subteam, remove all members */
-        if (teamInfo.parentPk)
-            await this.authentikClient.removeAllTeamMembers(teamId);
-
-        // sync bindles
-    }
-
-    private isGroupSubteam(group: GetGroupInfoResponse): boolean {
-        return !!group.parentPk;
     }
 }

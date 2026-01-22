@@ -1086,7 +1086,7 @@ export function RegisterRoutes(app: Router) {
                 teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
         };
         app.patch('/api/org/teams/:teamId/syncbindles',
-            authenticateMiddleware([{"oidc":[]}]),
+            authenticateMiddleware([{"bindles":["corp:bindlesync"]}]),
             ...(fetchMiddlewares<RequestHandler>(OrgController)),
             ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.syncOrgBindles)),
 

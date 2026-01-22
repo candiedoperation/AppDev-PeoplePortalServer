@@ -66,12 +66,13 @@ ApiRouter.get("/api/docs/swagger.json", async (req, res) => {
 ApiRouter.use("/api/docs", apiReference({
   spec: {
     url: "/api/docs/swagger.json",
-    metaData: {
-      title: "People Portal Server",
-      description: "Public Server API Reference"
-    }
   },
 
+  metaData: {
+    title: "People Portal Server API Reference",
+  },
+
+  favicon: '/logo.svg',
   showDeveloperTools: "never",
   theme: "kepler",
   hideClientButton: true,
@@ -81,7 +82,7 @@ ApiRouter.use("/api/docs", apiReference({
     }
 
     div.flex-col:nth-child(4) > div:nth-child(1)::before {
-      content: "© 2025 Atheesh Thirumalairajan";
+      content: "© 2026 Atheesh Thirumalairajan";
       font-size: small;
       color: var(--scalar-color-3);
     }
