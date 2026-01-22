@@ -604,13 +604,15 @@ export class OrgController extends Controller {
     @Tags("Team Management")
     @SuccessResponse(201)
     @Security("oidc")
-    async createTeam(@Body() req: APICreateTeamRequest): Promise<CreateTeamResponse> {
-        const newTeam = await this.authentikClient.createNewTeam({ attributes: { ...req } })
-        // this.addTeamMemberWrapper({ groupId: newTeam.pk, userPk: 0 })
+    async createTeam(@Request() req: express.Request, @Body() createTeamReq: APICreateTeamRequest): Promise<CreateTeamResponse> {
+        /* Create the New Team */
+        const newTeam = await this.authentikClient.createNewTeam({ attributes: { ...createTeamReq } })
 
-        // create slack channel
+        /* Add the Creator (us) to Team Owners */
+        const userInfo = await this.authentikClient.getUserInfoFromEmail(req.session.authorizedUser!.email)
+        this.addTeamMemberWrapper({ groupId: newTeam.pk, userPk: +userInfo.pk }) /* Add Creator to Team Owners */
 
-        switch (req.teamType) {
+        switch (createTeamReq.teamType) {
             case TeamType.CORPORATE:
                 /* WE NEED TO ADD THE CURRENT USER TO THE GROUP!!! */
                 return newTeam
@@ -619,9 +621,6 @@ export class OrgController extends Controller {
                 /* Create Leadership and Engineering Sub-teams! */
                 await this.createSubTeam(newTeam.pk, { friendlyName: 'Leadership', description: 'Project and Tech Leads' })
                 await this.createSubTeam(newTeam.pk, { friendlyName: 'Engineering', description: 'UI/UX, PMs, SWEs, etc.' })
-
-                /* Add Self as Project Lead */
-                // this.addTeamMemberWrapper({ groupId: leadershipTeam.pk, userPk: 0 })
 
                 /* Setup Gitea Organization and Teams */
                 return newTeam

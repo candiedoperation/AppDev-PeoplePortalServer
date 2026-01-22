@@ -297,7 +297,7 @@ export class AuthController extends Controller {
      * @returns User Profile and ATS Applications
      */
     @Get("verifyotpsession")
-    @Tags("Guest Authentication")
+    @Tags("Guest Authentication", "Applicant Portal")
     @SuccessResponse(200)
     async otpVerifySession(@Request() req: express.Request) {
         const tempsession = req.session.tempsession;
