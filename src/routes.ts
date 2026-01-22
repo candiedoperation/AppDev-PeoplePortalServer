@@ -284,7 +284,7 @@ const models: TsoaRoute.Models = {
             "friendlyName": {"dataType":"string","validators":{"minLength":{"value":1}}},
             "description": {"dataType":"string","validators":{"minLength":{"value":1}}},
         },
-        "additionalProperties": {"dataType":"any"},
+        "additionalProperties": {"dataType":"string"},
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
     "JsonPrimitive": {

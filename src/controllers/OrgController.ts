@@ -311,7 +311,7 @@ export class OrgController extends Controller {
 
         const awsRes = Object.values(ENABLED_TEAMSETTING_RESOURCES).find((res) => res.getResourceName() == "AWSClient") as unknown as AWSClient;
 
-        res.write(JSON.stringify({ progressPercent: 10, status: "Retrieving Team Credentials..." }))
+        res.write(JSON.stringify({ progressPercent: 10, status: "Retrieving Team Credentials..." }) + "\n")
         const teamInfo = await this.authentikClient.getGroupInfo(teamId)
 
         // Check if provisioning is enabled
@@ -319,30 +319,30 @@ export class OrgController extends Controller {
         const shouldProvision = settings && settings["awsclient:provision"] === true;
 
         if (!shouldProvision) {
-            res.write(JSON.stringify({ progressPercent: 100, status: "AWS Provisioning is not enabled for this team.", error: true }))
+            res.write(JSON.stringify({ progressPercent: 100, status: "AWS Provisioning is not enabled for this team.", error: true }) + "\n")
             res.end()
             return
         }
 
         /* Provide Progess Update */
-        res.write(JSON.stringify({ progressPercent: 30, status: "Locating AWS Account..." }))
+        res.write(JSON.stringify({ progressPercent: 30, status: "Locating AWS Account..." }) + "\n")
 
         const name = teamInfo.name
         const accountId = await awsRes.findAccountIdByName(teamInfo.name);
 
         if (!accountId) {
-            res.write(JSON.stringify({ progressPercent: 100, status: "AWS Account not found! Please contact an administrator.", error: true }))
+            res.write(JSON.stringify({ progressPercent: 100, status: "AWS Account not found! Please contact an administrator.", error: true }) + "\n")
             res.end()
             return
         }
 
-        res.write(JSON.stringify({ progressPercent: 60, status: "Generating Session..." }))
+        res.write(JSON.stringify({ progressPercent: 60, status: "Generating Session..." }) + "\n")
         try {
             const currentUser = req.session.authorizedUser?.name ?? "GenericDashboardUser"
             const link = await awsRes.generateConsoleLink(accountId, sanitizeUserFullName(currentUser))
-            res.write(JSON.stringify({ progressPercent: 100, status: "Link Generated!", link: link }))
+            res.write(JSON.stringify({ progressPercent: 100, status: "Link Generated!", link: link }) + "\n")
         } catch (e: any) {
-            res.write(JSON.stringify({ progressPercent: 100, status: "Failed to generate link: " + e.message, error: true }))
+            res.write(JSON.stringify({ progressPercent: 100, status: "Failed to generate link: " + e.message, error: true }) + "\n")
         }
 
         res.end()
@@ -479,7 +479,7 @@ export class OrgController extends Controller {
             await sharedResource.handleOrgBindleSync(teamInfo, (updatedResourceCount, status) => {
                 /* Update Progress and Write Output */
                 updatedResources += updatedResourceCount
-                res.write(JSON.stringify({ progressPercent: (updatedResources / computeEffort) * 100, status }))
+                res.write(JSON.stringify({ progressPercent: (updatedResources / computeEffort) * 100, status }) + "\n")
             })
         }
 
