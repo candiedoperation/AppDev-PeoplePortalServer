@@ -98,6 +98,10 @@ async function oidcAuthVerify(request: express.Request, scopes?: string[]): Prom
  * we automatically process Bindle Authorization for that team. Otherwise, a Dynamic Locator
  * is needed to be present as the first element in scopes to resolve the teamId.
  * 
+ * Additionally, since all team actions **must be protected by bindles**, we ensure that the
+ * team is not **flagged for deletion** and we also populate a special request bindle field
+ * for AuthentikClient call optimizations.
+ * 
  * @param request Express Request Object
  * @param scopes Array of Bindles or Dynamic Locator + Bindles
  * @returns User Authorization Status (Boolean)
@@ -140,7 +144,20 @@ async function bindlesAuthVerify(request: express.Request, scopes?: string[]): P
     const authentikClient = new AuthentikClient();
 
     try {
+        /* Fetch Team Info and Inject for Authentik Call Optimization */
         const teamInfo = await authentikClient.getGroupInfo(teamId);
+        request.bindle = {
+            teamInfo,
+            requestedPermissions: requiredBindles
+        }
+
+        /* 2.5. Check if Team is Flagged for Deletion */
+        if (teamInfo.attributes.flaggedForDeletion) {
+            return Promise.reject(new ResourceAccessError(
+                403,
+                "This team is flagged for deletion and therefore, read-only."
+            ));
+        }
 
         /* 3. Check Owner (Optimized Recursive Group Name Check) */
         /* Convert user groups to Set for O(1) Lookup */

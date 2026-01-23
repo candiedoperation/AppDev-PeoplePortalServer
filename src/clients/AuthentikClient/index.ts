@@ -18,8 +18,7 @@
 
 import axios from "axios"
 import log from "loglevel"
-import { AddGroupMemberRequest, AuthentikClientError, AuthentikServerVersion, CreateTeamRequest, CreateTeamResponse, CreateUserRequest, GetGroupInfoRequestOptions, GetGroupInfoResponse as GetGroupInfoResponse, GetTeamsListOptions as GetGroupsListOptions, GetTeamsListResponse as GetGroupsListResponse, GetTeamsForUsernameResponse, GetUserListOptions, GetUserListResponse, RemoveGroupMemberRequest, TeamAttributeDefinition, TeamInformationBrief, UserAttributeDefinition, UserInformationBrief, AuthentikFilterCursor } from "./models"
-import { randomUUID } from "crypto"
+import { AddGroupMemberRequest, AuthentikClientError, AuthentikServerVersion, CreateTeamRequest, CreateUserRequest, GetGroupInfoRequestOptions, GetGroupInfoResponse as GetGroupInfoResponse, GetTeamsListOptions as GetGroupsListOptions, GetTeamsListResponse as GetGroupsListResponse, GetTeamsForUsernameResponse, GetUserListOptions, GetUserListResponse, RemoveGroupMemberRequest, TeamAttributeDefinition, TeamInformationBrief, UserAttributeDefinition, UserInformationBrief, AuthentikFilterCursor } from "./models"
 import { sanitizeGroupName } from "../../utils/strings"
 import { EnabledRootSettings } from "../../controllers/OrgController"
 import { EnabledBindlePermissions } from "../../controllers/BindleController"
@@ -661,7 +660,7 @@ export class AuthentikClient {
         }
     }
 
-    public createNewTeam = async (request: CreateTeamRequest): Promise<CreateTeamResponse> => {
+    public createNewTeam = async (request: CreateTeamRequest): Promise<GetGroupInfoResponse> => {
         if (request.parent && !request.parentName)
             throw new Error("Creating a SubTeam needs a Parent Name!")
 
@@ -703,12 +702,24 @@ export class AuthentikClient {
         try {
             const res = await axios.request(RequestConfig)
             return {
-                name: teamName,
-                pk: res.data.pk
-            };
+                pk: res.data.pk,
+                name: res.data.name,
+                subteamPkList: res.data.children,
+                subteams: res.data.children_obj,
+                parentPk: res.data.parent ?? res.data.parents?.[0] ?? null, /* People Portal Legacy Single Parent Patch */
+                parentInfo: res.data.parents_obj ? res.data.parents_obj[0] : null, /* Authentik 2025.12+ Only */
+                attributes: res.data.attributes,
+                users: res.data.users_obj.map((user: any) => ({
+                    pk: user.pk,
+                    username: user.username,
+                    name: user.name,
+                    email: user.email,
+                    attributes: user.attributes
+                }))
+            }
         } catch (e) {
             log.error(AuthentikClient.TAG, "Create Team Request Failed with Error: ", e)
-            throw new AuthentikClientError("Get Team Request Failed")
+            throw new AuthentikClientError("Create Team Request Failed")
         }
     }
 }

@@ -172,7 +172,6 @@ const models: TsoaRoute.Models = {
             "inviteeName": {"dataType":"string","required":true},
             "inviteeEmail": {"dataType":"string","required":true},
             "roleTitle": {"dataType":"string","required":true},
-            "teamPk": {"dataType":"string","required":true},
             "subteamPk": {"dataType":"string","required":true},
         },
         "additionalProperties": false,
@@ -263,15 +262,6 @@ const models: TsoaRoute.Models = {
         "properties": {
             "team": {"ref":"GetGroupInfoResponse","required":true},
             "subteams": {"dataType":"array","array":{"dataType":"refObject","ref":"GetGroupInfoResponse"},"required":true},
-        },
-        "additionalProperties": false,
-    },
-    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-    "CreateTeamResponse": {
-        "dataType": "refObject",
-        "properties": {
-            "pk": {"dataType":"string","required":true},
-            "name": {"dataType":"string","required":true},
         },
         "additionalProperties": false,
     },
@@ -687,7 +677,7 @@ export function RegisterRoutes(app: Router) {
                 req: {"in":"request","name":"req","required":true,"dataType":"object"},
                 inviteReq: {"in":"body","name":"inviteReq","required":true,"ref":"APITeamInviteCreateRequest"},
         };
-        app.post('/api/org/invites/new',
+        app.post('/api/org/teams/:teamId/externalinvite',
             authenticateMiddleware([{"bindles":["corp:membermgmt"]}]),
             ...(fetchMiddlewares<RequestHandler>(OrgController)),
             ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.createInvite)),
@@ -997,8 +987,9 @@ export function RegisterRoutes(app: Router) {
         });
         // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
         const argsOrgController_removeTeamMember: Record<string, TsoaRoute.ParameterSchema> = {
+                req: {"in":"request","name":"req","required":true,"dataType":"object"},
                 teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
-                req: {"in":"body","name":"req","required":true,"dataType":"nestedObjectLiteral","nestedProperties":{"userPk":{"dataType":"double","required":true}}},
+                body: {"in":"body","name":"body","required":true,"dataType":"nestedObjectLiteral","nestedProperties":{"userPk":{"dataType":"double","required":true}}},
         };
         app.post('/api/org/teams/:teamId/removemember',
             authenticateMiddleware([{"bindles":["corp:membermgmt"]}]),
@@ -1029,8 +1020,9 @@ export function RegisterRoutes(app: Router) {
         });
         // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
         const argsOrgController_createSubTeam: Record<string, TsoaRoute.ParameterSchema> = {
+                req: {"in":"request","name":"req","required":true,"dataType":"object"},
                 teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
-                req: {"in":"body","name":"req","required":true,"ref":"APICreateSubTeamRequest"},
+                body: {"in":"body","name":"body","required":true,"ref":"APICreateSubTeamRequest"},
         };
         app.post('/api/org/teams/:teamId/subteam',
             authenticateMiddleware([{"bindles":["corp:subteamaccess"]}]),

@@ -130,6 +130,7 @@ export interface AddGroupMemberRequest {
 }
 
 export interface RemoveGroupMemberRequest {
+    groupInfo?: GetGroupInfoResponse, /* We Can Optimize Calls if using Bindle Auth */
     groupId: string,
     userPk: number
 }
@@ -158,11 +159,6 @@ export interface CreateTeamRequest {
         seasonYear: number,
         description: string
     }
-}
-
-export interface CreateTeamResponse {
-    pk: string,
-    name: string
 }
 
 /* User Information API Models */

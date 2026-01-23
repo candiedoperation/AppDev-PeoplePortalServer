@@ -30,7 +30,7 @@ import { generateSecureRandomString } from "./utils/strings";
 import path from "path";
 import { NativeExpressOIDCAuthPort } from "./auth";
 import { AuthentikClient } from "./clients/AuthentikClient";
-import { ResourceAccessError } from "./utils/errors";
+import { CustomValidationError, ResourceAccessError } from "./utils/errors";
 
 if (!process.env.PEOPLEPORTAL_TOKEN_SECRET)
   process.env.PEOPLEPORTAL_TOKEN_SECRET = generateSecureRandomString(16)
@@ -131,7 +131,7 @@ app.use(function errorHandler(
     });
   }
 
-  if (err instanceof ResourceAccessError) {
+  if (err instanceof ResourceAccessError || err instanceof CustomValidationError) {
     return res.status(err.status).json({
       message: err.message,
     });
@@ -140,7 +140,7 @@ app.use(function errorHandler(
   if (err instanceof Error) {
     console.error(err)
     return res.status(500).json({
-      message: "Internal Server Error",
+      message: err.message ?? "Unknown Internal Server Error",
     });
   }
 

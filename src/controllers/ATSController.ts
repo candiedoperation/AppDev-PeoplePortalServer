@@ -1310,12 +1310,17 @@ export class ATSController extends Controller {
         }).catch(async () => {
             /* Onboard the User */
             await this.orgController.createInvite(
-                { session: { authorizedUser } },
+                {
+                    session: { authorizedUser },
+                    bindle: {
+                        teamInfo,
+                        requestedPermissions: []
+                    }
+                },
                 {
                     inviteeName: applicant.fullName,
                     inviteeEmail: applicantEmail,
                     roleTitle: application.hiredRole!,
-                    teamPk: application.teamPk,
                     subteamPk: application.hiredSubteamPk!
                 }
             )
