@@ -668,26 +668,65 @@ export class OrgController extends Controller {
             }
         }
 
+        /* Team Templates: Makes Life Easier! */
         switch (createTeamReq.teamType) {
-            case TeamType.CORPORATE:
-                /* WE NEED TO ADD THE CURRENT USER TO THE GROUP!!! */
+            case TeamType.CORPORATE || TeamType.EXECBOARD: {
                 return newTeam
+            }
 
             case TeamType.PROJECT: {
                 /* Create Leadership and Engineering Sub-teams! */
-                await this.createSubTeam(bindleShim, newTeam.pk, { friendlyName: 'Leadership', description: 'Project and Tech Leads' })
+                const leadershipTeam = await this.createSubTeam(bindleShim, newTeam.pk, { friendlyName: 'Leadership', description: 'Project and Tech Leads' })
                 await this.createSubTeam(bindleShim, newTeam.pk, { friendlyName: 'Engineering', description: 'UI/UX, PMs, SWEs, etc.' })
 
-                /* Setup Gitea Organization and Teams */
+                /* Update Bindles for Leadership, Engineering doesn't need special Access */
+                await this.updateTeamBindles(leadershipTeam.pk, {
+                    "PeoplePortalClient": {
+                        "corp:awsaccess": true,
+                        "corp:hiringaccess": true,
+                    },
+
+                    "GiteaClient": {
+                        "repo:allowcreate": true
+                    }
+                })
+
+                /* Return Team */
                 return newTeam
             }
 
             case TeamType.BOOTCAMP: {
                 await this.createSubTeam(bindleShim, newTeam.pk, { friendlyName: 'Learners', description: 'Bootcamp Students' })
-                await this.createSubTeam(bindleShim, newTeam.pk, { friendlyName: 'Educators', description: 'Bootcamp Teachers' })
-                await this.createSubTeam(bindleShim, newTeam.pk, { friendlyName: 'Interviewers', description: 'Interviewers for Bootcamp' })
+                const educatorsTeam = await this.createSubTeam(bindleShim, newTeam.pk, { friendlyName: 'Educators', description: 'Bootcamp Teachers' })
+                const interviewersTeam = await this.createSubTeam(bindleShim, newTeam.pk, { friendlyName: 'Interviewers', description: 'Interviewers for Bootcamp' })
+
+                /* Update Bindles for Educators */
+                await this.updateTeamBindles(educatorsTeam.pk, {
+                    "PeoplePortalClient": {
+                        "corp:hiringaccess": true,
+                        "corp:bindlesync": true,
+                        "corp:subteamaccess": true,
+                        "corp:membermgmt": true
+                    },
+
+                    "GiteaClient": {
+                        "repo:allowcreate": true
+                    }
+                })
+
+                /* Update Bindles for Interviewers */
+                await this.updateTeamBindles(interviewersTeam.pk, {
+                    "PeoplePortalClient": {
+                        "corp:hiringaccess": true
+                    }
+                })
+
+                /* Return Team, Learners don't need any special permissions */
                 return newTeam
             }
+
+            default:
+                throw new CustomValidationError(400, "Invalid Team Type")
         }
     }
 

@@ -341,7 +341,6 @@ export class AuthentikClient {
             const team = exactMatches[0]
             return team.pk
         } catch (e) {
-            log.error(AuthentikClient.TAG, "Get Teams PK Request Failed with Error: ", e)
             throw e
         }
     }
