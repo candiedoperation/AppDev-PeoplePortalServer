@@ -408,26 +408,42 @@ const models: TsoaRoute.Models = {
         "enums": ["Applied","Interview","Rejected","Potential Hire","Hired"],
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-    "Record_string.string_": {
-        "dataType": "refAlias",
-        "type": {"dataType":"nestedObjectLiteral","nestedProperties":{},"additionalProperties":{"dataType":"string"},"validators":{}},
-    },
-    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
     "ATSKanbanApplicationCard": {
         "dataType": "refObject",
         "properties": {
             "id": {"dataType":"string","required":true},
             "applicantId": {"dataType":"string","required":true},
             "name": {"dataType":"string","required":true},
-            "email": {"dataType":"string","required":true},
-            "column": {"dataType":"string","required":true},
             "rolePreferences": {"dataType":"array","array":{"dataType":"nestedObjectLiteral","nestedProperties":{"subteamPk":{"dataType":"string","required":true},"role":{"dataType":"string","required":true}}},"required":true},
             "appliedAt": {"dataType":"datetime","required":true},
             "stage": {"ref":"ApplicationStage","required":true},
-            "stageHistory": {"dataType":"array","array":{"dataType":"nestedObjectLiteral","nestedProperties":{"changedBy":{"dataType":"string"},"changedAt":{"dataType":"datetime","required":true},"stage":{"ref":"ApplicationStage","required":true}}}},
+            "stars": {"dataType":"double","required":true,"validators":{"minimum":{"errorMsg":"Minimum Stars is 0","value":0},"maximum":{"errorMsg":"Maximum Stars is 5","value":5}}},
+        },
+        "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "Record_string.string_": {
+        "dataType": "refAlias",
+        "type": {"dataType":"nestedObjectLiteral","nestedProperties":{},"additionalProperties":{"dataType":"string"},"validators":{}},
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "ATSApplicationDetails": {
+        "dataType": "refObject",
+        "properties": {
+            "id": {"dataType":"string","required":true},
+            "applicantId": {"dataType":"string","required":true},
+            "name": {"dataType":"string","required":true},
+            "rolePreferences": {"dataType":"array","array":{"dataType":"nestedObjectLiteral","nestedProperties":{"subteamPk":{"dataType":"string","required":true},"role":{"dataType":"string","required":true}}},"required":true},
+            "appliedAt": {"dataType":"datetime","required":true},
+            "stage": {"ref":"ApplicationStage","required":true},
+            "stars": {"dataType":"double","required":true,"validators":{"minimum":{"errorMsg":"Minimum Stars is 0","value":0},"maximum":{"errorMsg":"Maximum Stars is 5","value":5}}},
+            "email": {"dataType":"string","required":true},
             "profile": {"ref":"Record_string.string_","required":true},
             "responses": {"ref":"Record_string.string_","required":true},
-            "hiredRole": {"dataType":"union","subSchemas":[{"dataType":"string"},{"dataType":"undefined"}],"required":true},
+            "stageHistory": {"dataType":"array","array":{"dataType":"nestedObjectLiteral","nestedProperties":{"changedBy":{"dataType":"string"},"changedAt":{"dataType":"datetime","required":true},"stage":{"ref":"ApplicationStage","required":true}}}},
+            "hiredRole": {"dataType":"string"},
+            "appDevInternalPk": {"dataType":"double"},
+            "notes": {"dataType":"string"},
         },
         "additionalProperties": false,
     },
@@ -1653,6 +1669,72 @@ export function RegisterRoutes(app: Router) {
 
               await templateService.apiHandler({
                 methodName: 'getTeamApplications',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsATSController_getApplicationDetails: Record<string, TsoaRoute.ParameterSchema> = {
+                teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
+                applicationId: {"in":"path","name":"applicationId","required":true,"dataType":"string"},
+        };
+        app.get('/api/ats/applications/:teamId/:applicationId/info',
+            authenticateMiddleware([{"bindles":["corp:hiringaccess"]}]),
+            ...(fetchMiddlewares<RequestHandler>(ATSController)),
+            ...(fetchMiddlewares<RequestHandler>(ATSController.prototype.getApplicationDetails)),
+
+            async function ATSController_getApplicationDetails(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsATSController_getApplicationDetails, request, response });
+
+                const controller = new ATSController();
+
+              await templateService.apiHandler({
+                methodName: 'getApplicationDetails',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsATSController_updateApplicationFeedback: Record<string, TsoaRoute.ParameterSchema> = {
+                req: {"in":"request","name":"req","required":true,"dataType":"object"},
+                teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
+                applicationId: {"in":"path","name":"applicationId","required":true,"dataType":"string"},
+                body: {"in":"body","name":"body","required":true,"dataType":"nestedObjectLiteral","nestedProperties":{"notes":{"dataType":"string"},"stars":{"dataType":"double"}}},
+        };
+        app.put('/api/ats/applications/:teamId/:applicationId/feedback',
+            authenticateMiddleware([{"bindles":["corp:hiringaccess"]}]),
+            ...(fetchMiddlewares<RequestHandler>(ATSController)),
+            ...(fetchMiddlewares<RequestHandler>(ATSController.prototype.updateApplicationFeedback)),
+
+            async function ATSController_updateApplicationFeedback(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsATSController_updateApplicationFeedback, request, response });
+
+                const controller = new ATSController();
+
+              await templateService.apiHandler({
+                methodName: 'updateApplicationFeedback',
                 controller,
                 response,
                 next,

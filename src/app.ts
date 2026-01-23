@@ -119,6 +119,10 @@ app.use(function errorHandler(
   res: Response,
   next: NextFunction
 ): Response | void {
+  if (res.headersSent) {
+    return next(err);
+  }
+
   if (err instanceof ValidateError) {
     console.warn(`Caught Validation Error for ${req.path}:`, err.fields);
     return res.status(422).json({
@@ -132,10 +136,6 @@ app.use(function errorHandler(
       message: err.message,
     });
   }
-
-  // ... existing imports ...
-
-  // ... inside errorHandler ...
 
   if (err instanceof Error) {
     console.error(err)

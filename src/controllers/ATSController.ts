@@ -14,6 +14,7 @@ import { Query } from "tsoa";
 import { EmailClient } from "../clients/EmailClient";
 import { OrgController } from "./OrgController";
 import { AuthorizedUser } from "../clients/OpenIdClient";
+import MarkdownIt from "markdown-it";
 
 // ====================
 // Type Definitions
@@ -45,19 +46,30 @@ interface ATSKanbanApplicationCard {
     id: string;
     applicantId: string;
     name: string;
-    email: string;
-    column: string;
-    rolePreferences: { role: string, subteamPk: string }[];  // Ordered role preferences
+    rolePreferences: { role: string, subteamPk: string }[];
     appliedAt: Date;
     stage: ApplicationStage;
+
+    /** 
+     * Rating for an Applicant
+     * @minimum 0 Minimum Stars is 0
+     * @maximum 5 Maximum Stars is 5
+     */
+    stars: number;
+}
+
+interface ATSApplicationDetails extends ATSKanbanApplicationCard {
+    email: string;
+    profile: Record<string, string>;
+    responses: Record<string, string>;
     stageHistory?: {
         stage: ApplicationStage;
         changedAt: Date;
         changedBy?: string;
     }[];
-    profile: Record<string, string>;
-    responses: Record<string, string>;
-    hiredRole: string | undefined;
+    hiredRole?: string;
+    appDevInternalPk?: number;
+    notes?: string;
 }
 
 // Constants
@@ -468,10 +480,9 @@ export class ATSController extends Controller {
     }
 
     /**
-     * Fetches all the applications for a team. Provides an output organized
-     * into a Kanban Application Card for better UI rendering. To perform this
-     * action, the user must either be a Team Owner or hold the `corp:hiringaccess`
-     * bindle.
+     * Fetches all applications for a team in a lightweight format suitable for
+     * the Kanban board. To perform this action, the user must either be a Team Owner 
+     * or hold the `corp:hiringaccess` bindle.
      * 
      * @param teamId People Portal Team ID
      * @returns Candidate Applications List
@@ -483,10 +494,12 @@ export class ATSController extends Controller {
     async getTeamApplications(@Path() teamId: string): Promise<ATSKanbanApplicationCard[]> {
         try {
             // Fetch all applications for this team directly - ONE per applicant!
+            // Project only necessary fields for the summary view
             const applications = await Application.find({
                 teamPk: teamId
             })
-                .populate<{ applicantId: IApplicant }>('applicantId')
+                .select('applicantId stage rolePreferences appliedAt stars')
+                .populate<{ applicantId: IApplicant }>('applicantId', 'fullName')
                 .lean()
                 .exec();
 
@@ -495,16 +508,10 @@ export class ATSController extends Controller {
                 id: app._id.toString(),
                 applicantId: app.applicantId._id.toString(),
                 name: app.applicantId.fullName || 'Unknown Applicant',
-                email: app.applicantId.email || '',
-                column: app.stage,  // Use the enum value directly
+                stage: app.stage,
                 rolePreferences: app.rolePreferences,
                 appliedAt: app.appliedAt,
-                stage: app.stage,
-                stageHistory: app.stageHistory,
-                appDevInternalPk: app.appDevInternalPk,
-                profile: app.applicantId.profile as any,
-                responses: app.responses as any,
-                hiredRole: app.hiredRole || undefined
+                stars: app.stars || 0
             }));
 
             return kanbanData;
@@ -512,6 +519,157 @@ export class ATSController extends Controller {
             console.error("Error fetching applications:", err);
             this.setStatus(500);
             throw new Error("Failed to fetch applications");
+        }
+    }
+
+    /**
+     * Fetches all information about an application including, preferred roles,
+     * responses to role specific questions and the application stage history.
+     * To perform this action, the user must either be a Team Owner or hold 
+     * the `corp:hiringaccess` bindle.
+     * 
+     * @param teamId People Portal Team ID
+     * @param applicationId Application ID
+     * @returns Full Application Details
+     */
+    @Get("applications/{teamId}/{applicationId}/info")
+    @Tags("Recruitment Actions")
+    @Security("bindles", ["corp:hiringaccess"])
+    @SuccessResponse(200)
+    async getApplicationDetails(@Path() teamId: string, @Path() applicationId: string): Promise<ATSApplicationDetails | { error: string, message: string }> {
+        try {
+            const app = await Application.findOne({ _id: applicationId, teamPk: teamId })
+                .populate<{ applicantId: IApplicant }>('applicantId')
+                .lean()
+                .exec();
+
+            if (!app) {
+                this.setStatus(404);
+                return { error: "NotFound", message: "Application not found" };
+            }
+
+            return {
+                id: app._id.toString(),
+                applicantId: app.applicantId._id.toString(),
+                name: app.applicantId.fullName || 'Unknown Applicant',
+                email: app.applicantId.email || '',
+                stage: app.stage,
+                rolePreferences: app.rolePreferences,
+                appliedAt: app.appliedAt,
+                stars: app.stars || 0,
+
+                // Detailed fields
+                profile: app.applicantId.profile as any,
+                responses: app.responses as any,
+                stageHistory: app.stageHistory,
+                ...(app.notes ? { notes: app.notes } : {}),
+                ...(app.hiredRole ? { hiredRole: app.hiredRole } : {}),
+                ...(app.appDevInternalPk ? { appDevInternalPk: app.appDevInternalPk } : {})
+            };
+
+        } catch (err) {
+            console.error("Error fetching application details:", err);
+            this.setStatus(500);
+            return { error: "ServerError", message: "Failed to fetch application details" };
+        }
+    }
+
+    /**
+     * Updates a candidate's star rating and any notes that are added for
+     * feedback. To perform this action, the user must either be a Team Owner 
+     * or hold the `corp:hiringaccess` bindle.
+     * 
+     * @param teamId People Portal Team ID
+     * @param applicationId Application ID
+     * @param stars New star rating (0-5)
+     * @param notes Interview Feedback in Markdown Format
+     */
+
+    @Put("applications/{teamId}/{applicationId}/feedback")
+    @Tags("Recruitment Actions")
+    @SuccessResponse(200)
+    @Security("bindles", ["corp:hiringaccess"])
+    async updateApplicationFeedback(
+        @Request() req: express.Request,
+        @Path() teamId: string,
+        @Path() applicationId: string,
+        @Body() body: { stars?: number, notes?: string }
+    ) {
+        try {
+            const { stars, notes } = body;
+
+            if (stars === undefined && !notes) {
+                this.setStatus(400);
+                return { error: "BadRequest", message: "Stars or notes must be provided" };
+            }
+
+            if (stars && (typeof stars !== 'number' || stars < 0 || stars > 5)) {
+                this.setStatus(400);
+                return { error: "BadRequest", message: "Stars must be a number between 0 and 5" };
+            }
+
+            // 1. Fetch Existing Application
+            const app = await Application.findOne({ _id: applicationId, teamPk: teamId });
+            if (!app) {
+                this.setStatus(404);
+                return { error: "NotFound", message: "Application not found" };
+            }
+
+            // 2. Update Stars
+            if (stars !== undefined) {
+                app.stars = stars;
+            }
+
+            // 3. Update Notes (Append with Header)
+            if (notes) {
+                // Validate Markdown (Empty Check)
+                if (!notes.trim()) {
+                    this.setStatus(400);
+                    return { error: "BadRequest", message: "Notes cannot be empty" };
+                }
+
+                // Validate Markdown Structure (Unclosed Fences)
+                const md = new MarkdownIt({ html: false });
+                const sentinel = "___MARKDOWN_SENTINEL___";
+                const tokens = md.parse(notes + "\n\n" + sentinel, {});
+
+                // If sentinel is trapped inside a code/fence block, the previous block was unclosed
+                const isTrapped = tokens.some(token =>
+                    (token.type === 'fence' || token.type === 'code_block') &&
+                    token.content.includes(sentinel)
+                );
+
+                if (isTrapped) {
+                    this.setStatus(400);
+                    return { error: "BadRequest", message: "Invalid Markdown Structure" };
+                }
+
+                const authorizedUser: AuthorizedUser = req.session.authorizedUser!;
+                const authorName = authorizedUser.name;
+
+                // Format Date: "Jan 22, 2026 at 3:45pm"
+                const now = new Date();
+                const formattedDate = new Intl.DateTimeFormat('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                    year: 'numeric',
+                    hour: 'numeric',
+                    minute: 'numeric',
+                    hour12: true
+                }).format(now);
+
+                const noteHeader = `###### ${authorName}  \n*${formattedDate}*`;
+                const existingNotes = app.notes || "";
+                const separator = existingNotes ? "\n\n---\n\n" : "";
+                app.notes = `${noteHeader}\n\n${notes}${separator}${existingNotes}`;
+            }
+
+            // 4. Save Changes
+            await app.save();
+            return { success: true, stars: app.stars, notes: app.notes };
+        } catch (err) {
+            this.setStatus(500);
+            return { error: "ServerError", message: "Failed to update stars" };
         }
     }
 
