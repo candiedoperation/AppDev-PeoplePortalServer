@@ -17,20 +17,20 @@
 */
 
 import * as express from 'express'
-import { Request, Body, Controller, Get, Patch, Path, Post, Queries, Res, Route, SuccessResponse, Put, Security } from "tsoa";
-import { AddGroupMemberRequest, CreateTeamRequest, CreateTeamResponse, GetGroupInfoResponse, GetTeamsListOptions, GetTeamsListResponse, GetUserListOptions, GetUserListResponse, SeasonType, TeamType, UserInformationBrief } from "../clients/AuthentikClient/models";
+import { Request, Body, Controller, Get, Patch, Path, Post, Queries, Route, SuccessResponse, Put, Security, Delete, Tags } from "tsoa";
+import { AddGroupMemberRequest, GetGroupInfoResponse, GetTeamsListResponse, GetUserListOptions, GetUserListResponse, RemoveGroupMemberRequest, SeasonType, TeamType, UserInformationBrief, GetTeamsForUsernameResponse, AuthentikClientError, CreateUserRequest } from "../clients/AuthentikClient/models";
 import { AuthentikClient } from "../clients/AuthentikClient";
-import { UUID } from "crypto";
-import { IInvite, Invite } from "../models/Invites";
+import { Invite } from "../models/Invites";
 import { EmailClient } from "../clients/EmailClient";
 import { SharedResourceClient } from '../clients';
-import { GiteaClient } from '../clients/GiteaClient';
 import { ENABLED_SHARED_RESOURCES, ENABLED_TEAMSETTING_RESOURCES } from '../config';
 import { SlackClient } from '../clients/SlackClient';
 import { AWSClient } from '../clients/AWSClient';
-import { sanitizeUserFullName } from '../utils/strings';
+import { sanitizeUserFullName, validateTeamName } from '../utils/strings';
 import { BindleController, EnabledBindlePermissions } from '../controllers/BindleController';
 import { AuthorizedUser } from '../clients/OpenIdClient';
+import { CustomValidationError } from '../utils/errors';
+import { ExpressRequestBindleExtension } from '../types/express';
 
 export interface EnabledRootSettings {
     [key: string]: boolean
@@ -63,6 +63,15 @@ interface APICreateTeamRequest {
     description: string
 }
 
+interface APIUpdateTeamRequest {
+    /** @minLength 1 */
+    friendlyName?: string,
+    /** @minLength 1 */
+    description?: string,
+    /** @minLength 1 */
+    [key: string]: string
+}
+
 interface APITeamInfoResponse {
     team: GetGroupInfoResponse,
     subteams: GetGroupInfoResponse[]
@@ -77,7 +86,6 @@ interface APITeamInviteCreateRequest {
     inviteeName: string;
     inviteeEmail: string;
     roleTitle: string;
-    teamPk: string;
     subteamPk: string;
 }
 
@@ -98,8 +106,23 @@ interface APITeamInviteAcceptRequest {
     phoneNumber: string;
 }
 
-interface ExpressRequestSessionShim {
+interface APIGetTeamsListOptions {
+    search?: string,
+    subgroupsOnly?: boolean,
+    includeUsers?: boolean,
+
+    /** @default 20 */
+    limit?: number;
+    /** Base-64 Encoded Cursor */
+    cursor?: string;
+}
+
+interface ExpressRequestAuthUserShim {
     session: { authorizedUser: AuthorizedUser }
+}
+
+interface ExpressRequestBindleShim {
+    bindle: ExpressRequestBindleExtension
 }
 
 @Route("/api/org")
@@ -123,14 +146,30 @@ export class OrgController extends Controller {
         }
     }
 
+    /**
+     * Fetches the list of people in the organization.
+     * Uses the Authentik Client for internal filtering.
+     * 
+     * @param options Options for searching and pagination
+     * @returns Paginated List of People in the Organization
+     */
     @Get("people")
+    @Tags("People Management")
     @SuccessResponse(200)
     @Security("oidc")
     async getPeople(@Queries() options: GetUserListOptions): Promise<GetUserListResponse> {
         return await this.authentikClient.getUserList(options)
     }
 
+    /**
+     * Fetches basic user information and additional attributes set
+     * by People Portal, given the user's primary key ID.
+     * 
+     * @param personId Internal User ID
+     * @returns User Information
+     */
     @Get("people/{personId}")
+    @Tags("People Management")
     @SuccessResponse(200)
     @Security("oidc")
     async getPersonInfo(@Path() personId: number): Promise<APIUserInfoResponse> {
@@ -140,43 +179,116 @@ export class OrgController extends Controller {
         }
     }
 
+    /**
+     * Provides the list of available root team settings supported
+     * by People Portal teams.
+     * 
+     * @returns Team Settings List
+     */
     @Get("teamsettings")
+    @Tags("Team Configuration")
     @SuccessResponse(200)
     @Security("oidc")
     async listRootTeamSettings() {
         return this.teamSettingList;
     }
 
+    /**
+     * Fetches the list of all People Portal teams in the organization.
+     * API includes a Base64-encoded cursor for pagination to assist with
+     * post fetch filtering from Authentik and infinite scrolling.
+     * 
+     * @param options Get Team List Options
+     * @returns Cursor-Paginated List of Teams
+     */
     @Get("teams")
+    @Tags("Team Management")
     @SuccessResponse(200)
     @Security("oidc")
-    async getTeams(@Queries() options: GetTeamsListOptions): Promise<GetTeamsListResponse> {
+    async getTeams(@Queries() options: APIGetTeamsListOptions): Promise<GetTeamsListResponse> {
         return await this.authentikClient.getGroupsList(options)
     }
 
-    @Post("invites/new")
-    @SuccessResponse(201)
+    /**
+     * Fetches the list of all People Portal teams in the organization that
+     * the user is a member of. Uses the Request Session Cookie for user
+     * information. **List size is capped to 1000.**
+     * 
+     * @param req Express Request Object
+     * @returns Non-Paginated List of Teams
+     */
+    @Get("myteams")
+    @Tags("Team Management")
+    @SuccessResponse(200)
     @Security("oidc")
-    async createInvite(@Request() req: express.Request | ExpressRequestSessionShim, @Body() inviteReq: APITeamInviteCreateRequest) {
-        const authorizedUser = req.session.authorizedUser!;
-        const teamInfo = await this.getTeamInfo(inviteReq.teamPk)
-        const invitorInfo = await this.authentikClient.getUserInfoFromEmail(authorizedUser.email)
+    async getMyTeams(@Request() req: express.Request): Promise<GetTeamsForUsernameResponse> {
+        return await this.authentikClient.getTeamsForUsername(req.session.authorizedUser!.username)
+    }
 
-        /* Verify Team Owner Status */
-        // if (!teamInfo.team.users.includes(inviterPk)) {
-        //     this.setStatus(403);
-        //     throw new Error(`You're not authorized to perform Team Management options for the resource ${teamInfo.team.name}`)
-        // }
+    /**
+     * Creates a new invite for a user to join a team. To call the API,
+     * the user must either be a team owner or have the `corp:membermgmt`
+     * bindle. The invitee is automatically sent an email with a unique
+     * invite link for onboarding.
+     * 
+     * Bindle Exceptions:
+     * - This function supports being called by the ATS Module allowing
+     *   the ATS to create invites on behalf of the requester.
+     * 
+     * - The ATS module is enforced to require the `corp:hiringaccess` bindle
+     *   to offset for the bindle exception.
+     * 
+     * **Non-Standard Behavior:** We do not check if the subteam is archived 
+     * or not. A team/subteam state can change before someone accepts an invite. 
+     * Therefore, the check is done during onboarding.
+     * 
+     * @param req Express Request Object
+     * @param inviteReq Invite Create Request
+     */
+    @Post("teams/{teamId}/externalinvite")
+    @Tags("User Onboarding", "Team Management")
+    @SuccessResponse(201)
+    @Security("bindles", ["corp:membermgmt"])
+    async createInvite(
+        @Request() req: express.Request | ExpressRequestAuthUserShim & ExpressRequestBindleShim,
+        @Body() inviteReq: APITeamInviteCreateRequest
+    ) {
+        /* Check if Email is in Supported Domain */
+        if (!inviteReq.inviteeEmail.endsWith("@terpmail.umd.edu")) {
+            throw new CustomValidationError(
+                400,
+                "You can only onboard people with @terpmail.umd.edu addresses!"
+            )
+        }
+
+        /* Check if External User is a part of Org */
+        try {
+            /* We throw the Validation Error if the user is already in the org */
+            const user = await this.authentikClient.getUserInfoFromEmail(inviteReq.inviteeEmail)
+            throw new CustomValidationError(
+                400,
+                `${user.name} is already in the organization! Please use the Existing Members feature to add them to your team.`
+            )
+        } catch (e) {
+            /* We Gracefully Handle All But Previous Error! */
+            if (e instanceof CustomValidationError)
+                throw e;
+        }
+
+        /* Gather Additional Data */
+        const authorizedUser = req.session.authorizedUser!;
+        const invitorInfo = await this.authentikClient.getUserInfoFromEmail(authorizedUser.email)
+        const teamInfo = req.bindle!.teamInfo;
 
         /* Create New Invite */
         const createdInvite = await Invite.create({
             inviteName: inviteReq.inviteeName,
             inviteEmail: inviteReq.inviteeEmail,
             roleTitle: inviteReq.roleTitle,
-            teamName: teamInfo.team.attributes.friendlyName,
+            teamName: teamInfo.attributes.friendlyName,
             subteamPk: inviteReq.subteamPk,
             inviterPk: invitorInfo.pk,
-            expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000)
+            expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000) /* 48 Hours */
         })
 
         /* Send an Email to the Invitee and the Invitor */
@@ -184,19 +296,27 @@ export class OrgController extends Controller {
             to: inviteReq.inviteeEmail,
             cc: [invitorInfo.email],
             replyTo: [invitorInfo.email],
-            subject: `Congrats! You're accepted to ${teamInfo.team.attributes.friendlyName}`,
+            subject: `Congrats! You're accepted to ${teamInfo.attributes.friendlyName}`,
             templateName: "RecruitNewMemberOnboard",
             templateVars: {
                 inviteeName: inviteReq.inviteeName,
                 invitorName: invitorInfo.name,
-                teamName: teamInfo.team.attributes.friendlyName,
+                teamName: teamInfo.attributes.friendlyName,
                 roleTitle: inviteReq.roleTitle,
                 onboardUrl: `${process.env.PEOPLEPORTAL_BASE_URL}/onboard/${createdInvite._id}`
             }
         })
     }
 
+    /**
+     * Public API since Invite IDs are unique and can't be guessed. Additionally,
+     * temporary authentication through OTP is supported but would need an overhaul.
+     * 
+     * @param inviteId Invite UUID
+     * @returns Invite Information
+     */
     @Get("invites/{inviteId}")
+    @Tags("User Onboarding")
     @SuccessResponse(200)
     async getInviteInfo(@Path() inviteId: string): Promise<APITeamInviteGetResponse> {
         const invite = await Invite.findById(inviteId).lean<APITeamInviteGetResponse>().exec()
@@ -206,50 +326,85 @@ export class OrgController extends Controller {
         return invite
     }
 
+    /**
+     * Accepts an invite to join a team. The invitee must provide a password
+     * and major. The invitee is automatically added to the team and given
+     * the role specified in the invite. Slack and other verification checks
+     * are in place.
+     * 
+     * @param inviteId Invite UUID
+     * @param req Accept Invite Request
+     */
     @Put("invites/{inviteId}")
+    @Tags("User Onboarding")
     @SuccessResponse(201)
     async acceptInvite(@Path() inviteId: string, @Body() req: APITeamInviteAcceptRequest) {
         const invite = await Invite.findById(inviteId).exec()
         if (!invite)
             throw new Error("Invalid Invite ID")
 
-
         /* Check Slack Presence! */
         const slackPresence = await this.slackClient.validateUserPresence(invite.inviteEmail)
         if (!slackPresence)
             throw new Error("User has not joined the Slack Workspace!")
 
-        /* Create the New User & add to Group */
-        await this.authentikClient.createNewUser({
+        /* Check if Subteam is Valid and Isn't Archived */
+        const subteam = await this.authentikClient.getGroupInfo(invite.subteamPk)
+        const isSubteamArchived = subteam.attributes.flaggedForDeletion
+
+        /* Construct New Request */
+        const createUserRequest: CreateUserRequest = {
             name: invite.inviteName,
             email: invite.inviteEmail,
-            groupPk: invite.subteamPk,
             password: req.password,
             attributes: {
                 major: req.major,
                 expectedGrad: req.expectedGrad,
                 phoneNumber: req.phoneNumber,
-                roles: {
-                    [invite.subteamPk]: invite.roleTitle
-                }
+                roles: {}
             }
-        })
+        }
 
-        /* Delete the Invite */
+        if (!isSubteamArchived) {
+            createUserRequest.groupPk = invite.subteamPk
+            createUserRequest.attributes.roles = {
+                [invite.subteamPk]: invite.roleTitle
+            }
+        }
+
+        /* Create the New User, Add to Group and Delete Invite */
+        await this.authentikClient.createNewUser(createUserRequest)
         await invite.deleteOne()
     }
 
+    /**
+     * Verifies if a user is a member of the Slack Workspace. Uses the
+     * Slack Shared Resources Client for operations.
+     * 
+     * @param req Verify Slack Request
+     * @returns True if the user is a member of the Slack Workspace, false otherwise
+     */
     @Post("tools/verifyslack")
+    @Tags("Generic Organization Tools")
     @SuccessResponse(200)
     async verifySlack(@Body() req: { email: string }): Promise<boolean> {
         return await this.slackClient.validateUserPresence(req.email)
     }
 
+    /**
+     * Provides information about a specific team in the organization. Includes
+     * subteams, users and attributes. Access granted to all OIDC authenticated
+     * users without any bindle restrictions.
+     * 
+     * @param teamId Team ID
+     * @returns Team Information
+     */
     @Get("teams/{teamId}")
+    @Tags("Team Configuration")
     @SuccessResponse(200)
     @Security("oidc")
     async getTeamInfo(@Path() teamId: string): Promise<APITeamInfoResponse> {
-        const primaryTeam = await this.authentikClient.getGroupInfo(teamId)
+        const primaryTeam = await this.authentikClient.getGroupInfo(teamId);
 
         /* Recursive Team Population Logic for Authentik Versions less than 2025.8 */
         // const subteamList = await this.authentikClient.getGroupsList({
@@ -269,7 +424,16 @@ export class OrgController extends Controller {
         }
     }
 
+    /**
+     * Provides a list of available bindles, collated from shared resources,
+     * that are supported by teams. This feature is usually populated and used
+     * in a subteam-level context.
+     * 
+     * @param teamId Team ID
+     * @returns Bindle Permissions Map
+     */
     @Get("teams/{teamId}/bindles")
+    @Tags("Team Configuration", "Bindle Authorization Layer")
     @SuccessResponse(200)
     @Security("oidc")
     async getTeamBindles(@Path() teamId: string): Promise<{ [key: string]: EnabledBindlePermissions }> {
@@ -277,24 +441,45 @@ export class OrgController extends Controller {
         return teamInfo.attributes.bindlePermissions ?? {}; /* Legacy Teams don't have bindles! */
     }
 
+    /**
+     * Updates the bindle permissions for a team. This method is used in a
+     * subteam-level context. Team Owners can update subteam level permissions
+     * and other members need to hold the `corp:permissionsmgmt` bindle.
+     * 
+     * **WARNING:**
+     * This method does not sync the bindles for users across the shared resources.
+     * A seperate team bindle sync call needs to be made to sync bindles for all subteams and
+     * users in a team.
+     * 
+     * @param teamId Team or Subteam ID
+     * @param bindleConf Bindle Permissions Map
+     */
     @Patch("teams/{teamId}/bindles")
+    @Tags("Team Configuration", "Bindle Authorization Layer")
     @SuccessResponse(201)
-    @Security("oidc")
+    @Security("bindles", ["corp:permissionsmgmt"])
     async updateTeamBindles(@Path() teamId: string, @Body() bindleConf: { [key: string]: EnabledBindlePermissions }) {
-        /**
-         * WARNING
-         * This method does not sync the bindles for users across the shared resources.
-         * A seperate team bindle sync call needs to be made to sync bindles for all subteams and
-         * users in a team.
-         */
-
         const bindlePermissions = BindleController.sanitizeBindlePermissions(bindleConf);
         await this.authentikClient.updateBindlePermissions(teamId, bindlePermissions);
     }
 
+    /**
+     * Generates a temporary link to access the team's AWS Console. Account Provisioning
+     * is handled by AWSClient and Root Team Settings. Access is moderated by the Bindle
+     * Authorization Layer.
+     * 
+     * To enable AWS Access, the team owner or `corp:rootsettings` bindle is required. For 
+     * generating a console link from this API, the user must either be a Team Owner or
+     * hold the corp:awsaccess bindle.
+     * 
+     * @param req Express Request Object
+     * @param teamId Team ID
+     * @returns Temporary AWS Console Link
+     */
     @Get("teams/{teamId}/awsaccess")
+    @Tags("Team External Integrations")
     @SuccessResponse(201)
-    @Security("oidc")
+    @Security("bindles", ["corp:awsaccess"])
     async fetchAWSAccessCredentials(@Request() req: express.Request, @Path() teamId: string) {
         const res = (req as any).res as express.Response
         res.setHeader('Content-Type', 'text/plain');
@@ -303,7 +488,7 @@ export class OrgController extends Controller {
         const awsRes = Object.values(ENABLED_TEAMSETTING_RESOURCES).find((res) => res.getResourceName() == "AWSClient") as unknown as AWSClient;
 
         res.write(JSON.stringify({ progressPercent: 10, status: "Retrieving Team Credentials..." }))
-        const teamInfo = await this.authentikClient.getGroupInfo(teamId)
+        const teamInfo = req.bindle!.teamInfo
 
         // Check if provisioning is enabled
         const settings = teamInfo.attributes.rootTeamSettings?.[awsRes.getResourceName()];
@@ -339,9 +524,17 @@ export class OrgController extends Controller {
         res.end()
     }
 
+    /**
+     * Updates the Root Team Settings for a Team. To perform this action, the user
+     * must either be a Team Owner or hold the `corp:rootsettings` bindle.
+     * 
+     * @param teamId Team ID
+     * @param conf Root Team Settings Map
+     */
     @Patch("teams/{teamId}/updateconf")
+    @Tags("Team Configuration")
     @SuccessResponse(201)
-    @Security("oidc")
+    @Security("bindles", ["corp:rootsettings"])
     async updateRootTeamSetting(@Path() teamId: string, @Body() conf: { [key: string]: EnabledRootSettings }) {
         /* Filter for only the available settings */
         const applySettingsList: { [key: string]: EnabledRootSettings } = {};
@@ -373,9 +566,17 @@ export class OrgController extends Controller {
         }
     }
 
+    /**
+     * Adds an existing member to a team. To perform this action, the user must 
+     * either be a Team Owner or hold the `corp:membermgmt` bindle.
+     * 
+     * @param teamId Team ID
+     * @param req User PK
+     */
     @Post("teams/{teamId}/addmember")
+    @Tags("Team Management")
     @SuccessResponse(201)
-    @Security("oidc")
+    @Security("bindles", ["corp:membermgmt"])
     async addTeamMember(@Path() teamId: string, @Body() req: { userPk: number }) {
         /* Needs Is Team owner Middleware?! */
         await this.addTeamMemberWrapper({
@@ -384,20 +585,58 @@ export class OrgController extends Controller {
         })
     }
 
-    @Post("teams/{teamId}/subteam")
+    /**
+     * Removes an existing member from a team. To perform this action, the user must 
+     * either be a Team Owner or hold the `corp:membermgmt` bindle.
+     * 
+     * @param teamId Team ID
+     * @param req User PK
+     */
+    @Post("teams/{teamId}/removemember")
+    @Tags("Team Management")
     @SuccessResponse(201)
-    @Security("oidc")
-    async createSubTeam(@Path() teamId: string, @Body() req: APICreateSubTeamRequest): Promise<CreateTeamResponse> {
-        const parentInfo = await this.authentikClient.getGroupInfo(teamId)
+    @Security("bindles", ["corp:membermgmt"])
+    async removeTeamMember(@Request() req: express.Request, @Path() teamId: string, @Body() body: { userPk: number }) {
+        /* Needs Is Team owner Middleware?! */
+        await this.removeTeamMemberWrapper({
+            groupId: teamId,
+            groupInfo: req.bindle!.teamInfo,
+            userPk: body.userPk
+        })
+    }
+
+    /**
+     * Creates a new subteam inside a team. To perform this action, the user must
+     * either be a Team Owner or hold the `corp:subteamaccess` bindle.
+     * 
+     * @param teamId Team ID
+     * @param req Subteam Information
+     * @returns Created Subteam Information
+     */
+    @Post("teams/{teamId}/subteam")
+    @Tags("Subteam Management")
+    @SuccessResponse(201)
+    @Security("bindles", ["corp:subteamaccess"])
+    async createSubTeam(@Request() req: express.Request | ExpressRequestBindleShim, @Path() teamId: string, @Body() body: APICreateSubTeamRequest): Promise<GetGroupInfoResponse> {
+        body.friendlyName = validateTeamName(body.friendlyName);
+        const parentInfo = req.bindle!.teamInfo;
+
+        if (parentInfo.subteams && parentInfo.subteams.length >= 15) {
+            throw new CustomValidationError(
+                400,
+                "Maximum number of subteams (15) reached for this team."
+            );
+        }
+
         const createdSubTeam = await this.authentikClient.createNewTeam({
             parent: teamId,
             parentName: parentInfo.attributes.friendlyName,
             attributes: {
-                friendlyName: req.friendlyName,
+                friendlyName: body.friendlyName,
                 teamType: parentInfo.attributes.teamType,
                 seasonType: parentInfo.attributes.seasonType,
                 seasonYear: parentInfo.attributes.seasonYear,
-                description: req.description
+                description: body.description
             }
         })
 
@@ -405,52 +644,112 @@ export class OrgController extends Controller {
         return createdSubTeam
     }
 
+    /** WARN: Fix Authorization? */
     @Post("teams/create")
+    @Tags("Team Management")
     @SuccessResponse(201)
     @Security("oidc")
-    async createTeam(@Body() req: APICreateTeamRequest): Promise<CreateTeamResponse> {
-        const newTeam = await this.authentikClient.createNewTeam({ attributes: { ...req } })
-        // this.addTeamMemberWrapper({ groupId: newTeam.pk, userPk: 0 })
+    async createTeam(@Request() req: express.Request, @Body() createTeamReq: APICreateTeamRequest): Promise<GetGroupInfoResponse> {
+        /* Validate Team Name Request */
+        createTeamReq.friendlyName = validateTeamName(createTeamReq.friendlyName);
 
-        // create slack channel
+        /* Create the New Team */
+        const newTeam = await this.authentikClient.createNewTeam({ attributes: { ...createTeamReq } })
 
-        switch (req.teamType) {
-            case TeamType.CORPORATE:
-                /* WE NEED TO ADD THE CURRENT USER TO THE GROUP!!! */
+        /* Add the Creator (us) to Team Owners */
+        const userInfo = await this.authentikClient.getUserInfoFromEmail(req.session.authorizedUser!.email)
+        this.addTeamMemberWrapper({ groupId: newTeam.pk, userPk: +userInfo.pk }) /* Add Creator to Team Owners */
+
+        /* Construct Bindle Shim for Optimized Create Sub Team Calls */
+        const bindleShim: ExpressRequestBindleShim = {
+            bindle: {
+                requestedPermissions: [],
+                teamInfo: newTeam,
+            }
+        }
+
+        /* Team Templates: Makes Life Easier! */
+        switch (createTeamReq.teamType) {
+            case TeamType.CORPORATE || TeamType.EXECBOARD: {
                 return newTeam
+            }
 
             case TeamType.PROJECT: {
                 /* Create Leadership and Engineering Sub-teams! */
-                await this.createSubTeam(newTeam.pk, { friendlyName: 'Leadership', description: 'Project and Tech Leads' })
-                await this.createSubTeam(newTeam.pk, { friendlyName: 'Engineering', description: 'UI/UX, PMs, SWEs, etc.' })
+                const leadershipTeam = await this.createSubTeam(bindleShim, newTeam.pk, { friendlyName: 'Leadership', description: 'Project and Tech Leads' })
+                await this.createSubTeam(bindleShim, newTeam.pk, { friendlyName: 'Engineering', description: 'UI/UX, PMs, SWEs, etc.' })
 
-                /* Add Self as Project Lead */
-                // this.addTeamMemberWrapper({ groupId: leadershipTeam.pk, userPk: 0 })
+                /* Update Bindles for Leadership, Engineering doesn't need special Access */
+                await this.updateTeamBindles(leadershipTeam.pk, {
+                    "PeoplePortalClient": {
+                        "corp:awsaccess": true,
+                        "corp:hiringaccess": true,
+                    },
 
-                /* Setup Gitea Organization and Teams */
+                    "GiteaClient": {
+                        "repo:allowcreate": true
+                    }
+                })
+
+                /* Return Team */
                 return newTeam
             }
 
             case TeamType.BOOTCAMP: {
-                await this.createSubTeam(newTeam.pk, { friendlyName: 'Learners', description: 'Bootcamp Students' })
-                await this.createSubTeam(newTeam.pk, { friendlyName: 'Educators', description: 'Bootcamp Teachers' })
-                await this.createSubTeam(newTeam.pk, { friendlyName: 'Mentors', description: 'Mentors for Bootcamp' })
-                await this.createSubTeam(newTeam.pk, { friendlyName: 'Interviewers', description: 'Interviewers for Bootcamp' })
+                await this.createSubTeam(bindleShim, newTeam.pk, { friendlyName: 'Learners', description: 'Bootcamp Students' })
+                const educatorsTeam = await this.createSubTeam(bindleShim, newTeam.pk, { friendlyName: 'Educators', description: 'Bootcamp Teachers' })
+                const interviewersTeam = await this.createSubTeam(bindleShim, newTeam.pk, { friendlyName: 'Interviewers', description: 'Interviewers for Bootcamp' })
+
+                /* Update Bindles for Educators */
+                await this.updateTeamBindles(educatorsTeam.pk, {
+                    "PeoplePortalClient": {
+                        "corp:hiringaccess": true,
+                        "corp:bindlesync": true,
+                        "corp:subteamaccess": true,
+                        "corp:membermgmt": true
+                    },
+
+                    "GiteaClient": {
+                        "repo:allowcreate": true
+                    }
+                })
+
+                /* Update Bindles for Interviewers */
+                await this.updateTeamBindles(interviewersTeam.pk, {
+                    "PeoplePortalClient": {
+                        "corp:hiringaccess": true
+                    }
+                })
+
+                /* Return Team, Learners don't need any special permissions */
                 return newTeam
             }
+
+            default:
+                throw new CustomValidationError(400, "Invalid Team Type")
         }
     }
 
+    /**
+     * Syncs Shared Permissions for a team. Internally, this routine will call
+     * `handleOrgBindleSync` for each shared resource that is enabled. For better
+     * User experience, this routine emits HTTP Server-Sent Events (SSEs) to the
+     * client to provide real-time progress updates.
+     * 
+     * @param req Express Request Object
+     * @param teamId Team ID
+     */
     @Patch("teams/{teamId}/syncbindles")
+    @Tags("Team Configuration", "Bindle Authorization Layer")
     @SuccessResponse(200)
-    @Security("oidc")
-    async syncOrgBindles(@Request() req: Request, @Path() teamId: string) {
+    @Security("bindles", ["corp:bindlesync"])
+    async syncOrgBindles(@Request() req: express.Request, @Path() teamId: string) {
         const res = (req as any).res as express.Response
         res.setHeader('Content-Type', 'text/plain');
         res.setHeader('Transfer-Encoding', 'chunked');
 
         /* Obtain Teams and Compute Progress Effort */
-        const teamInfo = await this.authentikClient.getGroupInfo(teamId)
+        const teamInfo = req.bindle!.teamInfo
         const computeEffort = teamInfo.users.length +
             teamInfo.subteams.reduce((acc, val) => acc + val.users.length, 0)
 
@@ -466,6 +765,62 @@ export class OrgController extends Controller {
         res.end()
     }
 
+    /**
+     * Updates the team's name and description. To perform this action,
+     * the user must either be a Team Owner or hold the `corp:rootsettings`
+     * bindle.
+     * 
+     * @param teamId Team ID
+     * @param conf Team Name and Description Update Payload
+     */
+    @Patch("teams/{teamId}")
+    @Tags("Team Configuration")
+    @SuccessResponse(200)
+    @Security("bindles", ["corp:rootsettings"])
+    async updateTeamAttributes(@Path() teamId: string, @Body() conf: APIUpdateTeamRequest) {
+        if (conf.friendlyName) {
+            conf.friendlyName = validateTeamName(conf.friendlyName);
+        }
+
+        /* Strictly restrict updates to only name and description to prevent attribute pollution */
+        await this.authentikClient.updateGroupInformation(teamId, conf);
+    }
+
+    /**
+     * Performs a soft-delete by flagging the team for deletion. People Portal teams
+     * can never be deleted considering the potential impacts caused by deleted states
+     * on Shared Resources. Instead, the soft-delete mechanism follows these rules:
+     * 
+     * - If the team is a subteam (has a parent), it removes 
+     *   all members to immediately revoke access.
+     * 
+     * - If the team is a root team (has no parent), it is just
+     *   flagged for deletion as their deletion is overengineering.
+     * 
+     * To perform this action, the user must either be a Team Owner or hold the
+     * `corp:rootsettings` bindle.
+     * 
+     * @param teamId Team ID
+     */
+    @Delete("teams/{teamId}")
+    @Tags("Team Management")
+    @SuccessResponse(200)
+    @Security("oidc")
+    async deleteTeam(@Path() teamId: string) {
+        const teamInfo = await this.authentikClient.getGroupInfo(teamId);
+        await this.authentikClient.flagGroupForDeletion(teamId);
+
+        /* 2. If subteam, remove all members */
+        if (teamInfo.parentPk)
+            await this.authentikClient.removeAllTeamMembers(teamId);
+
+        // sync bindles
+    }
+
+    /* === HELPER ROUTINES === */
+    private isGroupSubteam(group: GetGroupInfoResponse): boolean {
+        return !!group.parentPk;
+    }
 
     /* Other Wrapper Functions */
     async addTeamMemberWrapper(request: AddGroupMemberRequest): Promise<APITeamMemberAddResponse> {
@@ -476,5 +831,36 @@ export class OrgController extends Controller {
             coreAdditionComplete,
             slackAdditionComplete: false
         }
+    }
+
+    async removeTeamMemberWrapper(request: RemoveGroupMemberRequest): Promise<void> {
+        const userInfo = await this.authentikClient.getUserInfo(request.userPk)
+        const groupInfo = request.groupInfo ?? await this.authentikClient.getGroupInfo(request.groupId)
+
+        /* Check if we're removing the last owner from a Root Team */
+        if (!this.isGroupSubteam(groupInfo)) {
+            if (groupInfo.users.length <= 1) {
+                this.setStatus(409);
+                throw new Error("Cannot Remove the last Team Owner. Add someone else to remove yourself.");
+            }
+        }
+
+        /* Get Parent Team Name if available, otherwise fallback to current group */
+        let teamName = groupInfo.attributes.friendlyName ?? groupInfo.name
+        if (groupInfo.parentPk) {
+            const parentInfo = await this.authentikClient.getGroupInfo(groupInfo.parentPk)
+            teamName = parentInfo.attributes.friendlyName ?? parentInfo.name
+        }
+
+        /* Remove the Role Attribute from Authentik if it exists */
+        if (userInfo.attributes.roles && userInfo.attributes.roles[request.groupId]) {
+            const updatedRoles = { ...userInfo.attributes.roles }
+            delete updatedRoles[request.groupId]
+            await this.authentikClient.updateUserAttributes(request.userPk, { roles: updatedRoles })
+        }
+
+        await this.authentikClient.removeGroupMember(request)
+
+        /* DO SLACK and GIT REPO here! */
     }
 }

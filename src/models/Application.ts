@@ -23,6 +23,8 @@ export interface IApplication extends Document {
   hiredRole?: string;
   hiredSubteamPk?: string;
   appDevInternalPk?: number;
+  stars: number;
+  notes?: string;
 }
 
 const ApplicationSchema = new Schema<IApplication>({
@@ -64,7 +66,9 @@ const ApplicationSchema = new Schema<IApplication>({
     changedBy: { type: String }
   }],
   hiredRole: { type: String, required: false },
-  hiredSubteamPk: { type: String, required: false }
+  hiredSubteamPk: { type: String, required: false },
+  stars: { type: Number, required: true, default: 0, min: 0, max: 5 },
+  notes: { type: String, required: false, maxlength: 10000 }
 }, { timestamps: true });
 
 // Updated indexes for team-level queries

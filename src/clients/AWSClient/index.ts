@@ -94,7 +94,7 @@ export class AWSClient implements RootTeamSettingClient {
 
         try {
             // Check for existing account
-            console.debug("[AWS_CLIENT] 10%: Checking for existing account: ${name}...");
+            console.debug(`[AWS_CLIENT] 10%: Checking for existing account: ${name}...`);
             const existingAccountId = await this.findAccountIdByName(name);
 
             if (existingAccountId) {

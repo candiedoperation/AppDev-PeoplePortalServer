@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { CustomValidationError } from './errors';
 
 export function generateSecureRandomString(length: number) {
   return crypto.randomBytes(Math.ceil(length / 2)).toString('hex').slice(0, length);
@@ -33,4 +34,61 @@ export function sanitizeUserFullName(fullName: string): string {
   };
 
   return normalizeSegment(firstNameRaw) + normalizeSegment(lastNameRaw);
+}
+
+/**
+ * Formats a bindle access error message listing team owners and missing bindles.
+ */
+export function formatBindleAccessError(owners: string[], missingBindles: string[]): string {
+  const formatList = (items: string[], conjunction: string) => {
+    if (items.length === 0) return "";
+    if (items.length === 1) return items[0];
+    const last = items[items.length - 1];
+    const rest = items.slice(0, -1).join(", ");
+    return `${rest} ${conjunction} ${last}`;
+  };
+
+  const ownersStr = formatList(owners, "or");
+  const bindlesStr = formatList(missingBindles, "and");
+
+  return `You do not have permission to access this resource. Please ask ${ownersStr} to grant you the ${bindlesStr} bindle${missingBindles.length === 1 ? "" : "s"}.`;
+}
+
+/**
+ * Validates a team name ensuring it contains only letters, numbers, spaces, and apostrophes.
+ * Also formats the name to Title Case (capitalizing the first letter of each word).
+ * @param name Team Name
+ * @returns Formatted Team Name
+ * @throws Error if invalid
+ */
+export function validateTeamName(name: string): string {
+  if (name.length < 3 || name.length > 25) {
+    throw new CustomValidationError(
+      400,
+      "Invalid Team Name. Must be between 3 and 25 characters."
+    );
+  }
+
+  // Allow letters, numbers, spaces, and apostrophes
+  const regex = /^[a-zA-Z0-9' ]+$/;
+  if (!regex.test(name)) {
+    throw new CustomValidationError(
+      400,
+      "Invalid Team Name. Use only letters, numbers, spaces, and apostrophes."
+    );
+  }
+
+  // Must contain at least one letter
+  if (!/[a-zA-Z]/.test(name)) {
+    throw new CustomValidationError(
+      400,
+      "Invalid Team Name. Must contain at least one letter."
+    );
+  }
+
+  // Title Case Formatting
+  return name.split(' ').map(word => {
+    if (word.length === 0) return "";
+    return word.charAt(0).toUpperCase() + word.slice(1);
+  }).join(' ');
 }

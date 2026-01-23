@@ -17,7 +17,7 @@
 */
 
 import * as express from 'express'
-import { Request, Controller, Get, Route, SuccessResponse, Security, Post, Body } from "tsoa";
+import { Request, Controller, Get, Route, SuccessResponse, Security, Post, Body, Tags, Queries, Hidden, Query } from "tsoa";
 import { OpenIdClient } from '../clients/OpenIdClient';
 import { UserInfoResponse } from 'openid-client';
 import { Applicant } from '../models/Applicant';
@@ -37,6 +37,7 @@ interface OtpVerifyRequest {
     otp: string;
 }
 
+
 @Route("/api/auth")
 export class AuthController extends Controller {
     private emailClient: EmailClient
@@ -45,7 +46,16 @@ export class AuthController extends Controller {
         this.emailClient = new EmailClient()
     }
 
+    /**
+     * Returns the user info of the currently authenticated user. Uses the
+     * Express Session Cookie and User Scopes provided by the OpenID Connect
+     * Authorization Server.
+     * 
+     * @param req Express Request Object
+     * @returns User Info Response
+     */
     @Get("userinfo")
+    @Tags("Core Authentication")
     @Security("oidc")
     @SuccessResponse(200)
     async getUserInfo(@Request() req: express.Request): Promise<UserInfoResponse> {
@@ -56,9 +66,40 @@ export class AuthController extends Controller {
         return userInfo
     }
 
+    /**
+     * Primary endpoint to initiate the People Portal OIDC Authentication Flow. This routine
+     * accepts redirection parameters, generates the required Authentication Flow parameters
+     * from the OpenID Connect Authentication server and redirects to it to continue with authentication.
+     * 
+     * Once this process is completed, the OpenID Connect Authentication Server usually redirects
+     * to the /api/auth/redirect endpoint which handles the final steps as defined in the next method.
+     * 
+     * @param req Express Request Object
+     * @param redirect_uri Post-Login Redirect URL 
+     * @returns Redirects to the OpenID Connect Authorization Server
+     */
     @Get("login")
+    @Tags("Core Authentication")
     @SuccessResponse(302, "Redirect")
-    async handleLogin(@Request() req: express.Request) {
+    async handleLogin(
+        @Request() req: express.Request,
+        @Query() redirect_uri?: string,
+
+        /** OpenID Connect Shim for API Docs. Ignored for other API Requests. */
+        @Query() state?: string,
+
+        /* These are hidden parameters used for OIDC Shim */
+        @Query() @Hidden() _client_id?: string,
+        @Query() @Hidden() _response_type?: string,
+    ) {
+        /* Capture Redirect Context */
+        req.session.tempsession = req.session.tempsession || {};
+        if (redirect_uri) {
+            req.session.tempsession.redirect_uri = redirect_uri;
+            if (state)
+                req.session.tempsession.state = state;
+        }
+
         let authFlowResponse = OpenIdClient.startAuthFlow()
         if (!authFlowResponse)
             throw new Error("Failed to Compute OIDC Redirect URL")
@@ -69,19 +110,67 @@ export class AuthController extends Controller {
         return res.redirect(302, authFlowResponse.redirectUrl.toString())
     }
 
+    /**
+     * Handles the OpenID Connect callback, exchanges the code for a session, 
+     * and redirects the user to the requested endpoint or root.
+     * 
+     * **Non-standard Behavior:**
+     * If the user is logging in via the API Docs, we inject a "Shim Token" (SessionCookieShimToken)
+     * into the URL fragment. This is to trick the API Docs into unlocking the authorized state.
+     * However, since all authentication and authorization works over the Session Cookie, 
+     * the shim doesn't impact security or the actual requests.
+     * 
+     * @param req Express Request Object
+     * @returns Express Redirection
+     */
     @Get("redirect")
+    @Tags("Core Authentication")
     @SuccessResponse(302, "Redirect")
     async handleRedirect(@Request() req: express.Request) {
         try {
             const fullURL = req.protocol + '://' + req.get('host') + req.originalUrl;
             let authorizationStamp = await OpenIdClient.issueAuthorizationStamps(new URL(fullURL), req.session.oidcState!)
             req.session.accessToken = authorizationStamp.accessToken
-            req.session.idToken = authorizationStamp.idToken
             req.session.authorizedUser = authorizationStamp.user
-            req.session.tokenExpiry = authorizationStamp.expiry
+            req.session.tokenExpiry = authorizationStamp.expiry.getTime()
+            if (authorizationStamp.idToken)
+                req.session.idToken = authorizationStamp.idToken
 
-            /* Redirect to Homepage */
+            /* Redirect Logic */
             const res = (req as any).res as express.Response
+            const tempsession = req.session.tempsession;
+
+            /* Case 1: OAuth2 Passthrough (API Docs Portal, Postman, etc.) */
+            if (tempsession?.redirect_uri) {
+                const redirectUri = new URL(tempsession.redirect_uri);
+                const currentOrigin = req.protocol + '://' + req.get('host');
+
+                /* Implicit Flow Injection for OAuth2 Docs */
+                /* If the redirect is for our own docs, we inject the dummy token directly using hash fragment */
+                if (redirectUri.origin === currentOrigin && redirectUri.pathname.startsWith('/api/docs')) {
+                    const hashParams = new URLSearchParams();
+                    hashParams.append("access_token", "SessionCookieShimToken");
+                    hashParams.append("token_type", "Bearer");
+                    hashParams.append("expires_in", "3600");
+
+                    if (tempsession.state)
+                        hashParams.append("state", tempsession.state);
+
+                    redirectUri.hash = hashParams.toString();
+                } else {
+                    /* Standard Code Flow for others (if needed later) or External Redirects */
+                    /* Note: We essentially only support our own docs for now */
+                    redirectUri.searchParams.append("code", generateSecureRandomString(16));
+                    if (tempsession.state)
+                        redirectUri.searchParams.append("state", tempsession.state);
+                }
+
+                /* Cleanup */
+                delete req.session.tempsession;
+                return res.redirect(302, redirectUri.toString());
+            }
+
+            /* Case 3: Default */
             return res.redirect(302, "/")
         } catch (e) {
             console.log(e)
@@ -89,7 +178,17 @@ export class AuthController extends Controller {
         }
     }
 
+    /**
+     * Initiates Guest Authentication into People Portal. This routine generates
+     * a 6-digit Verification Code and sends it to the user's email. Primarily
+     * used for authentication during Recruitment Applications.
+     * 
+     * @param body Guest Authentication Initation Request
+     * @param req Express Request Object
+     * @returns Status Message
+     */
     @Post("otpinit")
+    @Tags("Guest Authentication")
     @SuccessResponse(200)
     async otpInitRequest(@Body() body: OtpInitRequest, @Request() req: express.Request) {
         const { email, name } = body;
@@ -125,7 +224,20 @@ export class AuthController extends Controller {
         return { message: "Verification Code sent successfully" };
     }
 
+    /**
+     * Verifies the 6-digit Verification Code sent to the user's email, signs a
+     * JSON Web Token (JWT) to establish an authenticated session and creates the
+     * user's guest profile in the database, if it doesn't exist.
+     * 
+     * The profile generation transforms the user from an unknown guest into a
+     * verified applicant in the database.
+     * 
+     * @param body Guest Authentication Verification Request
+     * @param req Express Request Object
+     * @returns Status Message
+     */
     @Post("otpverify")
+    @Tags("Guest Authentication")
     @SuccessResponse(200)
     async otpVerifyRequest(@Body() body: OtpVerifyRequest, @Request() req: express.Request) {
         const { email, otp } = body;
@@ -177,7 +289,15 @@ export class AuthController extends Controller {
         };
     }
 
+    /**
+     * Verifies the guest authentication session and returns the user's profile.
+     * Additionally, we enumerate the user's ATS applications and return them.
+     * 
+     * @param req Express Request Object
+     * @returns User Profile and ATS Applications
+     */
     @Get("verifyotpsession")
+    @Tags("Guest Authentication", "Applicant Portal")
     @SuccessResponse(200)
     async otpVerifySession(@Request() req: express.Request) {
         const tempsession = req.session.tempsession;
@@ -207,29 +327,34 @@ export class AuthController extends Controller {
             // Fetch subteam and parent names from Authentik
             const authentikClient = new AuthentikClient();
             const applicationsWithNames = await Promise.all(applications.map(async (app: any) => {
+                let teamName = app.teamPk;
                 try {
-                    const subteamInfo = await authentikClient.getGroupInfo(app.subteamPk);
-                    let parentTeamName = "";
-                    try {
-                        const parentInfo = await authentikClient.getGroupInfo(subteamInfo.parentPk);
-                        parentTeamName = parentInfo.attributes.friendlyName || parentInfo.name;
-                    } catch (pe) {
-                        console.error(`Failed to fetch parent info for ${subteamInfo.parentPk}:`, pe);
-                    }
-
-                    return {
-                        ...app,
-                        subteamName: subteamInfo.attributes.friendlyName || subteamInfo.name,
-                        parentTeamName: parentTeamName
-                    };
+                    // 1. Fetch Parent Team Name
+                    const teamInfo = await authentikClient.getGroupInfo(app.teamPk);
+                    teamName = teamInfo.attributes?.friendlyName || teamInfo.name;
                 } catch (e) {
-                    console.error(`Failed to fetch subteam info for ${app.subteamPk}:`, e);
-                    return {
-                        ...app,
-                        subteamName: app.subteamPk, // Fallback to PK
-                        parentTeamName: ""
-                    };
+                    console.error(`Failed to fetch team info for ${app.teamPk}`, e);
                 }
+
+                // 2. Fetch Subteam Names for Preferences
+                const rolePreferencesWithNames = await Promise.all((app.rolePreferences || []).map(async (pref: any) => {
+                    let subteamName = pref.subteamPk;
+                    try {
+                        const subteamInfo = await authentikClient.getGroupInfo(pref.subteamPk);
+                        subteamName = subteamInfo.attributes?.friendlyName || subteamInfo.name;
+                    } catch (e) {
+                        console.error(`Failed to fetch subteam info for ${pref.subteamPk}`, e);
+                    }
+                    return { ...pref, subteamName };
+                }));
+
+                // 3. Map subteam preferences (legacy support or if frontend needs it)
+                // For the new UI, we mostly care about rolePreferencesWithNames
+                return {
+                    ...app,
+                    teamName: teamName,
+                    rolePreferences: rolePreferencesWithNames
+                };
             }));
 
             return {
@@ -244,7 +369,19 @@ export class AuthController extends Controller {
         }
     }
 
+    /**
+     * Destroys the User's session, Revokes any authentication cookies and
+     * returns the status message.
+     * 
+     * **Non-Standard Behavior:**
+     * Unlike usual implementations, we do not redirect to the OpenID Connect
+     * logout URL. This is left out for future implementation.
+     * 
+     * @param req Express Request Object
+     * @returns Status Message
+     */
     @Post("logout")
+    @Tags("Core Authentication")
     @SuccessResponse(200)
     async handleLogout(@Request() req: express.Request) {
         return new Promise((resolve) => {

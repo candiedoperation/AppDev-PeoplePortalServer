@@ -20,7 +20,7 @@ import express, { Router, Request, Response, NextFunction } from "express"
 import cors from "cors"
 import dotenv from 'dotenv'
 import { RegisterRoutes } from "./routes";
-import swaggerUi from "swagger-ui-express";
+import { apiReference } from '@scalar/express-api-reference'
 import { ValidateError } from "tsoa";
 import bodyParser from "body-parser";
 import mongoose from "mongoose";
@@ -29,6 +29,8 @@ import expressSession from 'express-session'
 import { generateSecureRandomString } from "./utils/strings";
 import path from "path";
 import { NativeExpressOIDCAuthPort } from "./auth";
+import { AuthentikClient } from "./clients/AuthentikClient";
+import { CustomValidationError, ResourceAccessError } from "./utils/errors";
 
 if (!process.env.PEOPLEPORTAL_TOKEN_SECRET)
   process.env.PEOPLEPORTAL_TOKEN_SECRET = generateSecureRandomString(16)
@@ -56,9 +58,42 @@ app.use(
 
 /* Register TSOA Routes */
 const ApiRouter = Router()
-ApiRouter.use("/api/docs", swaggerUi.serve, async (req: Request, res: Response) => {
-  return res.send(swaggerUi.generateHTML(await import("../dist/swagger.json")))
-})
+ApiRouter.get("/api/docs/swagger.json", async (req, res) => {
+  const doc = await import("../dist/swagger.json");
+  res.json(doc.default || doc);
+});
+
+/* Enable Documentation A */
+ApiRouter.use("/api/docs", apiReference({
+  spec: {
+    url: "/api/docs/swagger.json",
+  },
+
+  metaData: {
+    title: "People Portal Server API Reference",
+  },
+
+  favicon: '/logo.svg',
+  showDeveloperTools: "never",
+  theme: "kepler",
+  hideClientButton: true,
+  customCss: `
+    a[href="https://www.scalar.com"] {
+      display: none;
+    }
+
+    div.flex-col:nth-child(4) > div:nth-child(1)::before {
+      content: "© 2026 Atheesh Thirumalairajan";
+      font-size: small;
+      color: var(--scalar-color-3);
+    }
+  `,
+
+  authentication: {
+    /* Must Match Generated OpenAPI Spec from tsoa.json */
+    preferredSecurityScheme: 'OIDC Bindle Shim',
+  },
+}));
 
 /* Register & Setup Catch All Route for Public Dir */
 RegisterRoutes(ApiRouter);
@@ -84,6 +119,10 @@ app.use(function errorHandler(
   res: Response,
   next: NextFunction
 ): Response | void {
+  if (res.headersSent) {
+    return next(err);
+  }
+
   if (err instanceof ValidateError) {
     console.warn(`Caught Validation Error for ${req.path}:`, err.fields);
     return res.status(422).json({
@@ -92,10 +131,16 @@ app.use(function errorHandler(
     });
   }
 
+  if (err instanceof ResourceAccessError || err instanceof CustomValidationError) {
+    return res.status(err.status).json({
+      message: err.message,
+    });
+  }
+
   if (err instanceof Error) {
     console.error(err)
     return res.status(500).json({
-      message: "Internal Server Error",
+      message: err.message ?? "Unknown Internal Server Error",
     });
   }
 
@@ -103,7 +148,9 @@ app.use(function errorHandler(
 });
 
 app.listen(PORT, async () => {
+  /* Validate Connections */
   await OpenIdClient.init()
+  await AuthentikClient.validateAuthentikConnection()
   await mongoose.connect(process.env.PEOPLEPORTAL_MONGO_URL!)
   console.log(`Server running at http://localhost:${PORT}`);
 });

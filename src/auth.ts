@@ -17,75 +17,181 @@
 */
 
 import * as express from "express";
-import { OpenIdClient } from "./clients/OpenIdClient";
+import { AuthorizedUser, OpenIdClient } from "./clients/OpenIdClient";
 import jwt from "jsonwebtoken"
+import { BindleController } from "./controllers/BindleController";
+import { AuthentikClient } from "./clients/AuthentikClient";
+import { UserInformationBrief } from "./clients/AuthentikClient/models";
+import { ResourceAccessError } from "./utils/errors";
+import { formatBindleAccessError } from "./utils/strings";
 
 export async function NativeExpressOIDCAuthPort(
     req: express.Request,
     res: express.Response,
     next: express.NextFunction
 ) {
-
-    console.log("MW TRIGGERED")
     /* Obtain Auth Status */
     try {
         const res = await expressAuthentication(req, "oidc")
-        console.log(res)
         next()
     } catch (e) {
         /* Auth Exception */
-        console.log(e)
         res.redirect(301, "/api/auth/login")
         next(e)
     }
 }
 
-export function expressAuthentication(
+export async function expressAuthentication(
     request: express.Request,
     securityName: string,
     scopes?: string[]
 ): Promise<any> {
-    if (securityName == "oidc") {
-        return new Promise(async (resolve, reject) => {
-            try {
-                const authHeader = request.headers.authorization?.replace("Bearer ", "")
-                const authToken = authHeader || request.session.accessToken
-                if (!authToken)
-                    return reject({})
+    try {
+        if (securityName == "oidc")
+            return await oidcAuthVerify(request, scopes);
 
-                const userData = await OpenIdClient.verifyAccessToken(authToken)
-                if (!request.session.accessToken || !request.session.authorizedUser) {
-                    request.session.accessToken = authHeader ?? ""
-                    request.session.authorizedUser = userData
-                }
+        else if (securityName == "bindles")
+            return await bindlesAuthVerify(request, scopes);
 
-                resolve({})
-            } catch (e) {
-                reject({})
+        else if (securityName == "ats_otp") {
+            if (!request.session.tempsession?.jwt || !request.session.tempsession?.user) {
+                return Promise.reject(new ResourceAccessError(401, "Session is Invalid"));
             }
-        })
-    } else if (securityName == "ats_otp") {
-        if (!request.session.tempsession?.jwt || !request.session.tempsession?.user) {
-            return Promise.reject({ error: "Session is Invalid" });
+
+            try {
+                jwt.verify(request.session.tempsession.jwt, process.env.PEOPLEPORTAL_TOKEN_SECRET!);
+                return Promise.resolve(true)
+            } catch (error) {
+                delete request.session.tempsession;
+                return Promise.reject(new ResourceAccessError(401, "Invalid or expired token"));
+            }
         }
 
-        try {
-            jwt.verify(request.session.tempsession.jwt, process.env.PEOPLEPORTAL_TOKEN_SECRET!);
-            return Promise.resolve({})
-        } catch (error) {
-            delete request.session.tempsession;
-            return Promise.reject({ error: "Invalid or expired token" });
-        }
-    } else {
-        return Promise.reject({})
+        else
+            throw new Error("Invalid Security Name!")
+    } catch (e) {
+        return Promise.reject(e)
     }
 }
 
-function oidcAuthVerify(req: express.Request, scopes?: string[]): boolean {
-    let tokenExpiry = req.session.tokenExpiry
-    return (
-        tokenExpiry != undefined &&
-        new Date() < tokenExpiry,
-        req.session.authorizedUser != undefined
-    )
+async function oidcAuthVerify(request: express.Request, scopes?: string[]): Promise<boolean> {
+    try {
+        const authToken = request.session.accessToken
+        if (!authToken)
+            return Promise.reject(new ResourceAccessError(401, "No Token Provided"));
+
+        const userData = await OpenIdClient.verifyAccessToken(authToken)
+        if (!request.session.accessToken || !request.session.authorizedUser) {
+            request.session.accessToken = authToken
+            request.session.authorizedUser = userData
+        }
+
+        return Promise.resolve(true)
+    } catch (e) {
+        /* OIDC Authorization Failed! */
+        return Promise.reject(new ResourceAccessError(401, "Invalid or expired token"));
+    }
+}
+
+/**
+ * Verifies if user has the required bindles. When req.params.teamId exists in the request
+ * we automatically process Bindle Authorization for that team. Otherwise, a Dynamic Locator
+ * is needed to be present as the first element in scopes to resolve the teamId.
+ * 
+ * Additionally, since all team actions **must be protected by bindles**, we ensure that the
+ * team is not **flagged for deletion** and we also populate a special request bindle field
+ * for AuthentikClient call optimizations.
+ * 
+ * @param request Express Request Object
+ * @param scopes Array of Bindles or Dynamic Locator + Bindles
+ * @returns User Authorization Status (Boolean)
+ */
+async function bindlesAuthVerify(request: express.Request, scopes?: string[]): Promise<boolean> {
+    /* 1. We Need OIDC Verification by Default (The Superset) */
+    const isAuthenticated = await oidcAuthVerify(request, scopes);
+    if (!isAuthenticated || !request.session.authorizedUser)
+        return Promise.reject(new ResourceAccessError(401, "Invalid or expired token"));
+
+    if (!scopes || scopes.length === 0) {
+        return Promise.reject(new ResourceAccessError(403, "Bindle Security Check failed: No Scopes Defined"));
+    }
+
+    /* 2. Resolve Team ID & Required Bindles */
+    let teamId: string | undefined;
+    let requiredBindles: string[] = [];
+
+    if (request.params.teamId) {
+        /* Default: Standard REST Path (teams/:teamId) */
+        teamId = request.params.teamId;
+        requiredBindles = scopes;
+    } else {
+        /* Fallback: Dynamic Locator Path */
+        const locatorPath = scopes[0];
+        requiredBindles = scopes.slice(1);
+
+        if (locatorPath) {
+            const resolvedId = locatorPath.split(".").reduce((o: any, i) => o?.[i], request);
+            if (typeof resolvedId === "string")
+                teamId = resolvedId;
+        }
+    }
+
+    if (!teamId || requiredBindles.length === 0) {
+        return Promise.reject(new ResourceAccessError(403, "Bindle Security Check failed: Could not resolve Team ID or missing Required Bindles"));
+    }
+
+    const authorizedUser: AuthorizedUser = request.session.authorizedUser;
+    const authentikClient = new AuthentikClient();
+
+    try {
+        /* Fetch Team Info and Inject for Authentik Call Optimization */
+        const teamInfo = await authentikClient.getGroupInfo(teamId);
+        request.bindle = {
+            teamInfo,
+            requestedPermissions: requiredBindles
+        }
+
+        /* 2.5. Check if Team is Flagged for Deletion */
+        if (teamInfo.attributes.flaggedForDeletion) {
+            return Promise.reject(new ResourceAccessError(
+                403,
+                "This team is flagged for deletion and therefore, is read-only."
+            ));
+        }
+
+        /* 3. Check Owner (Optimized Recursive Group Name Check) */
+        /* Convert user groups to Set for O(1) Lookup */
+        const userGroupSet = new Set(authorizedUser.groups);
+        let authoritativeTeam = teamInfo;
+
+        /* If Subteam, Elevate to Parent for Ownership Check */
+        if (teamInfo.parentPk) {
+            authoritativeTeam = await authentikClient.getGroupInfo(teamInfo.parentPk);
+        }
+
+        /* Verify PeoplePortal Validity & Check Membership */
+        /* Note: We rely on unique Group Names enforced by People Portal */
+        if (authoritativeTeam.attributes.peoplePortalCreation) {
+            if (userGroupSet.has(authoritativeTeam.name)) {
+                return Promise.resolve(true);
+            }
+        }
+
+        /* 4. Granular Permission Check */
+        const effectivePermissions = BindleController.getEffectivePermissionSet(teamInfo, authorizedUser.groups);
+
+        /* Ensure User has ALL required bindles */
+        const missingBindles = requiredBindles.filter(bindle => !effectivePermissions.has(bindle));
+        if (missingBindles.length === 0)
+            return Promise.resolve(true);
+
+        /* Access Denied */
+        const owners = authoritativeTeam.users.map(u => u.name);
+        return Promise.reject(new ResourceAccessError(403, formatBindleAccessError(owners, missingBindles)));
+
+    } catch (e) {
+        console.error("Bindle Permission Check Failed", e);
+        if (e instanceof ResourceAccessError) return Promise.reject(e);
+        return Promise.reject(new ResourceAccessError(403, "Bindle Permission Check Failed"));
+    }
 }

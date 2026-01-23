@@ -42,6 +42,13 @@ const models: TsoaRoute.Models = {
     "PaginationDefinition": {
         "dataType": "refObject",
         "properties": {
+            "next": {"dataType":"double","required":true},
+            "previous": {"dataType":"double","required":true},
+            "count": {"dataType":"double","required":true},
+            "current": {"dataType":"double","required":true},
+            "total_pages": {"dataType":"double","required":true},
+            "start_index": {"dataType":"double","required":true},
+            "end_index": {"dataType":"double","required":true},
         },
         "additionalProperties": false,
     },
@@ -133,18 +140,28 @@ const models: TsoaRoute.Models = {
     "GetTeamsListResponse": {
         "dataType": "refObject",
         "properties": {
-            "pagination": {"ref":"PaginationDefinition","required":true},
             "teams": {"dataType":"array","array":{"dataType":"refObject","ref":"TeamInformationBrief"},"required":true},
+            "nextCursor": {"dataType":"string"},
         },
         "additionalProperties": false,
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-    "GetTeamsListOptions": {
+    "APIGetTeamsListOptions": {
         "dataType": "refObject",
         "properties": {
+            "search": {"dataType":"string"},
             "subgroupsOnly": {"dataType":"boolean"},
             "includeUsers": {"dataType":"boolean"},
-            "search": {"dataType":"string"},
+            "limit": {"dataType":"double","default":20},
+            "cursor": {"dataType":"string"},
+        },
+        "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "GetTeamsForUsernameResponse": {
+        "dataType": "refObject",
+        "properties": {
+            "teams": {"dataType":"array","array":{"dataType":"refObject","ref":"TeamInformationBrief"},"required":true},
         },
         "additionalProperties": false,
     },
@@ -155,7 +172,6 @@ const models: TsoaRoute.Models = {
             "inviteeName": {"dataType":"string","required":true},
             "inviteeEmail": {"dataType":"string","required":true},
             "roleTitle": {"dataType":"string","required":true},
-            "teamPk": {"dataType":"string","required":true},
             "subteamPk": {"dataType":"string","required":true},
         },
         "additionalProperties": false,
@@ -193,6 +209,7 @@ const models: TsoaRoute.Models = {
             "name": {"dataType":"string","required":true},
             "users": {"dataType":"array","array":{"dataType":"refObject","ref":"UserInformationBrief"},"required":true},
             "parentPk": {"dataType":"string","required":true},
+            "parentInfo": {"ref":"GetGroupInfoResponse"},
             "subteamPkList": {"dataType":"array","array":{"dataType":"string"},"required":true},
             "subteams": {"dataType":"array","array":{"dataType":"refObject","ref":"GetGroupInfoResponse"},"required":true},
             "attributes": {"ref":"TeamAttributeDefinition","required":true},
@@ -202,7 +219,7 @@ const models: TsoaRoute.Models = {
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
     "TeamType": {
         "dataType": "refEnum",
-        "enums": ["PROJECT","CORPORATE","BOOTCAMP"],
+        "enums": ["PROJECT","CORPORATE","BOOTCAMP","EXECBOARD"],
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
     "SeasonType": {
@@ -232,6 +249,7 @@ const models: TsoaRoute.Models = {
             "seasonType": {"ref":"SeasonType","required":true},
             "seasonYear": {"dataType":"double","required":true},
             "peoplePortalCreation": {"dataType":"boolean"},
+            "flaggedForDeletion": {"dataType":"boolean"},
             "description": {"dataType":"string","required":true},
             "rootTeamSettings": {"dataType":"nestedObjectLiteral","nestedProperties":{},"additionalProperties":{"ref":"EnabledRootSettings"},"required":true},
             "bindlePermissions": {"dataType":"nestedObjectLiteral","nestedProperties":{},"additionalProperties":{"ref":"EnabledBindlePermissions"},"required":true},
@@ -244,15 +262,6 @@ const models: TsoaRoute.Models = {
         "properties": {
             "team": {"ref":"GetGroupInfoResponse","required":true},
             "subteams": {"dataType":"array","array":{"dataType":"refObject","ref":"GetGroupInfoResponse"},"required":true},
-        },
-        "additionalProperties": false,
-    },
-    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-    "CreateTeamResponse": {
-        "dataType": "refObject",
-        "properties": {
-            "pk": {"dataType":"string","required":true},
-            "name": {"dataType":"string","required":true},
         },
         "additionalProperties": false,
     },
@@ -276,6 +285,15 @@ const models: TsoaRoute.Models = {
             "description": {"dataType":"string","required":true},
         },
         "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "APIUpdateTeamRequest": {
+        "dataType": "refObject",
+        "properties": {
+            "friendlyName": {"dataType":"string","validators":{"minLength":{"value":1}}},
+            "description": {"dataType":"string","validators":{"minLength":{"value":1}}},
+        },
+        "additionalProperties": {"dataType":"string"},
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
     "JsonPrimitive": {
@@ -380,9 +398,18 @@ const models: TsoaRoute.Models = {
         "enums": ["Applied","Interview","Rejected","Potential Hire","Hired"],
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-    "mongoose.FlattenMaps_ITeamRecruitingStatus_": {
-        "dataType": "refAlias",
-        "type": {"dataType":"nestedObjectLiteral","nestedProperties":{},"validators":{}},
+    "ATSKanbanApplicationCard": {
+        "dataType": "refObject",
+        "properties": {
+            "id": {"dataType":"string","required":true},
+            "applicantId": {"dataType":"string","required":true},
+            "name": {"dataType":"string","required":true},
+            "rolePreferences": {"dataType":"array","array":{"dataType":"nestedObjectLiteral","nestedProperties":{"subteamPk":{"dataType":"string","required":true},"role":{"dataType":"string","required":true}}},"required":true},
+            "appliedAt": {"dataType":"datetime","required":true},
+            "stage": {"ref":"ApplicationStage","required":true},
+            "stars": {"dataType":"double","required":true,"validators":{"minimum":{"errorMsg":"Minimum Stars is 0","value":0},"maximum":{"errorMsg":"Maximum Stars is 5","value":5}}},
+        },
+        "additionalProperties": false,
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
     "Record_string.string_": {
@@ -390,21 +417,35 @@ const models: TsoaRoute.Models = {
         "type": {"dataType":"nestedObjectLiteral","nestedProperties":{},"additionalProperties":{"dataType":"string"},"validators":{}},
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-    "KanbanApplicationCard": {
+    "ATSApplicationDetails": {
         "dataType": "refObject",
         "properties": {
             "id": {"dataType":"string","required":true},
             "applicantId": {"dataType":"string","required":true},
             "name": {"dataType":"string","required":true},
-            "email": {"dataType":"string","required":true},
-            "column": {"dataType":"string","required":true},
             "rolePreferences": {"dataType":"array","array":{"dataType":"nestedObjectLiteral","nestedProperties":{"subteamPk":{"dataType":"string","required":true},"role":{"dataType":"string","required":true}}},"required":true},
             "appliedAt": {"dataType":"datetime","required":true},
             "stage": {"ref":"ApplicationStage","required":true},
-            "stageHistory": {"dataType":"array","array":{"dataType":"nestedObjectLiteral","nestedProperties":{"changedBy":{"dataType":"string"},"changedAt":{"dataType":"datetime","required":true},"stage":{"ref":"ApplicationStage","required":true}}}},
+            "stars": {"dataType":"double","required":true,"validators":{"minimum":{"errorMsg":"Minimum Stars is 0","value":0},"maximum":{"errorMsg":"Maximum Stars is 5","value":5}}},
+            "email": {"dataType":"string","required":true},
             "profile": {"ref":"Record_string.string_","required":true},
             "responses": {"ref":"Record_string.string_","required":true},
-            "hiredRole": {"dataType":"union","subSchemas":[{"dataType":"string"},{"dataType":"undefined"}],"required":true},
+            "stageHistory": {"dataType":"array","array":{"dataType":"nestedObjectLiteral","nestedProperties":{"changedBy":{"dataType":"string"},"changedAt":{"dataType":"datetime","required":true},"stage":{"ref":"ApplicationStage","required":true}}}},
+            "hiredRole": {"dataType":"string"},
+            "appDevInternalPk": {"dataType":"double"},
+            "notes": {"dataType":"string"},
+        },
+        "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "ATSUpdateApplicationStageRequest": {
+        "dataType": "refObject",
+        "properties": {
+            "stage": {"ref":"ApplicationStage","required":true},
+            "interviewLink": {"dataType":"string"},
+            "interviewGuidelines": {"dataType":"string"},
+            "hiredRole": {"dataType":"string"},
+            "hiredSubteamPk": {"dataType":"string"},
         },
         "additionalProperties": false,
     },
@@ -571,7 +612,7 @@ export function RegisterRoutes(app: Router) {
         });
         // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
         const argsOrgController_getTeams: Record<string, TsoaRoute.ParameterSchema> = {
-                options: {"in":"queries","name":"options","required":true,"ref":"GetTeamsListOptions"},
+                options: {"in":"queries","name":"options","required":true,"ref":"APIGetTeamsListOptions"},
         };
         app.get('/api/org/teams',
             authenticateMiddleware([{"oidc":[]}]),
@@ -601,12 +642,43 @@ export function RegisterRoutes(app: Router) {
             }
         });
         // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsOrgController_getMyTeams: Record<string, TsoaRoute.ParameterSchema> = {
+                req: {"in":"request","name":"req","required":true,"dataType":"object"},
+        };
+        app.get('/api/org/myteams',
+            authenticateMiddleware([{"oidc":[]}]),
+            ...(fetchMiddlewares<RequestHandler>(OrgController)),
+            ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.getMyTeams)),
+
+            async function OrgController_getMyTeams(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsOrgController_getMyTeams, request, response });
+
+                const controller = new OrgController();
+
+              await templateService.apiHandler({
+                methodName: 'getMyTeams',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
         const argsOrgController_createInvite: Record<string, TsoaRoute.ParameterSchema> = {
                 req: {"in":"request","name":"req","required":true,"dataType":"object"},
                 inviteReq: {"in":"body","name":"inviteReq","required":true,"ref":"APITeamInviteCreateRequest"},
         };
-        app.post('/api/org/invites/new',
-            authenticateMiddleware([{"oidc":[]}]),
+        app.post('/api/org/teams/:teamId/externalinvite',
+            authenticateMiddleware([{"bindles":["corp:membermgmt"]}]),
             ...(fetchMiddlewares<RequestHandler>(OrgController)),
             ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.createInvite)),
 
@@ -791,7 +863,7 @@ export function RegisterRoutes(app: Router) {
                 bindleConf: {"in":"body","name":"bindleConf","required":true,"dataType":"nestedObjectLiteral","nestedProperties":{},"additionalProperties":{"ref":"EnabledBindlePermissions"}},
         };
         app.patch('/api/org/teams/:teamId/bindles',
-            authenticateMiddleware([{"oidc":[]}]),
+            authenticateMiddleware([{"bindles":["corp:permissionsmgmt"]}]),
             ...(fetchMiddlewares<RequestHandler>(OrgController)),
             ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.updateTeamBindles)),
 
@@ -823,7 +895,7 @@ export function RegisterRoutes(app: Router) {
                 teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
         };
         app.get('/api/org/teams/:teamId/awsaccess',
-            authenticateMiddleware([{"oidc":[]}]),
+            authenticateMiddleware([{"bindles":["corp:awsaccess"]}]),
             ...(fetchMiddlewares<RequestHandler>(OrgController)),
             ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.fetchAWSAccessCredentials)),
 
@@ -855,7 +927,7 @@ export function RegisterRoutes(app: Router) {
                 conf: {"in":"body","name":"conf","required":true,"dataType":"nestedObjectLiteral","nestedProperties":{},"additionalProperties":{"ref":"EnabledRootSettings"}},
         };
         app.patch('/api/org/teams/:teamId/updateconf',
-            authenticateMiddleware([{"oidc":[]}]),
+            authenticateMiddleware([{"bindles":["corp:rootsettings"]}]),
             ...(fetchMiddlewares<RequestHandler>(OrgController)),
             ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.updateRootTeamSetting)),
 
@@ -887,7 +959,7 @@ export function RegisterRoutes(app: Router) {
                 req: {"in":"body","name":"req","required":true,"dataType":"nestedObjectLiteral","nestedProperties":{"userPk":{"dataType":"double","required":true}}},
         };
         app.post('/api/org/teams/:teamId/addmember',
-            authenticateMiddleware([{"oidc":[]}]),
+            authenticateMiddleware([{"bindles":["corp:membermgmt"]}]),
             ...(fetchMiddlewares<RequestHandler>(OrgController)),
             ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.addTeamMember)),
 
@@ -914,12 +986,46 @@ export function RegisterRoutes(app: Router) {
             }
         });
         // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-        const argsOrgController_createSubTeam: Record<string, TsoaRoute.ParameterSchema> = {
+        const argsOrgController_removeTeamMember: Record<string, TsoaRoute.ParameterSchema> = {
+                req: {"in":"request","name":"req","required":true,"dataType":"object"},
                 teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
-                req: {"in":"body","name":"req","required":true,"ref":"APICreateSubTeamRequest"},
+                body: {"in":"body","name":"body","required":true,"dataType":"nestedObjectLiteral","nestedProperties":{"userPk":{"dataType":"double","required":true}}},
+        };
+        app.post('/api/org/teams/:teamId/removemember',
+            authenticateMiddleware([{"bindles":["corp:membermgmt"]}]),
+            ...(fetchMiddlewares<RequestHandler>(OrgController)),
+            ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.removeTeamMember)),
+
+            async function OrgController_removeTeamMember(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsOrgController_removeTeamMember, request, response });
+
+                const controller = new OrgController();
+
+              await templateService.apiHandler({
+                methodName: 'removeTeamMember',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 201,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsOrgController_createSubTeam: Record<string, TsoaRoute.ParameterSchema> = {
+                req: {"in":"request","name":"req","required":true,"dataType":"object"},
+                teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
+                body: {"in":"body","name":"body","required":true,"ref":"APICreateSubTeamRequest"},
         };
         app.post('/api/org/teams/:teamId/subteam',
-            authenticateMiddleware([{"oidc":[]}]),
+            authenticateMiddleware([{"bindles":["corp:subteamaccess"]}]),
             ...(fetchMiddlewares<RequestHandler>(OrgController)),
             ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.createSubTeam)),
 
@@ -947,7 +1053,8 @@ export function RegisterRoutes(app: Router) {
         });
         // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
         const argsOrgController_createTeam: Record<string, TsoaRoute.ParameterSchema> = {
-                req: {"in":"body","name":"req","required":true,"ref":"APICreateTeamRequest"},
+                req: {"in":"request","name":"req","required":true,"dataType":"object"},
+                createTeamReq: {"in":"body","name":"createTeamReq","required":true,"ref":"APICreateTeamRequest"},
         };
         app.post('/api/org/teams/create',
             authenticateMiddleware([{"oidc":[]}]),
@@ -982,7 +1089,7 @@ export function RegisterRoutes(app: Router) {
                 teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
         };
         app.patch('/api/org/teams/:teamId/syncbindles',
-            authenticateMiddleware([{"oidc":[]}]),
+            authenticateMiddleware([{"bindles":["corp:bindlesync"]}]),
             ...(fetchMiddlewares<RequestHandler>(OrgController)),
             ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.syncOrgBindles)),
 
@@ -998,6 +1105,69 @@ export function RegisterRoutes(app: Router) {
 
               await templateService.apiHandler({
                 methodName: 'syncOrgBindles',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsOrgController_updateTeamAttributes: Record<string, TsoaRoute.ParameterSchema> = {
+                teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
+                conf: {"in":"body","name":"conf","required":true,"ref":"APIUpdateTeamRequest"},
+        };
+        app.patch('/api/org/teams/:teamId',
+            authenticateMiddleware([{"bindles":["corp:rootsettings"]}]),
+            ...(fetchMiddlewares<RequestHandler>(OrgController)),
+            ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.updateTeamAttributes)),
+
+            async function OrgController_updateTeamAttributes(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsOrgController_updateTeamAttributes, request, response });
+
+                const controller = new OrgController();
+
+              await templateService.apiHandler({
+                methodName: 'updateTeamAttributes',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsOrgController_deleteTeam: Record<string, TsoaRoute.ParameterSchema> = {
+                teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
+        };
+        app.delete('/api/org/teams/:teamId',
+            authenticateMiddleware([{"oidc":[]}]),
+            ...(fetchMiddlewares<RequestHandler>(OrgController)),
+            ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.deleteTeam)),
+
+            async function OrgController_deleteTeam(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsOrgController_deleteTeam, request, response });
+
+                const controller = new OrgController();
+
+              await templateService.apiHandler({
+                methodName: 'deleteTeam',
                 controller,
                 response,
                 next,
@@ -1072,6 +1242,8 @@ export function RegisterRoutes(app: Router) {
         // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
         const argsAuthController_handleLogin: Record<string, TsoaRoute.ParameterSchema> = {
                 req: {"in":"request","name":"req","required":true,"dataType":"object"},
+                redirect_uri: {"in":"query","name":"redirect_uri","dataType":"string"},
+                state: {"in":"query","name":"state","dataType":"string"},
         };
         app.get('/api/auth/login',
             ...(fetchMiddlewares<RequestHandler>(AuthController)),
@@ -1318,9 +1490,10 @@ export function RegisterRoutes(app: Router) {
         });
         // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
         const argsATSController_getSubTeamATSConfig: Record<string, TsoaRoute.ParameterSchema> = {
-                subteamId: {"in":"path","name":"subteamId","required":true,"dataType":"string"},
+                teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
         };
-        app.get('/api/ats/config/:subteamId',
+        app.get('/api/ats/config/:teamId',
+            authenticateMiddleware([{"bindles":["corp:hiringaccess"]}]),
             ...(fetchMiddlewares<RequestHandler>(ATSController)),
             ...(fetchMiddlewares<RequestHandler>(ATSController.prototype.getSubTeamATSConfig)),
 
@@ -1348,10 +1521,11 @@ export function RegisterRoutes(app: Router) {
         });
         // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
         const argsATSController_createOrUpdateSubteamConfig: Record<string, TsoaRoute.ParameterSchema> = {
-                subteamId: {"in":"path","name":"subteamId","required":true,"dataType":"string"},
+                teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
                 body: {"in":"body","name":"body","required":true,"ref":"ATSSubteamConfigRequest"},
         };
-        app.post('/api/ats/config/:subteamId',
+        app.post('/api/ats/config/:teamId',
+            authenticateMiddleware([{"bindles":["corp:hiringaccess"]}]),
             ...(fetchMiddlewares<RequestHandler>(ATSController)),
             ...(fetchMiddlewares<RequestHandler>(ATSController.prototype.createOrUpdateSubteamConfig)),
 
@@ -1410,6 +1584,7 @@ export function RegisterRoutes(app: Router) {
         const argsATSController_getApplicationStages: Record<string, TsoaRoute.ParameterSchema> = {
         };
         app.get('/api/ats/stages',
+            authenticateMiddleware([{"oidc":[]}]),
             ...(fetchMiddlewares<RequestHandler>(ATSController)),
             ...(fetchMiddlewares<RequestHandler>(ATSController.prototype.getApplicationStages)),
 
@@ -1439,7 +1614,7 @@ export function RegisterRoutes(app: Router) {
         const argsATSController_getTeamDetails: Record<string, TsoaRoute.ParameterSchema> = {
                 teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
         };
-        app.get('/api/ats/teams/:teamId',
+        app.get('/api/ats/openteams/:teamId',
             ...(fetchMiddlewares<RequestHandler>(ATSController)),
             ...(fetchMiddlewares<RequestHandler>(ATSController.prototype.getTeamDetails)),
 
@@ -1466,103 +1641,11 @@ export function RegisterRoutes(app: Router) {
             }
         });
         // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-        const argsATSController_getTeamRecruitingStatus: Record<string, TsoaRoute.ParameterSchema> = {
-                teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
-        };
-        app.get('/api/ats/openteams/:teamId',
-            ...(fetchMiddlewares<RequestHandler>(ATSController)),
-            ...(fetchMiddlewares<RequestHandler>(ATSController.prototype.getTeamRecruitingStatus)),
-
-            async function ATSController_getTeamRecruitingStatus(request: ExRequest, response: ExResponse, next: any) {
-
-            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-
-            let validatedArgs: any[] = [];
-            try {
-                validatedArgs = templateService.getValidatedArgs({ args: argsATSController_getTeamRecruitingStatus, request, response });
-
-                const controller = new ATSController();
-
-              await templateService.apiHandler({
-                methodName: 'getTeamRecruitingStatus',
-                controller,
-                response,
-                next,
-                validatedArgs,
-                successStatus: 200,
-              });
-            } catch (err) {
-                return next(err);
-            }
-        });
-        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-        const argsATSController_addSubteamToRecruiting: Record<string, TsoaRoute.ParameterSchema> = {
-                teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
-                subteamId: {"in":"path","name":"subteamId","required":true,"dataType":"string"},
-        };
-        app.put('/api/ats/openteams/:teamId/:subteamId',
-            ...(fetchMiddlewares<RequestHandler>(ATSController)),
-            ...(fetchMiddlewares<RequestHandler>(ATSController.prototype.addSubteamToRecruiting)),
-
-            async function ATSController_addSubteamToRecruiting(request: ExRequest, response: ExResponse, next: any) {
-
-            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-
-            let validatedArgs: any[] = [];
-            try {
-                validatedArgs = templateService.getValidatedArgs({ args: argsATSController_addSubteamToRecruiting, request, response });
-
-                const controller = new ATSController();
-
-              await templateService.apiHandler({
-                methodName: 'addSubteamToRecruiting',
-                controller,
-                response,
-                next,
-                validatedArgs,
-                successStatus: 200,
-              });
-            } catch (err) {
-                return next(err);
-            }
-        });
-        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-        const argsATSController_removeSubteamFromRecruiting: Record<string, TsoaRoute.ParameterSchema> = {
-                teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
-                subteamId: {"in":"path","name":"subteamId","required":true,"dataType":"string"},
-        };
-        app.delete('/api/ats/openteams/:teamId/:subteamId',
-            ...(fetchMiddlewares<RequestHandler>(ATSController)),
-            ...(fetchMiddlewares<RequestHandler>(ATSController.prototype.removeSubteamFromRecruiting)),
-
-            async function ATSController_removeSubteamFromRecruiting(request: ExRequest, response: ExResponse, next: any) {
-
-            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-
-            let validatedArgs: any[] = [];
-            try {
-                validatedArgs = templateService.getValidatedArgs({ args: argsATSController_removeSubteamFromRecruiting, request, response });
-
-                const controller = new ATSController();
-
-              await templateService.apiHandler({
-                methodName: 'removeSubteamFromRecruiting',
-                controller,
-                response,
-                next,
-                validatedArgs,
-                successStatus: 200,
-              });
-            } catch (err) {
-                return next(err);
-            }
-        });
-        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
         const argsATSController_getTeamApplications: Record<string, TsoaRoute.ParameterSchema> = {
                 teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
         };
         app.get('/api/ats/applications/:teamId',
-            authenticateMiddleware([{"oidc":[]}]),
+            authenticateMiddleware([{"bindles":["corp:hiringaccess"]}]),
             ...(fetchMiddlewares<RequestHandler>(ATSController)),
             ...(fetchMiddlewares<RequestHandler>(ATSController.prototype.getTeamApplications)),
 
@@ -1589,11 +1672,78 @@ export function RegisterRoutes(app: Router) {
             }
         });
         // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsATSController_getApplicationDetails: Record<string, TsoaRoute.ParameterSchema> = {
+                teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
+                applicationId: {"in":"path","name":"applicationId","required":true,"dataType":"string"},
+        };
+        app.get('/api/ats/applications/:teamId/:applicationId/info',
+            authenticateMiddleware([{"bindles":["corp:hiringaccess"]}]),
+            ...(fetchMiddlewares<RequestHandler>(ATSController)),
+            ...(fetchMiddlewares<RequestHandler>(ATSController.prototype.getApplicationDetails)),
+
+            async function ATSController_getApplicationDetails(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsATSController_getApplicationDetails, request, response });
+
+                const controller = new ATSController();
+
+              await templateService.apiHandler({
+                methodName: 'getApplicationDetails',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsATSController_updateApplicationFeedback: Record<string, TsoaRoute.ParameterSchema> = {
+                req: {"in":"request","name":"req","required":true,"dataType":"object"},
+                teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
+                applicationId: {"in":"path","name":"applicationId","required":true,"dataType":"string"},
+                body: {"in":"body","name":"body","required":true,"dataType":"nestedObjectLiteral","nestedProperties":{"notes":{"dataType":"string"},"stars":{"dataType":"double"}}},
+        };
+        app.put('/api/ats/applications/:teamId/:applicationId/feedback',
+            authenticateMiddleware([{"bindles":["corp:hiringaccess"]}]),
+            ...(fetchMiddlewares<RequestHandler>(ATSController)),
+            ...(fetchMiddlewares<RequestHandler>(ATSController.prototype.updateApplicationFeedback)),
+
+            async function ATSController_updateApplicationFeedback(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsATSController_updateApplicationFeedback, request, response });
+
+                const controller = new ATSController();
+
+              await templateService.apiHandler({
+                methodName: 'updateApplicationFeedback',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
         const argsATSController_getApplicantUrls: Record<string, TsoaRoute.ParameterSchema> = {
+                teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
                 applicantId: {"in":"path","name":"applicantId","required":true,"dataType":"string"},
         };
-        app.get('/api/ats/applications/applicant/:applicantId/resume',
-            authenticateMiddleware([{"oidc":[]}]),
+        app.get('/api/ats/applications/:teamId/:applicantId/resume',
+            authenticateMiddleware([{"bindles":["corp:hiringaccess"]}]),
             ...(fetchMiddlewares<RequestHandler>(ATSController)),
             ...(fetchMiddlewares<RequestHandler>(ATSController.prototype.getApplicantUrls)),
 
@@ -1622,10 +1772,11 @@ export function RegisterRoutes(app: Router) {
         // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
         const argsATSController_updateApplicationStage: Record<string, TsoaRoute.ParameterSchema> = {
                 req: {"in":"request","name":"req","required":true,"dataType":"object"},
+                teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
                 applicationId: {"in":"path","name":"applicationId","required":true,"dataType":"string"},
-                body: {"in":"body","name":"body","required":true,"dataType":"nestedObjectLiteral","nestedProperties":{"hiredSubteamPk":{"dataType":"string"},"hiredRole":{"dataType":"string"},"interviewGuidelines":{"dataType":"string"},"interviewLink":{"dataType":"string"},"stage":{"ref":"ApplicationStage","required":true}}},
+                body: {"in":"body","name":"body","required":true,"ref":"ATSUpdateApplicationStageRequest"},
         };
-        app.put('/api/ats/applications/:applicationId/stage',
+        app.put('/api/ats/applications/:teamId/:applicationId/stage',
             authenticateMiddleware([{"oidc":[]}]),
             ...(fetchMiddlewares<RequestHandler>(ATSController)),
             ...(fetchMiddlewares<RequestHandler>(ATSController.prototype.updateApplicationStage)),
@@ -1654,10 +1805,11 @@ export function RegisterRoutes(app: Router) {
         });
         // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
         const argsATSController_getApplicantApplications: Record<string, TsoaRoute.ParameterSchema> = {
+                teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
                 applicantId: {"in":"path","name":"applicantId","required":true,"dataType":"string"},
         };
-        app.get('/api/ats/applications/applicant/:applicantId/applications',
-            authenticateMiddleware([{"oidc":[]}]),
+        app.get('/api/ats/applications/:teamId/:applicantId/otherapps',
+            authenticateMiddleware([{"bindles":["corp:hiringaccess"]}]),
             ...(fetchMiddlewares<RequestHandler>(ATSController)),
             ...(fetchMiddlewares<RequestHandler>(ATSController.prototype.getApplicantApplications)),
 

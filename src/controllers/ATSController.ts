@@ -1,4 +1,4 @@
-import { Body, Request, Controller, Delete, Get, Path, Post, Put, Route, SuccessResponse } from "tsoa";
+import { Body, Request, Controller, Delete, Get, Path, Post, Put, Route, SuccessResponse, Tags } from "tsoa";
 import { SubteamConfig, ISubteamConfig } from "../models/SubteamConfig";
 import { TeamRecruitingStatus, ITeamRecruitingStatus } from "../models/TeamRecruitingStatus";
 import { AuthentikClient } from "../clients/AuthentikClient";
@@ -14,6 +14,7 @@ import { Query } from "tsoa";
 import { EmailClient } from "../clients/EmailClient";
 import { OrgController } from "./OrgController";
 import { AuthorizedUser } from "../clients/OpenIdClient";
+import MarkdownIt from "markdown-it";
 
 // ====================
 // Type Definitions
@@ -33,24 +34,42 @@ interface ATSTeamApplicationRequest {
     responses: Record<string, string>;
 }
 
-// Response format for Kanban board
-interface KanbanApplicationCard {
+interface ATSUpdateApplicationStageRequest {
+    stage: ApplicationStage,
+    interviewLink?: string,
+    interviewGuidelines?: string,
+    hiredRole?: string,
+    hiredSubteamPk?: string
+}
+
+interface ATSKanbanApplicationCard {
     id: string;
     applicantId: string;
     name: string;
-    email: string;
-    column: string;
-    rolePreferences: { role: string, subteamPk: string }[];  // Ordered role preferences
+    rolePreferences: { role: string, subteamPk: string }[];
     appliedAt: Date;
     stage: ApplicationStage;
+
+    /** 
+     * Rating for an Applicant
+     * @minimum 0 Minimum Stars is 0
+     * @maximum 5 Maximum Stars is 5
+     */
+    stars: number;
+}
+
+interface ATSApplicationDetails extends ATSKanbanApplicationCard {
+    email: string;
+    profile: Record<string, string>;
+    responses: Record<string, string>;
     stageHistory?: {
         stage: ApplicationStage;
         changedAt: Date;
         changedBy?: string;
     }[];
-    profile: Record<string, string>;
-    responses: Record<string, string>;
-    hiredRole: string | undefined;
+    hiredRole?: string;
+    appDevInternalPk?: number;
+    notes?: string;
 }
 
 // Constants
@@ -73,12 +92,22 @@ export class ATSController extends Controller {
         this.orgController = new OrgController()
     }
 
+    /**
+     * Generates a presigned URL for uploading a resume to the AWS S3 bucket.
+     * Checks for PDF File Type, Prevents Path Traversals and requires valid
+     * Guest Authentication Token.
+     * 
+     * @param request Express Request Object
+     * @param fileName Resume File Name
+     * @param contentType Resume File Content Type
+     * @returns AWS S3 Upload URL, Download URL and Key
+     */
     @Get("resume/upload-url")
+    @Tags("Applicant Portal")
     @Security("ats_otp")
     @SuccessResponse(200)
-    async getResumeUploadUrl(@Request() request: any, @Query() fileName: string, @Query() contentType: string) {
-        const userEmail = request.session?.tempsession?.user?.email;
-
+    async getResumeUploadUrl(@Request() request: express.Request, @Query() fileName: string, @Query() contentType: string) {
+        const userEmail = request.session.tempsession?.user?.email;
         if (!userEmail) {
             this.setStatus(401);
             return { error: "Unauthorized", message: "User session not found." };
@@ -105,37 +134,18 @@ export class ATSController extends Controller {
             return { error: "InvalidFileName", message: "Invalid file name" };
         }
 
+        // Applicant must exist because of ats_otp security but, we'll check just in case
         const applicant = await Applicant.findOne({ email: userEmail }).exec();
         if (!applicant) {
-            // Create applicant if doesn't exist yet
-            const newApplicant = await Applicant.create({
-                email: userEmail,
-                fullName: userEmail.split('@')[0],
-                profile: new Map()
-            });
-            const key = `resumes/${newApplicant._id}/${Date.now()}.${fileExtension}`;
-
-            const command = new PutObjectCommand({
-                Bucket: BUCKET_NAME,
-                Key: key,
-                ContentType: contentType,
-            });
-
-            const uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
-
-            const protocol = request.protocol;
-            const host = request.get('host');
-            const publicUrl = `${protocol}://${host}/api/ats/resume/download?key=${encodeURIComponent(key)}`;
-
-            return { uploadUrl, publicUrl, key };
+            this.setStatus(404);
+            return { error: "ApplicantNotFound", message: "Applicant not found" };
         }
 
         const key = `resumes/${applicant._id}/${Date.now()}.${fileExtension}`;
-
         const command = new PutObjectCommand({
             Bucket: BUCKET_NAME,
             Key: key,
-            ContentType: contentType,
+            ContentType: "application/pdf", /* Forces another check, just in case! */
         });
 
         const uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
@@ -152,7 +162,17 @@ export class ATSController extends Controller {
         };
     }
 
+    /**
+     * Generates a presigned URL for downloading a resume from the AWS S3 bucket.
+     * Requires valid Guest Authentication Token and intended for use by applicants
+     * to view their resume and profile.
+     * 
+     * @param request Express Request Object
+     * @param key Resume Key
+     * @returns AWS S3 Download URL
+     */
     @Get("resume/download")
+    @Tags("Applicant Portal")
     @Security("ats_otp")
     @SuccessResponse(307, "Temporary Redirect")
     async getResumeDownloadUrl(@Request() request: any, @Query() key: string) {
@@ -191,20 +211,44 @@ export class ATSController extends Controller {
         }
     }
 
-    @Get("config/{subteamId}")
+    /**
+     * Fetches Subteam Recruitment Configuration from the external database and populates
+     * subteam and parent information via Authentik API calls. To perform this action, the
+     * user must either be a Team Owner (on the parent team) or, hold the `corp:hiringaccess`
+     * bindle.
+     * 
+     * @param teamId Subteam ID
+     * @returns Subteam Recruitment Configuration
+     */
+    @Get("config/{teamId}")
+    @Tags("Recruitment Configuration")
     @SuccessResponse(200)
-    async getSubTeamATSConfig(@Path() subteamId: string) {
-        const config = await SubteamConfig.findOne({ subteamPk: subteamId }).lean().exec() as any;
+    @Security("bindles", ["corp:hiringaccess"])
+    async getSubTeamATSConfig(@Path() teamId: string) {
+        const config = await SubteamConfig.findOne({ subteamPk: teamId }).lean().exec() as any;
         if (!config) {
             this.setStatus(404);
             return {
                 error: "Not Found",
-                message: `Subteam config with ID ${subteamId} not found`
+                message: `Subteam config with ID ${teamId} not found`
             };
         }
 
-        const authentikSubteamInfo = await this.authentikClient.getGroupInfo(config.subteamPk)
-        const authentikParentInfo = await this.authentikClient.getGroupInfo(authentikSubteamInfo.parentPk);
+        /* Legacy Implementation w/o Authentik 2025.12+ Call Optimizations */
+        // const authentikSubteamInfo = await this.authentikClient.getGroupInfo(config.subteamPk)
+        // const authentikParentInfo = await this.authentikClient.getGroupInfo(authentikSubteamInfo.parentPk);
+
+        /* 01/21/2026 (@atheesh): 50% API Call Reduction on 2025.12+ via new Client Option  */
+        const authentikSubteamInfo = await this.authentikClient.getGroupInfo(
+            config.subteamPk,
+            { includeParentInfo: true }
+        );
+
+        let authentikParentInfo = authentikSubteamInfo.parentInfo;
+        if (!authentikParentInfo) {
+            /* Fallback for Legacy Implementation (Authentik <2025.12) */
+            authentikParentInfo = await this.authentikClient.getGroupInfo(authentikSubteamInfo.parentPk);
+        }
 
         return {
             ...config,
@@ -226,9 +270,21 @@ export class ATSController extends Controller {
         };
     }
 
-    @Post("config/{subteamId}")
+    /**
+     * Configure a subteam to recruit for specific roles with addtional role specific
+     * questions. This endpoint automatically sets the `isRecruiting` status for a 
+     * subteam. To perform this action, the user must either be a Team Owner or hold
+     * the `corp:hiringaccess` bindle.
+     * 
+     * @param teamId People Portal Team ID
+     * @param body Subteam Configuration Request
+     * @returns Updated Subteam Recruitment Configuration
+     */
+    @Post("config/{teamId}")
+    @Tags("Recruitment Configuration")
     @SuccessResponse(200, "Created or Updated")
-    async createOrUpdateSubteamConfig(@Path() subteamId: string, @Body() body: ATSSubteamConfigRequest) {
+    @Security("bindles", ["corp:hiringaccess"])
+    async createOrUpdateSubteamConfig(@Path() teamId: string, @Body() body: ATSSubteamConfigRequest) {
         const { isRecruiting, roles, roleSpecificQuestions } = body;
 
         if (roles.length === 0) {
@@ -241,9 +297,9 @@ export class ATSController extends Controller {
 
         // Use findOneAndUpdate with upsert to create or update
         const updatedConfig = await SubteamConfig.findOneAndUpdate(
-            { subteamPk: subteamId }, // filter
+            { subteamPk: teamId }, // filter
             {
-                subteamPk: subteamId,
+                subteamPk: teamId,
                 isRecruiting,
                 roles,
                 roleSpecificQuestions: new Map(Object.entries(roleSpecificQuestions || {}))
@@ -267,33 +323,67 @@ export class ATSController extends Controller {
         return updatedConfig;
     }
 
+    /**
+     * Public API that fetches the list of teams that are currently recruiting
+     * new candidates. Provides a list of roles and other Recruitment Info in
+     * addition to the team and subteam info.
+     * 
+     * @returns List of Teams Recruiting
+     */
     @Get("openteams")
+    @Tags("Applicant Portal")
     @SuccessResponse(200)
     async getAllRecruitingTeams() {
+        /* Fetch All teams that are recruiting currently */
         const recruitingTeams: any[] = await TeamRecruitingStatus.find({ isRecruiting: true }).lean().exec();
+
+        /* 
+         * 01/21/2026 (@atheesh): Optimization from O(N*M) to O(N)
+         * Previously, this loop made a DB call and an API call for every subteam (M) of every team (N).
+         * 
+         * Now, we batch fetch all SubteamConfigs in one DB query. Furthermore, we utilize the already 
+         * fetched `authentikTeamInfo` (Parent) and its `subteams` array (Children) to populate the 
+         * recruitment info, eliminating the need for the redundant Authentik API calls that were 
+         * happening in `getSubTeamATSConfig`. This aligns with the "Authentik 2025.12+" update.
+         */
+        const allSubteamPks = recruitingTeams.flatMap(t => t.recruitingSubteamPks);
+        const allConfigs = await SubteamConfig.find({ subteamPk: { $in: allSubteamPks } }).lean().exec();
+        const configMap = new Map(allConfigs.map((c: any) => [c.subteamPk, c]));
 
         /* Populate Team and Subteam Info */
         for (const team of recruitingTeams) {
             const recruitingSubteams = new Set(team.recruitingSubteamPks)
             const authentikTeamInfo = await this.authentikClient.getGroupInfo(team.teamPk);
-            team.teamInfo = {
+
+            const parentInfoObj = {
                 name: authentikTeamInfo.name,
                 friendlyName: authentikTeamInfo.attributes.friendlyName,
                 description: authentikTeamInfo.attributes.description,
                 seasonText: `${authentikTeamInfo.attributes.seasonType} ${authentikTeamInfo.attributes.seasonYear}`,
                 pk: authentikTeamInfo.pk
-            }
+            };
 
+            team.teamInfo = parentInfoObj;
             team.subteamInfo = {};
             for (const sub of authentikTeamInfo.subteams) {
                 if (recruitingSubteams.has(sub.pk)) {
-                    team.subteamInfo[sub.pk] = {
+                    const config = configMap.get(sub.pk);
+
+                    const subteamInfoObj = {
                         name: sub.name,
                         friendlyName: sub.attributes.friendlyName,
                         description: sub.attributes.description,
                         seasonText: `${sub.attributes.seasonType} ${sub.attributes.seasonYear}`,
-                        pk: sub.pk,
-                        recruitmentInfo: await this.getSubTeamATSConfig(sub.pk),
+                        pk: sub.pk
+                    };
+
+                    team.subteamInfo[sub.pk] = {
+                        ...subteamInfoObj,
+                        recruitmentInfo: config ? {
+                            ...config,
+                            subteamInfo: subteamInfoObj,
+                            parentInfo: parentInfoObj
+                        } : null,
                     };
                 }
             }
@@ -302,8 +392,16 @@ export class ATSController extends Controller {
         return recruitingTeams;
     }
 
+    /**
+     * Fetches the list of available application stages an applicant can
+     * be in. To access this list, the user must be logged in via OIDC.
+     * 
+     * @returns List of Application Stages
+     */
     @Get("stages")
+    @Tags("Recruitment Actions")
     @SuccessResponse(200)
+    @Security("oidc")
     async getApplicationStages() {
         // Return the ApplicationStage enum as an array of {id, name} objects
         const stages = Object.entries(ApplicationStage).map(([key, value]) => ({
@@ -314,7 +412,17 @@ export class ATSController extends Controller {
         return stages;
     }
 
-    @Get("teams/{teamId}")
+    /**
+     * Public endpoint that provides information about the team, its subteams and
+     * the roles they're recruiting for. Ideally, this endpoint is used so that the
+     * applicant can view all available roles, the role specific questions to aid in
+     * selecting and ranking roles.
+     * 
+     * @param teamId Team ID for a currently recruiting team.
+     * @returns Team Recuritment Info
+     */
+    @Get("openteams/{teamId}")
+    @Tags("Applicant Portal")
     @SuccessResponse(200)
     async getTeamDetails(@Path() teamId: string) {
         try {
@@ -371,97 +479,39 @@ export class ATSController extends Controller {
         }
     }
 
-    @Get("openteams/{teamId}")
-    @SuccessResponse(200)
-    async getTeamRecruitingStatus(@Path() teamId: string) {
-        const teamStatus = await TeamRecruitingStatus.findOne({ teamPk: teamId }).lean().exec();
-
-        if (!teamStatus) {
-            this.setStatus(404);
-            return { error: "Not Found", message: `Team ${teamId} not found` };
-        }
-
-        return teamStatus;
-    }
-
-    @Put("openteams/{teamId}/{subteamId}")
-    @SuccessResponse(200)
-    async addSubteamToRecruiting(@Path() teamId: string, @Path() subteamId: string) {
-        const updatedTeam = await TeamRecruitingStatus.findOneAndUpdate(
-            { teamPk: teamId },
-            {
-                $addToSet: { recruitingSubteamPks: subteamId },
-                teamPk: teamId
-            },
-            { upsert: true, new: true }
-        ).lean().exec();
-
-        // Set isRecruiting based on array length
-        if (updatedTeam.recruitingSubteamPks.length > 0 && !updatedTeam.isRecruiting) {
-            await TeamRecruitingStatus.updateOne(
-                { teamPk: teamId },
-                { isRecruiting: true }
-            );
-            updatedTeam.isRecruiting = true;
-        }
-
-        return updatedTeam;
-    }
-
-    @Delete("openteams/{teamId}/{subteamId}")
-    @SuccessResponse(200)
-    async removeSubteamFromRecruiting(@Path() teamId: string, @Path() subteamId: string) {
-        const updatedTeam = await TeamRecruitingStatus.findOneAndUpdate(
-            { teamPk: teamId },
-            { $pull: { recruitingSubteamPks: subteamId } },
-            { new: true }
-        ).lean().exec();
-
-        if (!updatedTeam) {
-            this.setStatus(404);
-            return { error: "Not Found", message: `Team ${teamId} not found` };
-        }
-
-        // Set isRecruiting to false if no subteams left
-        if (updatedTeam.recruitingSubteamPks.length === 0 && updatedTeam.isRecruiting) {
-            await TeamRecruitingStatus.updateOne(
-                { teamPk: teamId },
-                { isRecruiting: false }
-            );
-            updatedTeam.isRecruiting = false;
-        }
-
-        return updatedTeam;
-    }
-
+    /**
+     * Fetches all applications for a team in a lightweight format suitable for
+     * the Kanban board. To perform this action, the user must either be a Team Owner 
+     * or hold the `corp:hiringaccess` bindle.
+     * 
+     * @param teamId People Portal Team ID
+     * @returns Candidate Applications List
+     */
     @Get("applications/{teamId}")
-    @Security("oidc")
+    @Tags("Recruitment Actions")
+    @Security("bindles", ["corp:hiringaccess"])
     @SuccessResponse(200)
-    async getTeamApplications(@Path() teamId: string): Promise<KanbanApplicationCard[]> {
+    async getTeamApplications(@Path() teamId: string): Promise<ATSKanbanApplicationCard[]> {
         try {
             // Fetch all applications for this team directly - ONE per applicant!
+            // Project only necessary fields for the summary view
             const applications = await Application.find({
                 teamPk: teamId
             })
-                .populate<{ applicantId: IApplicant }>('applicantId')
+                .select('applicantId stage rolePreferences appliedAt stars')
+                .populate<{ applicantId: IApplicant }>('applicantId', 'fullName')
                 .lean()
                 .exec();
 
             // Map to Kanban-friendly format
-            const kanbanData: KanbanApplicationCard[] = applications.map((app) => ({
+            const kanbanData: ATSKanbanApplicationCard[] = applications.map((app) => ({
                 id: app._id.toString(),
                 applicantId: app.applicantId._id.toString(),
                 name: app.applicantId.fullName || 'Unknown Applicant',
-                email: app.applicantId.email || '',
-                column: app.stage,  // Use the enum value directly
+                stage: app.stage,
                 rolePreferences: app.rolePreferences,
                 appliedAt: app.appliedAt,
-                stage: app.stage,
-                stageHistory: app.stageHistory,
-                appDevInternalPk: app.appDevInternalPk,
-                profile: app.applicantId.profile as any,
-                responses: app.responses as any,
-                hiredRole: app.hiredRole || undefined
+                stars: app.stars || 0
             }));
 
             return kanbanData;
@@ -472,10 +522,175 @@ export class ATSController extends Controller {
         }
     }
 
-    @Get("applications/applicant/{applicantId}/resume")
-    @Security("oidc")
+    /**
+     * Fetches all information about an application including, preferred roles,
+     * responses to role specific questions and the application stage history.
+     * To perform this action, the user must either be a Team Owner or hold 
+     * the `corp:hiringaccess` bindle.
+     * 
+     * @param teamId People Portal Team ID
+     * @param applicationId Application ID
+     * @returns Full Application Details
+     */
+    @Get("applications/{teamId}/{applicationId}/info")
+    @Tags("Recruitment Actions")
+    @Security("bindles", ["corp:hiringaccess"])
     @SuccessResponse(200)
-    async getApplicantUrls(@Path() applicantId: string) {
+    async getApplicationDetails(@Path() teamId: string, @Path() applicationId: string): Promise<ATSApplicationDetails | { error: string, message: string }> {
+        try {
+            const app = await Application.findOne({ _id: applicationId, teamPk: teamId })
+                .populate<{ applicantId: IApplicant }>('applicantId')
+                .lean()
+                .exec();
+
+            if (!app) {
+                this.setStatus(404);
+                return { error: "NotFound", message: "Application not found" };
+            }
+
+            return {
+                id: app._id.toString(),
+                applicantId: app.applicantId._id.toString(),
+                name: app.applicantId.fullName || 'Unknown Applicant',
+                email: app.applicantId.email || '',
+                stage: app.stage,
+                rolePreferences: app.rolePreferences,
+                appliedAt: app.appliedAt,
+                stars: app.stars || 0,
+
+                // Detailed fields
+                profile: app.applicantId.profile as any,
+                responses: app.responses as any,
+                stageHistory: app.stageHistory,
+                ...(app.notes ? { notes: app.notes } : {}),
+                ...(app.hiredRole ? { hiredRole: app.hiredRole } : {}),
+                ...(app.appDevInternalPk ? { appDevInternalPk: app.appDevInternalPk } : {})
+            };
+
+        } catch (err) {
+            console.error("Error fetching application details:", err);
+            this.setStatus(500);
+            return { error: "ServerError", message: "Failed to fetch application details" };
+        }
+    }
+
+    /**
+     * Updates a candidate's star rating and any notes that are added for
+     * feedback. To perform this action, the user must either be a Team Owner 
+     * or hold the `corp:hiringaccess` bindle.
+     * 
+     * @param teamId People Portal Team ID
+     * @param applicationId Application ID
+     * @param stars New star rating (0-5)
+     * @param notes Interview Feedback in Markdown Format
+     */
+
+    @Put("applications/{teamId}/{applicationId}/feedback")
+    @Tags("Recruitment Actions")
+    @SuccessResponse(200)
+    @Security("bindles", ["corp:hiringaccess"])
+    async updateApplicationFeedback(
+        @Request() req: express.Request,
+        @Path() teamId: string,
+        @Path() applicationId: string,
+        @Body() body: { stars?: number, notes?: string }
+    ) {
+        try {
+            const { stars, notes } = body;
+
+            if (stars === undefined && !notes) {
+                this.setStatus(400);
+                return { error: "BadRequest", message: "Stars or notes must be provided" };
+            }
+
+            if (stars && (typeof stars !== 'number' || stars < 0 || stars > 5)) {
+                this.setStatus(400);
+                return { error: "BadRequest", message: "Stars must be a number between 0 and 5" };
+            }
+
+            // 1. Fetch Existing Application
+            const app = await Application.findOne({ _id: applicationId, teamPk: teamId });
+            if (!app) {
+                this.setStatus(404);
+                return { error: "NotFound", message: "Application not found" };
+            }
+
+            // 2. Update Stars
+            if (stars !== undefined) {
+                app.stars = stars;
+            }
+
+            // 3. Update Notes (Append with Header)
+            if (notes) {
+                // Validate Markdown (Empty Check)
+                if (!notes.trim()) {
+                    this.setStatus(400);
+                    return { error: "BadRequest", message: "Notes cannot be empty" };
+                }
+
+                // Validate Markdown Structure (Unclosed Fences)
+                const md = new MarkdownIt({ html: false });
+                const sentinel = "___MARKDOWN_SENTINEL___";
+                const tokens = md.parse(notes + "\n\n" + sentinel, {});
+
+                // If sentinel is trapped inside a code/fence block, the previous block was unclosed
+                const isTrapped = tokens.some(token =>
+                    (token.type === 'fence' || token.type === 'code_block') &&
+                    token.content.includes(sentinel)
+                );
+
+                if (isTrapped) {
+                    this.setStatus(400);
+                    return { error: "BadRequest", message: "Invalid Markdown Structure" };
+                }
+
+                const authorizedUser: AuthorizedUser = req.session.authorizedUser!;
+                const authorName = authorizedUser.name;
+
+                // Format Date: "Jan 22, 2026 at 3:45pm"
+                const now = new Date();
+                const formattedDate = new Intl.DateTimeFormat('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                    year: 'numeric',
+                    hour: 'numeric',
+                    minute: 'numeric',
+                    hour12: true
+                }).format(now);
+
+                const noteHeader = `###### ${authorName}  \n*${formattedDate}*`;
+                const existingNotes = app.notes || "";
+                const separator = existingNotes ? "\n\n---\n\n" : "";
+                app.notes = `${noteHeader}\n\n${notes}${separator}${existingNotes}`;
+            }
+
+            // 4. Save Changes
+            await app.save();
+            return { success: true, stars: app.stars, notes: app.notes };
+        } catch (err) {
+            this.setStatus(500);
+            return { error: "ServerError", message: "Failed to update stars" };
+        }
+    }
+
+    /**
+     * Provides a signed AWS S3 URL to access the applicant's resume
+     * obtained from their profile. To obtain the resume, the user
+     * must either be a team owner or hold the `corp:hiringaccess` 
+     * bindle.
+     * 
+     * Information about the applicant will only be available if they applied
+     * to the team provided in the request.
+     * 
+     * @param teamId People Portal Team ID
+     * @param applicantId Applicant's ID
+     * @returns Signed S3 Download URL
+     */
+    @Get("applications/{teamId}/{applicantId}/resume")
+    @Tags("Recruitment Actions")
+    @SuccessResponse(200)
+    @Security("bindles", ["corp:hiringaccess"])
+    async getApplicantUrls(@Path() teamId: string, @Path() applicantId: string) {
         try {
             const applicant = await Applicant.findById(applicantId);
             if (!applicant) {
@@ -483,11 +698,12 @@ export class ATSController extends Controller {
                 return { error: "NotFound", message: "Applicant not found" };
             }
 
+            /* TODO: Verify that the applicant has applied to this team */
+
             const profile = applicant.profile || new Map<string, string>();
             let resumeDownloadUrl: string | undefined;
 
             const resumeUrl = profile.get('resumeUrl');
-
             if (resumeUrl) {
                 try {
                     // Check if it's an S3 key (simple heuristic or assume it is if stored internally)
@@ -524,14 +740,49 @@ export class ATSController extends Controller {
         }
     }
 
-
-    @Put("applications/{applicationId}/stage")
-    @Security("oidc")
+    /**
+     * Updates the stage for an Application to a team. Stages are determined
+     * by the ApplicationStage enum. Additionally, stage state changes are
+     * permitted based on the following ruleset:
+     * 
+     * - Applications in the **Applied** stage can only be moved to **Interview** or **Rejected**
+     * - Applications in the **Interview** stage can only be moved to **Potential Hire**, **Hired**, or **Rejected**
+     * - Applications in the **Potential Hire** stage can only be moved to **Hired** or **Rejected**
+     * - Applications in the **Hired** stage are not movable
+     * - Applications in the **Rejected** stage are not movable
+     * 
+     * On stage changes, the applicants are notified immediately through emails and therefore, stage
+     * changes require additional request information based on the following:
+     * 
+     * - Transitions to **Interview** need Interview Guidelines and Link for Scheduling
+     * - Transitions to **Rejected** directly send an email without additional information
+     * - Transitions to **Potential Hire** directly sends an email by auto populating contact info
+     * - Transtions to **Hired** happen based on a ruleset:
+     *   - If the user is an existing App Dev member, they are automatically added to the team
+     *     and an email is sent notifying them about the change.
+     * 
+     *   - Otherwise, we generate a unique invite link, valid for 48 hours, and send them an email
+     *     with onboarding instructions.
+     * 
+     * To perform this action, the user must either be a team owner or hold the `corp:hiringaccess`
+     * bindle. Additionally, requests will only be allowed if the Applicant has applied to the
+     * team provided in the request.
+     * 
+     * @param req Express Request Object
+     * @param teamId People Portal Team ID
+     * @param applicationId Candidate Application ID
+     * @param body Stage Update Payload
+     * @returns Stage Update Status
+     */
+    @Put("applications/{teamId}/{applicationId}/stage")
+    @Tags("Recruitment Actions")
     @SuccessResponse(200, "Stage updated")
+    @Security("oidc")
     async updateApplicationStage(
         @Request() req: express.Request,
+        @Path() teamId: string,
         @Path() applicationId: string,
-        @Body() body: { stage: ApplicationStage, interviewLink?: string, interviewGuidelines?: string, hiredRole?: string, hiredSubteamPk?: string }
+        @Body() body: ATSUpdateApplicationStageRequest
     ) {
         try {
             const { stage, interviewLink, interviewGuidelines, hiredRole, hiredSubteamPk } = body;
@@ -669,15 +920,30 @@ export class ATSController extends Controller {
         }
     }
 
-    @Get("applications/applicant/{applicantId}/applications")
-    @Security("oidc")
+    /**
+     * Fetches all the other teams the applicant has applied to and the
+     * stage they're currently in for those teams. To access this, the 
+     * user needs to be a Team Owner or have the `corp:hiringaccess` bindle.
+     * 
+     * Information about the applicant will only be available if they applied
+     * to the team provided in the request.
+     * 
+     * @param teamId People Portal Team ID
+     * @param applicantId Candidate's Applicant ID
+     * @returns List of Other Applications
+     */
+    @Get("applications/{teamId}/{applicantId}/otherapps")
+    @Tags("Recruitment Actions")
     @SuccessResponse(200)
-    async getApplicantApplications(@Path() applicantId: string) {
+    @Security("bindles", ["corp:hiringaccess"])
+    async getApplicantApplications(@Path() teamId: string, @Path() applicantId: string) {
         try {
             const applications = await Application.find({ applicantId: applicantId })
                 .lean()
                 .sort({ appliedAt: -1 })
                 .exec();
+
+            /* verify applicant applied to this team (TODO) */
 
             const results = await Promise.all(applications.map(async (app: any) => {
                 let teamName = app.teamPk;
@@ -693,11 +959,23 @@ export class ATSController extends Controller {
                     console.error(`Failed to fetch team info for ${app.teamPk}`, e);
                 }
 
+                // Enrich role preferences with subteam names
+                const rolePreferencesWithNames = await Promise.all((app.rolePreferences || []).map(async (pref: any) => {
+                    let subteamName = pref.subteamPk;
+                    try {
+                        const subteamInfo = await this.authentikClient.getGroupInfo(pref.subteamPk);
+                        subteamName = subteamInfo.attributes?.friendlyName || subteamInfo.name;
+                    } catch (e) {
+                        console.error(`Failed to fetch subteam info for ${pref.subteamPk}`, e);
+                    }
+                    return { ...pref, subteamName };
+                }));
+
                 return {
                     id: app._id,
                     teamPk: app.teamPk,
                     teamName: teamName,
-                    rolePreferences: app.rolePreferences,
+                    rolePreferences: rolePreferencesWithNames,
                     stage: app.stage,
                     appliedAt: app.appliedAt,
                     hiredRole: app.hiredRole
@@ -713,13 +991,28 @@ export class ATSController extends Controller {
         }
     }
 
-
+    /**
+     * Primary Endpoint for either an internal or external user to submit their application
+     * to a team that's currently recruiting. For access to this API, the user must be 
+     * authenticated via the Guest Authorization Layer.
+     * 
+     * This handler performs basic request and session validation, verifies that the team exists 
+     * and is actively recruiting, validates the user’s selected roles and profile information, 
+     * checks required application questions and responses, prevents duplicate applications, 
+     * updates or creates the applicant record, sets attributes for existing internal members, 
+     * and finally creates a new application.
+     * 
+     * @param body Team Application Request
+     * @param request Express Request Object
+     * @returns Application Submission Status
+     */
     @Post("applications/apply")
-    @Security("ats_otp")
+    @Tags("Applicant Portal")
     @SuccessResponse(201, "Application submitted")
+    @Security("ats_otp")
     async applyToTeam(
         @Body() body: ATSTeamApplicationRequest,
-        @Request() request: any
+        @Request() request: express.Request
     ) {
         try {
             const { teamPk, rolePreferences, profile, responses } = body;
@@ -733,7 +1026,7 @@ export class ATSController extends Controller {
                 };
             }
 
-            const userEmail = request.session?.tempsession?.user?.email;
+            const userEmail = request.session.tempsession?.user?.email;
             if (!userEmail) {
                 this.setStatus(401);
                 return { error: "Unauthorized", message: "User session not found. Please verify your email." };
@@ -944,10 +1237,20 @@ export class ATSController extends Controller {
         }
     }
 
+    /**
+     * Updates the applicant's recruitment profile with common questions and
+     * other updates like their Resume. To access this API, a token from the
+     * Guest Authentication Layer is needed.
+     * 
+     * @param body Applicant Profile Payload
+     * @param request Express Request Object
+     * @returns Profile Update Status
+     */
     @Post("profile")
-    @Security("ats_otp")
+    @Tags("Applicant Portal")
     @SuccessResponse(200, "Profile Updated")
-    async updateProfile(@Body() body: ApplicantProfile, @Request() request: any) {
+    @Security("ats_otp")
+    async updateProfile(@Body() body: ApplicantProfile, @Request() request: express.Request) {
         try {
             const userEmail = request.session?.tempsession?.user?.email
             if (!userEmail) {
@@ -1007,15 +1310,67 @@ export class ATSController extends Controller {
         }).catch(async () => {
             /* Onboard the User */
             await this.orgController.createInvite(
-                { session: { authorizedUser } },
+                {
+                    session: { authorizedUser },
+                    bindle: {
+                        teamInfo,
+                        requestedPermissions: []
+                    }
+                },
                 {
                     inviteeName: applicant.fullName,
                     inviteeEmail: applicantEmail,
                     roleTitle: application.hiredRole!,
-                    teamPk: application.teamPk,
                     subteamPk: application.hiredSubteamPk!
                 }
             )
         })
+    }
+
+    /* === HELPER METHODS === */
+    async addSubteamToRecruiting(@Path() teamId: string, @Path() subteamId: string) {
+        const updatedTeam = await TeamRecruitingStatus.findOneAndUpdate(
+            { teamPk: teamId },
+            {
+                $addToSet: { recruitingSubteamPks: subteamId },
+                teamPk: teamId
+            },
+            { upsert: true, new: true }
+        ).lean().exec();
+
+        // Set isRecruiting based on array length
+        if (updatedTeam.recruitingSubteamPks.length > 0 && !updatedTeam.isRecruiting) {
+            await TeamRecruitingStatus.updateOne(
+                { teamPk: teamId },
+                { isRecruiting: true }
+            );
+            updatedTeam.isRecruiting = true;
+        }
+
+        return updatedTeam;
+    }
+
+    async removeSubteamFromRecruiting(@Path() teamId: string, @Path() subteamId: string) {
+        const updatedTeam = await TeamRecruitingStatus.findOneAndUpdate(
+            { teamPk: teamId },
+            { $pull: { recruitingSubteamPks: subteamId } },
+            { new: true }
+        ).lean().exec();
+
+        if (!updatedTeam) {
+            this.setStatus(404);
+            return { error: "Not Found", message: `Team ${teamId} not found` };
+        }
+
+        // Set isRecruiting to false if no subteams left
+        if (updatedTeam.recruitingSubteamPks.length === 0 && updatedTeam.isRecruiting) {
+            await TeamRecruitingStatus.updateOne(
+                { teamPk: teamId },
+                { isRecruiting: false }
+            );
+            updatedTeam.isRecruiting = false;
+        }
+
+        return updatedTeam;
     }
 }

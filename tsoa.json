@@ -1,17 +1,27 @@
 {
   "entryFile": "src/app.ts",
   "noImplicitAdditionalProperties": "throw-on-extras",
-  "controllerPathGlobs": ["src/**/*Controller.ts"],
+  "controllerPathGlobs": [
+    "src/**/*Controller.ts"
+  ],
   "spec": {
     "outputDirectory": "dist",
     "specVersion": 3,
-
     "securityDefinitions": {
-      "oidc": {
-        "type": "openIdConnect",
-        "openIdConnectUrl": "https://localhost:9443/application/o/swagger-test/.well-known/openid-configuration"
-        
+      "OIDC Bindle Shim": {
+        "type": "oauth2",
+        "flow": "implicit",
+        "authorizationUrl": "/api/auth/login",
+        "scopes": {}
       }
+    },
+    "name": "People Portal Server",
+    "description": "The engine behind People Portal. Orchestrates People and Team Management, Recruitment and Shared Resource Management workflows while enforcing dynamic permissions via a custom authorization layer called Bindles.",
+    "license": "GNU General Public License Version 3",
+    "contact": {
+      "name": "Atheesh Thirumalairajan",
+      "email": "external@atheesh.org",
+      "url": "https://github.com/candiedoperation/AppDev-PeoplePortalServer"
     }
   },
   "routes": {
