@@ -18,7 +18,7 @@
 
 import * as express from 'express'
 import { Request, Body, Controller, Get, Patch, Path, Post, Queries, Route, SuccessResponse, Put, Security, Delete, Tags } from "tsoa";
-import { AddGroupMemberRequest, GetGroupInfoResponse, GetTeamsListResponse, GetUserListOptions, GetUserListResponse, RemoveGroupMemberRequest, SeasonType, TeamType, UserInformationBrief, GetTeamsForUsernameResponse, AuthentikClientError } from "../clients/AuthentikClient/models";
+import { AddGroupMemberRequest, GetGroupInfoResponse, GetTeamsListResponse, GetUserListOptions, GetUserListResponse, RemoveGroupMemberRequest, SeasonType, TeamType, UserInformationBrief, GetTeamsForUsernameResponse, AuthentikClientError, CreateUserRequest } from "../clients/AuthentikClient/models";
 import { AuthentikClient } from "../clients/AuthentikClient";
 import { Invite } from "../models/Invites";
 import { EmailClient } from "../clients/EmailClient";
@@ -238,6 +238,10 @@ export class OrgController extends Controller {
      * - The ATS module is enforced to require the `corp:hiringaccess` bindle
      *   to offset for the bindle exception.
      * 
+     * **Non-Standard Behavior:** We do not check if the subteam is archived 
+     * or not. A team/subteam state can change before someone accepts an invite. 
+     * Therefore, the check is done during onboarding.
+     * 
      * @param req Express Request Object
      * @param inviteReq Invite Create Request
      */
@@ -339,29 +343,37 @@ export class OrgController extends Controller {
         if (!invite)
             throw new Error("Invalid Invite ID")
 
-
         /* Check Slack Presence! */
         const slackPresence = await this.slackClient.validateUserPresence(invite.inviteEmail)
         if (!slackPresence)
             throw new Error("User has not joined the Slack Workspace!")
 
-        /* Create the New User & add to Group */
-        await this.authentikClient.createNewUser({
+        /* Check if Subteam is Valid and Isn't Archived */
+        const subteam = await this.authentikClient.getGroupInfo(invite.subteamPk)
+        const isSubteamArchived = subteam.attributes.flaggedForDeletion
+
+        /* Construct New Request */
+        const createUserRequest: CreateUserRequest = {
             name: invite.inviteName,
             email: invite.inviteEmail,
-            groupPk: invite.subteamPk,
             password: req.password,
             attributes: {
                 major: req.major,
                 expectedGrad: req.expectedGrad,
                 phoneNumber: req.phoneNumber,
-                roles: {
-                    [invite.subteamPk]: invite.roleTitle
-                }
+                roles: {}
             }
-        })
+        }
 
-        /* Delete the Invite */
+        if (!isSubteamArchived) {
+            createUserRequest.groupPk = invite.subteamPk
+            createUserRequest.attributes.roles = {
+                [invite.subteamPk]: invite.roleTitle
+            }
+        }
+
+        /* Create the New User, Add to Group and Delete Invite */
+        await this.authentikClient.createNewUser(createUserRequest)
         await invite.deleteOne()
     }
 

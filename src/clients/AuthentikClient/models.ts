@@ -138,7 +138,7 @@ export interface RemoveGroupMemberRequest {
 export interface CreateUserRequest {
     name: string;
     email: string;
-    groupPk: string;
+    groupPk?: string;
     password: string;
     attributes: {
         major: string;

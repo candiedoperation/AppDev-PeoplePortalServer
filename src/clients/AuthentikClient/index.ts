@@ -102,7 +102,8 @@ export class AuthentikClient {
             method: 'get',
             url: '/api/v3/core/users/',
             params: {
-                type: 'internal',
+                /* Pick Only People Portal Created Users */
+                path: 'peopleportal.atheesh.org/onboardeduser'
             }
         }
 
@@ -629,8 +630,9 @@ export class AuthentikClient {
             data: {
                 username,
                 name: request.name,
-                groups: [request.groupPk],
+                groups: request.groupPk ? [request.groupPk] : [],
                 email: request.email,
+                path: "peopleportal.atheesh.org/onboardeduser",
                 attributes: {
                     ...request.attributes,
                     peoplePortalCreation: true,

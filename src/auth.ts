@@ -155,7 +155,7 @@ async function bindlesAuthVerify(request: express.Request, scopes?: string[]): P
         if (teamInfo.attributes.flaggedForDeletion) {
             return Promise.reject(new ResourceAccessError(
                 403,
-                "This team is flagged for deletion and therefore, read-only."
+                "This team is flagged for deletion and therefore, is read-only."
             ));
         }
 
