@@ -90,11 +90,9 @@ export class SlackClient implements SharedResourceClient {
 
         for (const subteam of org.subteams) {
             const channelName = subteam.name
-                .toLowerCase()
-                .replace(/[^a-z0-9-_]/g, '-') // Replace invalid chars with hyphen
-                .replace(/-+/g, '-')          // Collapse multiple hyphens
-                .replace(/^-|-$/g, '')        // Trim leading/trailing hyphens
-                .substring(0, 80);            // Enforce max length of 80 chars
+                .replace(/(?<!^)(?=[A-Z][a-z])/g, '-')
+                .replace(/(?<!^)(?=(FALL|SPRING|SUMMER|WINTER)\d{4})/g, '-')
+                .toLowerCase();
 
             callback(0, `Processing Slack Channel: ${channelName}`);
 
