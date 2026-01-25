@@ -29,6 +29,8 @@ import { AWSClient } from '../clients/AWSClient';
 import { sanitizeUserFullName, validateTeamName } from '../utils/strings';
 import { BindleController, EnabledBindlePermissions } from '../controllers/BindleController';
 import { AuthorizedUser } from '../clients/OpenIdClient';
+import { executiveAuthVerify } from '../auth';
+import { TeamCreationRequest, TeamCreationRequestStatus, ITeamCreationRequest } from '../models/TeamCreationRequest';
 import { CustomValidationError } from '../utils/errors';
 import { ExpressRequestBindleExtension } from '../types/express';
 
@@ -55,12 +57,13 @@ interface APICreateSubTeamRequest {
     description: string
 }
 
-interface APICreateTeamRequest {
+export interface APICreateTeamRequest {
     friendlyName: string,
     teamType: TeamType,
     seasonType: SeasonType,
     seasonYear: number,
-    description: string
+    description: string,
+    requestorRole: string
 }
 
 interface APIUpdateTeamRequest {
@@ -123,6 +126,16 @@ interface ExpressRequestAuthUserShim {
 
 interface ExpressRequestBindleShim {
     bindle: ExpressRequestBindleExtension
+}
+
+interface APITeamCreationRequestResponse {
+    _id: string;
+    requestorPk: number;
+    requestorName: string;
+    requestorEmail: string;
+    createTeamRequest: APICreateTeamRequest;
+    status: TeamCreationRequestStatus;
+    createdAt: Date;
 }
 
 @Route("/api/org")
@@ -644,17 +657,185 @@ export class OrgController extends Controller {
         return createdSubTeam
     }
 
+
+
     /**
+     * Fetches information about a specific Team Creation Request. To access this endpoint,
+     * the user must pass the Executive Authorization Layer.
      * 
-     * @param req 
-     * @param createTeamReq 
-     * @returns Created Team Information
+     * @param requestId Request ID
+     * @returns Team Creation Request Information
+     */
+    @Get("teamrequests/{requestId}")
+    @Tags("Team Management")
+    @SuccessResponse(200)
+    @Security("executive")
+    async getTeamCreationRequest(@Path() requestId: string): Promise<APITeamCreationRequestResponse> {
+        const request = await TeamCreationRequest.findById(requestId).lean<APITeamCreationRequestResponse>().exec();
+        if (!request) {
+            throw new CustomValidationError(404, "Team Creation Request not found");
+        }
+        /* Manually cast _id to string if needed, though lean() handles it mostly */
+        return { ...request, _id: request._id.toString() } as unknown as APITeamCreationRequestResponse;
+    }
+
+    /**
+     * Approves a Team Creation Request, creates a new team and notifies the requester via
+     * email. To access this endpoint, the user must pass the Executive Authorization Layer.
+     * 
+     * @param req Express Request
+     * @param requestId Request ID
+     */
+    @Post("teamrequests/{requestId}")
+    @Tags("Team Management")
+    @SuccessResponse(201, "Team Created & Request Approved")
+    @Security("executive")
+    async approveTeamCreationRequest(@Request() req: express.Request, @Path() requestId: string) {
+        const authorizedUser = req.session.authorizedUser!;
+        const request = await TeamCreationRequest.findById(requestId);
+        if (!request) {
+            throw new CustomValidationError(404, "Team Creation Request not found");
+        }
+
+        /* Create the Team */
+        /* We use the requester's PK as the owner, not the approver! */
+        const createdTeam = await this.createTeamWrapper(request.createTeamRequest, request.requestorPk);
+
+        /* Send Email Update */
+        await this.emailClient.send({
+            to: request.requestorEmail,
+            replyTo: [authorizedUser.email],
+            subject: `Update on your Team Creation Request`,
+            templateName: "MgmtTeamRequestUpdate",
+            templateVars: {
+                requesterName: (await this.authentikClient.getUserInfo(request.requestorPk)).name,
+                teamName: request.createTeamRequest.friendlyName,
+                status: "approved",
+                approverName: authorizedUser.name
+            }
+        });
+
+        /* Delete the Request */
+        await request.deleteOne();
+
+        /* Return the Created Team */
+        return createdTeam;
+    }
+
+    /**
+     * Declines a Team Creation Request, Deletes it from the database and notifies
+     * the requester via email. To access this endpoint, the user must pass the 
+     * Executive Authorization Layer.
+     * 
+     * @param req Express Request
+     * @param requestId Request ID
+     */
+    @Delete("teamrequests/{requestId}")
+    @Tags("Team Management")
+    @SuccessResponse(200, "Request Declined & Deleted")
+    @Security("executive")
+    async declineTeamCreationRequest(@Request() req: express.Request, @Path() requestId: string) {
+        const authorizedUser = req.session.authorizedUser!;
+        const request = await TeamCreationRequest.findById(requestId);
+        if (!request) {
+            throw new CustomValidationError(404, "Team Creation Request not found");
+        }
+
+        /* Send Email Update */
+        await this.emailClient.send({
+            to: request.requestorEmail,
+            replyTo: [authorizedUser.email],
+            subject: `Update on your Team Creation Request`,
+            templateName: "MgmtTeamRequestUpdate",
+            templateVars: {
+                requesterName: (await this.authentikClient.getUserInfo(request.requestorPk)).name,
+                teamName: request.createTeamRequest.friendlyName,
+                status: "declined",
+                approverName: authorizedUser.name
+            }
+        });
+
+        /* Delete the Request */
+        await request.deleteOne();
+    }
+
+    /**
+     * Public API to request the creation of a new team.
+     * 
+     * If the requester is an Executive or Superuser, the team is created immediately (Auto-Approved).
+     * Otherwise, a request is submitted for Executive Board review.
+     * 
+     * @param req Express Request
+     * @param createTeamReq Team Creation Payload
+     * @returns Created Team Info (201) or Pending Status (202)
      */
     @Post("teams/create")
     @Tags("Team Management")
-    @SuccessResponse(201)
-    @Security("executive", ["su:exclusive"])
-    async createTeam(@Request() req: express.Request, @Body() createTeamReq: APICreateTeamRequest): Promise<GetGroupInfoResponse> {
+    @SuccessResponse(201, "Team Created")
+    @Security("oidc")
+    async createTeam(
+        @Request() req: express.Request,
+        @Body() createTeamReq: APICreateTeamRequest
+    ): Promise<GetGroupInfoResponse | { message: string, status: string }> {
+        /* Santize Request */
+        createTeamReq.friendlyName = validateTeamName(createTeamReq.friendlyName);
+
+        /* Check for Authorized User */
+        const authorizedUser = req.session.authorizedUser!;
+        let isExecutive = false;
+
+        /* Check for Executive Authority (Auto-Approve) */
+        try {
+            isExecutive = await executiveAuthVerify(
+                req, [],
+                true /* Skip OIDC Check */
+            );
+        } catch (e) {
+            isExecutive = false;
+        }
+
+        if (isExecutive) {
+            /* Auto-Approve */
+            const team = await this.createTeamWrapper(createTeamReq, authorizedUser.pk);
+            this.setStatus(201);
+            return team;
+        } else {
+            /* Submit Request */
+            const teamCreationRequest = await TeamCreationRequest.create({
+                requestorPk: authorizedUser.pk,
+                requestorName: authorizedUser.name,
+                requestorEmail: authorizedUser.email,
+                createTeamRequest: createTeamReq,
+                status: TeamCreationRequestStatus.PENDING
+            });
+
+            /* Send Email to Executive Board */
+            await this.emailClient.send({
+                to: "eboard@example.com",
+                cc: [authorizedUser.email],
+                subject: `New Team Creation Request: ${createTeamReq.friendlyName}`,
+                templateName: "MgmtTeamCreateRequest",
+                templateVars: {
+                    requesterName: authorizedUser.name,
+                    teamName: createTeamReq.friendlyName,
+                    teamDescription: createTeamReq.description,
+                    teamType: createTeamReq.teamType,
+                    seasonType: createTeamReq.seasonType,
+                    seasonYear: createTeamReq.seasonYear,
+                    requesterRole: createTeamReq.requestorRole,
+                    requestUrl: `${process.env.PEOPLEPORTAL_BASE_URL}/org/teamrequests/${teamCreationRequest.id}`
+                }
+            });
+
+            this.setStatus(202);
+            return {
+                message: "Your Team Creation Request has been Submitted for Review! Please check your email for updates.",
+                status: "PENDING"
+            };
+        }
+    }
+
+    private async createTeamWrapper(createTeamReq: APICreateTeamRequest, ownerPk: number): Promise<GetGroupInfoResponse> {
         /* Validate Team Name Request */
         createTeamReq.friendlyName = validateTeamName(createTeamReq.friendlyName);
 
@@ -662,8 +843,9 @@ export class OrgController extends Controller {
         const newTeam = await this.authentikClient.createNewTeam({ attributes: { ...createTeamReq } })
 
         /* Add the Creator (us) to Team Owners */
-        const userInfo = await this.authentikClient.getUserInfoFromEmail(req.session.authorizedUser!.email)
-        this.addTeamMemberWrapper({ groupId: newTeam.pk, userPk: +userInfo.pk }) /* Add Creator to Team Owners */
+        this.addTeamMemberWrapper({ groupId: newTeam.pk, userPk: ownerPk }) /* Add Creator to Team Owners */
+
+        /* Update Owner to Pick Team Role */
 
         /* Construct Bindle Shim for Optimized Create Sub Team Calls */
         const bindleShim: ExpressRequestBindleShim = {
@@ -802,17 +984,30 @@ export class OrgController extends Controller {
      * - If the team is a root team (has no parent), it is just
      *   flagged for deletion as their deletion is overengineering.
      * 
-     * To perform this action, the user must either be a Team Owner or hold the
-     * `corp:rootsettings` bindle.
+     * To perform this action on a subteam, the user must either be a Team Owner or 
+     * hold the `corp:subteamaccess` bindle.
+     * 
+     * To perform this action on a root team, the user must pass the Executive
+     * Authorization Layer as a **Superuser** (`su:exclusive` scope).
      * 
      * @param teamId Team ID
      */
     @Delete("teams/{teamId}")
     @Tags("Team Management")
     @SuccessResponse(200)
-    @Security("oidc")
-    async deleteTeam(@Path() teamId: string) {
-        const teamInfo = await this.authentikClient.getGroupInfo(teamId);
+    @Security("bindles", ["corp:subteamaccess"])
+    async deleteTeam(@Request() req: express.Request, @Path() teamId: string) {
+        const teamInfo = req.bindle!.teamInfo;
+
+        /* If Root Team, Enforce Executive Authorization */
+        if (!teamInfo.parentPk) {
+            await executiveAuthVerify(
+                req, ["su:exclusive"],
+                true /* Skip OIDC Check as its done by Bindles Auth */
+            );
+        }
+
+        /* 1. Flag for Deletion */
         await this.authentikClient.flagGroupForDeletion(teamId);
 
         /* 2. If subteam, remove all members */

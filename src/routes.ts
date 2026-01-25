@@ -294,6 +294,26 @@ const models: TsoaRoute.Models = {
             "seasonType": {"ref":"SeasonType","required":true},
             "seasonYear": {"dataType":"double","required":true},
             "description": {"dataType":"string","required":true},
+            "requestorRole": {"dataType":"string","required":true},
+        },
+        "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "TeamCreationRequestStatus": {
+        "dataType": "refEnum",
+        "enums": ["PENDING","APPROVED","REJECTED"],
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "APITeamCreationRequestResponse": {
+        "dataType": "refObject",
+        "properties": {
+            "_id": {"dataType":"string","required":true},
+            "requestorPk": {"dataType":"double","required":true},
+            "requestorName": {"dataType":"string","required":true},
+            "requestorEmail": {"dataType":"string","required":true},
+            "createTeamRequest": {"ref":"APICreateTeamRequest","required":true},
+            "status": {"ref":"TeamCreationRequestStatus","required":true},
+            "createdAt": {"dataType":"datetime","required":true},
         },
         "additionalProperties": false,
     },
@@ -1063,12 +1083,107 @@ export function RegisterRoutes(app: Router) {
             }
         });
         // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsOrgController_getTeamCreationRequest: Record<string, TsoaRoute.ParameterSchema> = {
+                requestId: {"in":"path","name":"requestId","required":true,"dataType":"string"},
+        };
+        app.get('/api/org/teamrequests/:requestId',
+            authenticateMiddleware([{"executive":[]}]),
+            ...(fetchMiddlewares<RequestHandler>(OrgController)),
+            ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.getTeamCreationRequest)),
+
+            async function OrgController_getTeamCreationRequest(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsOrgController_getTeamCreationRequest, request, response });
+
+                const controller = new OrgController();
+
+              await templateService.apiHandler({
+                methodName: 'getTeamCreationRequest',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsOrgController_approveTeamCreationRequest: Record<string, TsoaRoute.ParameterSchema> = {
+                req: {"in":"request","name":"req","required":true,"dataType":"object"},
+                requestId: {"in":"path","name":"requestId","required":true,"dataType":"string"},
+        };
+        app.post('/api/org/teamrequests/:requestId',
+            authenticateMiddleware([{"executive":[]}]),
+            ...(fetchMiddlewares<RequestHandler>(OrgController)),
+            ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.approveTeamCreationRequest)),
+
+            async function OrgController_approveTeamCreationRequest(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsOrgController_approveTeamCreationRequest, request, response });
+
+                const controller = new OrgController();
+
+              await templateService.apiHandler({
+                methodName: 'approveTeamCreationRequest',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 201,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsOrgController_declineTeamCreationRequest: Record<string, TsoaRoute.ParameterSchema> = {
+                req: {"in":"request","name":"req","required":true,"dataType":"object"},
+                requestId: {"in":"path","name":"requestId","required":true,"dataType":"string"},
+        };
+        app.delete('/api/org/teamrequests/:requestId',
+            authenticateMiddleware([{"executive":[]}]),
+            ...(fetchMiddlewares<RequestHandler>(OrgController)),
+            ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.declineTeamCreationRequest)),
+
+            async function OrgController_declineTeamCreationRequest(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsOrgController_declineTeamCreationRequest, request, response });
+
+                const controller = new OrgController();
+
+              await templateService.apiHandler({
+                methodName: 'declineTeamCreationRequest',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
         const argsOrgController_createTeam: Record<string, TsoaRoute.ParameterSchema> = {
                 req: {"in":"request","name":"req","required":true,"dataType":"object"},
                 createTeamReq: {"in":"body","name":"createTeamReq","required":true,"ref":"APICreateTeamRequest"},
         };
         app.post('/api/org/teams/create',
-            authenticateMiddleware([{"executive":["su:exclusive"]}]),
+            authenticateMiddleware([{"oidc":[]}]),
             ...(fetchMiddlewares<RequestHandler>(OrgController)),
             ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.createTeam)),
 
@@ -1160,10 +1275,11 @@ export function RegisterRoutes(app: Router) {
         });
         // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
         const argsOrgController_deleteTeam: Record<string, TsoaRoute.ParameterSchema> = {
+                req: {"in":"request","name":"req","required":true,"dataType":"object"},
                 teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
         };
         app.delete('/api/org/teams/:teamId',
-            authenticateMiddleware([{"oidc":[]}]),
+            authenticateMiddleware([{"bindles":["corp:subteamaccess"]}]),
             ...(fetchMiddlewares<RequestHandler>(OrgController)),
             ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.deleteTeam)),
 

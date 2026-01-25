@@ -105,26 +105,41 @@ async function oidcAuthVerify(request: express.Request, scopes?: string[]): Prom
 }
 
 /**
- * 
+ * TODO!!
  * 
  * @param request Express Request Object
  * @param scopes Array of Scopes
+ * @param skipOidcCheck Skip OIDC Check, Used when called from another OIDC functions.
  * @returns User Authorization Status (Boolean)
  */
-async function executiveAuthVerify(request: express.Request, scopes?: string[]): Promise<boolean> {
-    const isAuthenticated = await oidcAuthVerify(request, scopes);
-    if (!isAuthenticated || !request.session.authorizedUser)
-        return Promise.reject(new ResourceAccessError(401, "OIDC Authentication Failed!"));
+export async function executiveAuthVerify(
+    request: express.Request,
+    scopes?: string[],
+    skipOidcCheck?: boolean
+): Promise<boolean> {
+    if (!skipOidcCheck) {
+        const isAuthenticated = await oidcAuthVerify(request, scopes);
+        if (!isAuthenticated)
+            return Promise.reject(new ResourceAccessError(401, "OIDC Authentication Failed!"));
+    }
 
+    if (!request.session.authorizedUser)
+        return Promise.reject(new ResourceAccessError(401, "Failed to Fetch OIDC User Information!"));
+
+    /* Fetch User Data */
     const authorizedUser: AuthorizedUser = request.session.authorizedUser;
 
-    /* 1. Superuser Exclusive Scope Check */
+    /* Superusers are implicitly Executives, Check Scope */
+    if (authorizedUser.is_superuser)
+        return Promise.resolve(true);
+
+    /* 2. Superuser Exclusive Scope Check */
     if (scopes && scopes.includes("su:exclusive")) {
-        if (authorizedUser.is_superuser) return Promise.resolve(true);
+        /* We already know they are NOT a superuser here */
         return Promise.reject(new ResourceAccessError(403, "This action is restricted to Superusers only!"));
     }
 
-    /* 2. Check for Executive Board Membership */
+    /* 3. Check for Executive Board Membership */
     /* We fetch the Root Teams for the user */
     const authentikClient = new AuthentikClient();
     try {
@@ -140,9 +155,8 @@ async function executiveAuthVerify(request: express.Request, scopes?: string[]):
             return Promise.resolve(true);
 
     } catch (e) {
-        /* Fallback to Superuser Check if Team Fetch Fails */
-        if (authorizedUser.is_superuser)
-            return Promise.resolve(true);
+        /* Failed to Fetch Root Teams */
+        return Promise.reject(e);
     }
 
     /* Neither Conditions Work! */
@@ -157,6 +171,10 @@ async function executiveAuthVerify(request: express.Request, scopes?: string[]):
  * Additionally, since all team actions **must be protected by bindles**, we ensure that the
  * team is not **flagged for deletion** and we also populate a special request bindle field
  * for AuthentikClient call optimizations.
+ * 
+ * **Authorization Override**
+ * The Executive Authorization Layer overrides and automatically approves all Bindle Authorization
+ * checks thereby, providing superusers and executive administrators full access.
  * 
  * @param request Express Request Object
  * @param scopes Array of Bindles or Dynamic Locator + Bindles
@@ -213,6 +231,15 @@ async function bindlesAuthVerify(request: express.Request, scopes?: string[]): P
                 403,
                 "This team is flagged for deletion and therefore, is read-only."
             ));
+        }
+
+        /* 2.75: Executive Authorization Override */
+        /* Since team info is populated, we can now check for override */
+        try {
+            const isExecutive = await executiveAuthVerify(request, [], true);
+            if (isExecutive) return Promise.resolve(true);
+        } catch (e) {
+            /* Failed Executive Override, Continue */
         }
 
         /* 3. Check Owner (Optimized Recursive Group Name Check) */

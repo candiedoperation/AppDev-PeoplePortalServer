@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Team Creation Request</title>
+</head>
+{{> header}}
+
+<body style="font-family: Arial, sans-serif; color: #333;">
+    <p>Hi there!<br><b>{{requesterName}}</b> has requested to create a new team. Here's more information about
+        their request:
+    </p>
+    <ul>
+        <li><b>Team Name:</b> {{teamName}}</li>
+        <li><b>Team Description:</b> {{teamDescription}}</li>
+        <li><b>Team Type:</b> {{teamType}}</li>
+        <li><b>Season:</b> {{seasonType}} {{seasonYear}}</li>
+    </ul>
+
+    <p>{{requesterName}}'s chosen role for the team is <b>{{requesterRole}}</b>. To make a decision, we've generated
+        a unique link for you which is valid for the next <b>24 hours</b>. To accept or decline the request, please
+        follow
+        the instructions at <a href="{{requestUrl}}">{{requestUrl}}</a>.</p>
+
+    <p>For any questions or follow-ups, please reply to this email thread.</p>
+</body>
+{{> footer}}
+
+</html>
