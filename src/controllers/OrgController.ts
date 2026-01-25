@@ -23,7 +23,7 @@ import { AuthentikClient } from "../clients/AuthentikClient";
 import { Invite } from "../models/Invites";
 import { EmailClient } from "../clients/EmailClient";
 import { SharedResourceClient } from '../clients';
-import { ENABLED_SHARED_RESOURCES, ENABLED_TEAMSETTING_RESOURCES } from '../config';
+import { ENABLED_SHARED_RESOURCES, ENABLED_TEAMSETTING_RESOURCES, TEAM_TYPE_CONFIGS } from '../config';
 import { SlackClient } from '../clients/SlackClient';
 import { AWSClient } from '../clients/AWSClient';
 import { sanitizeUserFullName, validateTeamName } from '../utils/strings';
@@ -697,29 +697,45 @@ export class OrgController extends Controller {
             throw new CustomValidationError(404, "Team Creation Request not found");
         }
 
-        /* Create the Team */
-        /* We use the requester's PK as the owner, not the approver! */
-        const createdTeam = await this.createTeamWrapper(request.createTeamRequest, request.requestorPk);
+        try {
+            /* Create the Team */
+            /* We use the requester's PK as the owner, not the approver! */
+            await this.createTeamWrapper(request.createTeamRequest, request.requestorPk);
 
-        /* Send Email Update */
-        await this.emailClient.send({
-            to: request.requestorEmail,
-            replyTo: [authorizedUser.email],
-            subject: `Update on your Team Creation Request`,
-            templateName: "MgmtTeamRequestUpdate",
-            templateVars: {
-                requesterName: (await this.authentikClient.getUserInfo(request.requestorPk)).name,
-                teamName: request.createTeamRequest.friendlyName,
-                status: "approved",
-                approverName: authorizedUser.name
+            /* Send Email Update */
+            await this.emailClient.send({
+                to: request.requestorEmail,
+                replyTo: [authorizedUser.email],
+                subject: `Update on your Team Creation Request`,
+                templateName: "MgmtTeamRequestUpdate",
+                templateVars: {
+                    requesterName: (await this.authentikClient.getUserInfo(request.requestorPk)).name,
+                    teamName: request.createTeamRequest.friendlyName,
+                    status: "approved",
+                    approverName: authorizedUser.name
+                }
+            });
+        } catch (e) {
+            if (e instanceof AuthentikClientError) {
+                /* Send Email Update */
+                await this.emailClient.send({
+                    to: request.requestorEmail,
+                    replyTo: [authorizedUser.email],
+                    subject: `Team Creation Failed`,
+                    templateName: "MgmtTeamRequestFailed",
+                    templateVars: {
+                        requesterName: (await this.authentikClient.getUserInfo(request.requestorPk)).name,
+                        teamName: request.createTeamRequest.friendlyName,
+                        approverName: authorizedUser.name,
+                        errorMessage: e.message,
+                        exceptionTrace: e.stack
+                    }
+                });
             }
-        });
-
-        /* Delete the Request */
-        await request.deleteOne();
-
-        /* Return the Created Team */
-        return createdTeam;
+        } finally {
+            /* Delete the Request */
+            await request.deleteOne();
+        }
     }
 
     /**
@@ -835,90 +851,6 @@ export class OrgController extends Controller {
         }
     }
 
-    private async createTeamWrapper(createTeamReq: APICreateTeamRequest, ownerPk: number): Promise<GetGroupInfoResponse> {
-        /* Validate Team Name Request */
-        createTeamReq.friendlyName = validateTeamName(createTeamReq.friendlyName);
-
-        /* Create the New Team */
-        const newTeam = await this.authentikClient.createNewTeam({ attributes: { ...createTeamReq } })
-
-        /* Add the Creator to Team Owners */
-        this.addTeamMemberWrapper({
-            groupId: newTeam.pk,
-            userPk: ownerPk,
-            roleTitle: createTeamReq.requestorRole
-        })
-
-        /* Construct Bindle Shim for Optimized Create Sub Team Calls */
-        const bindleShim: ExpressRequestBindleShim = {
-            bindle: {
-                requestedPermissions: [],
-                teamInfo: newTeam,
-            }
-        }
-
-        /* Team Templates: Makes Life Easier! */
-        switch (createTeamReq.teamType) {
-            case TeamType.CORPORATE || TeamType.EXECBOARD: {
-                return newTeam
-            }
-
-            case TeamType.PROJECT: {
-                /* Create Leadership and Engineering Sub-teams! */
-                const leadershipTeam = await this.createSubTeam(bindleShim, newTeam.pk, { friendlyName: 'Leadership', description: 'Project and Tech Leads' })
-                await this.createSubTeam(bindleShim, newTeam.pk, { friendlyName: 'Engineering', description: 'UI/UX, PMs, SWEs, etc.' })
-
-                /* Update Bindles for Leadership, Engineering doesn't need special Access */
-                await this.updateTeamBindles(leadershipTeam.pk, {
-                    "PeoplePortalClient": {
-                        "corp:awsaccess": true,
-                        "corp:hiringaccess": true,
-                    },
-
-                    "GiteaClient": {
-                        "repo:allowcreate": true
-                    }
-                })
-
-                /* Return Team */
-                return newTeam
-            }
-
-            case TeamType.BOOTCAMP: {
-                await this.createSubTeam(bindleShim, newTeam.pk, { friendlyName: 'Learners', description: 'Bootcamp Students' })
-                const educatorsTeam = await this.createSubTeam(bindleShim, newTeam.pk, { friendlyName: 'Educators', description: 'Bootcamp Teachers' })
-                const interviewersTeam = await this.createSubTeam(bindleShim, newTeam.pk, { friendlyName: 'Interviewers', description: 'Interviewers for Bootcamp' })
-
-                /* Update Bindles for Educators */
-                await this.updateTeamBindles(educatorsTeam.pk, {
-                    "PeoplePortalClient": {
-                        "corp:hiringaccess": true,
-                        "corp:bindlesync": true,
-                        "corp:subteamaccess": true,
-                        "corp:membermgmt": true
-                    },
-
-                    "GiteaClient": {
-                        "repo:allowcreate": true
-                    }
-                })
-
-                /* Update Bindles for Interviewers */
-                await this.updateTeamBindles(interviewersTeam.pk, {
-                    "PeoplePortalClient": {
-                        "corp:hiringaccess": true
-                    }
-                })
-
-                /* Return Team, Learners don't need any special permissions */
-                return newTeam
-            }
-
-            default:
-                throw new CustomValidationError(400, "Invalid Team Type")
-        }
-    }
-
     /**
      * Syncs Shared Permissions for a team. Internally, this routine will call
      * `handleOrgBindleSync` for each shared resource that is enabled. For better
@@ -1025,6 +957,48 @@ export class OrgController extends Controller {
     }
 
     /* Other Wrapper Functions */
+    private async createTeamWrapper(createTeamReq: APICreateTeamRequest, ownerPk: number): Promise<GetGroupInfoResponse> {
+        /* Validate Team Name Request */
+        createTeamReq.friendlyName = validateTeamName(createTeamReq.friendlyName);
+
+        /* Create the New Team */
+        const newTeam = await this.authentikClient.createNewTeam({ attributes: { ...createTeamReq } })
+
+        /* Add the Creator to Team Owners */
+        this.addTeamMemberWrapper({
+            groupId: newTeam.pk,
+            userPk: ownerPk,
+            roleTitle: createTeamReq.requestorRole
+        })
+
+        /* Construct Bindle Shim for Optimized Create Sub Team Calls */
+        const bindleShim: ExpressRequestBindleShim = {
+            bindle: {
+                requestedPermissions: [],
+                teamInfo: newTeam,
+            }
+        }
+
+        /* Team Templates: Makes Life Easier! */
+        const teamConfig = TEAM_TYPE_CONFIGS[createTeamReq.teamType];
+        if (teamConfig) {
+            for (const subteamConfig of teamConfig.defaultSubteams) {
+                /* Create Subteam */
+                const subteam = await this.createSubTeam(bindleShim, newTeam.pk, {
+                    friendlyName: subteamConfig.friendlyName,
+                    description: subteamConfig.description
+                });
+
+                /* Apply Bindles if Defined */
+                if (subteamConfig.bindles) {
+                    await this.updateTeamBindles(subteam.pk, subteamConfig.bindles);
+                }
+            }
+        }
+
+        return newTeam;
+    }
+
     async addTeamMemberWrapper(request: AddGroupMemberRequest): Promise<APITeamMemberAddResponse> {
         const coreAdditionComplete = await this.authentikClient.addGroupMember(request)
         const userInfo = await this.authentikClient.getUserInfo(request.userPk);

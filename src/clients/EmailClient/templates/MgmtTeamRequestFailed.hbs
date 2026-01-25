@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Team Creation Failed</title>
+</head>
+{{> header}}
+
+<body style="font-family: Arial, sans-serif; color: #333;">
+    <p>Hi {{requesterName}},<br> Your request to create the team <b>{{teamName}}</b> was approved
+        by <b>{{approverName}}</b>.
+    </p>
+
+    <p>However, the team creation process <b>FAILED</b> with error <b>{{errorMessage}}</b>.</p>
+
+    <p>If you can, please fix the error and try submitting your request for approval again. If you still face problems,
+        please
+        contact the Technical Operations team.</p>
+
+    <span>Exception Trace for People Portal Operations:</span>
+    <pre>{{exceptionTrace}}</pre>
+</body>
+{{> footer}}
+
+</html>
