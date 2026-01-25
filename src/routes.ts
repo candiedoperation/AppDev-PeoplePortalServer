@@ -75,6 +75,7 @@ const models: TsoaRoute.Models = {
             "memberSince": {"dataType":"datetime","required":true},
             "active": {"dataType":"boolean","required":true},
             "attributes": {"ref":"UserAttributeDefinition","required":true},
+            "is_superuser": {"dataType":"boolean","required":true},
         },
         "additionalProperties": false,
     },
@@ -107,6 +108,7 @@ const models: TsoaRoute.Models = {
             "memberSince": {"dataType":"datetime","required":true},
             "active": {"dataType":"boolean","required":true},
             "attributes": {"ref":"UserAttributeDefinition","required":true},
+            "is_superuser": {"dataType":"boolean","required":true},
         },
         "additionalProperties": false,
     },
@@ -127,10 +129,43 @@ const models: TsoaRoute.Models = {
         "additionalProperties": {"ref":"RootTeamSettingInfo"},
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "TeamType": {
+        "dataType": "refEnum",
+        "enums": ["PROJECT","CORPORATE","BOOTCAMP","EXECBOARD"],
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "SeasonType": {
+        "dataType": "refEnum",
+        "enums": ["FALL","SPRING"],
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "EnabledRootSettings": {
+        "dataType": "refObject",
+        "properties": {
+        },
+        "additionalProperties": {"dataType":"boolean"},
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "EnabledBindlePermissions": {
+        "dataType": "refObject",
+        "properties": {
+        },
+        "additionalProperties": {"dataType":"boolean"},
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
     "TeamInformationBrief": {
         "dataType": "refObject",
         "properties": {
-            "parent": {"dataType":"string","required":true},
+            "friendlyName": {"dataType":"string","required":true},
+            "teamType": {"ref":"TeamType","required":true},
+            "seasonType": {"ref":"SeasonType","required":true},
+            "seasonYear": {"dataType":"double","required":true},
+            "peoplePortalCreation": {"dataType":"boolean"},
+            "flaggedForDeletion": {"dataType":"boolean"},
+            "description": {"dataType":"string","required":true},
+            "rootTeamSettings": {"dataType":"nestedObjectLiteral","nestedProperties":{},"additionalProperties":{"ref":"EnabledRootSettings"},"required":true},
+            "bindlePermissions": {"dataType":"nestedObjectLiteral","nestedProperties":{},"additionalProperties":{"ref":"EnabledBindlePermissions"},"required":true},
+            "parent": {"dataType":"union","subSchemas":[{"dataType":"string"},{"dataType":"enum","enums":[null]}],"required":true},
             "name": {"dataType":"string","required":true},
             "pk": {"dataType":"string","required":true},
         },
@@ -215,30 +250,6 @@ const models: TsoaRoute.Models = {
             "attributes": {"ref":"TeamAttributeDefinition","required":true},
         },
         "additionalProperties": false,
-    },
-    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-    "TeamType": {
-        "dataType": "refEnum",
-        "enums": ["PROJECT","CORPORATE","BOOTCAMP","EXECBOARD"],
-    },
-    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-    "SeasonType": {
-        "dataType": "refEnum",
-        "enums": ["FALL","SPRING"],
-    },
-    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-    "EnabledRootSettings": {
-        "dataType": "refObject",
-        "properties": {
-        },
-        "additionalProperties": {"dataType":"boolean"},
-    },
-    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-    "EnabledBindlePermissions": {
-        "dataType": "refObject",
-        "properties": {
-        },
-        "additionalProperties": {"dataType":"boolean"},
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
     "TeamAttributeDefinition": {
@@ -1057,7 +1068,7 @@ export function RegisterRoutes(app: Router) {
                 createTeamReq: {"in":"body","name":"createTeamReq","required":true,"ref":"APICreateTeamRequest"},
         };
         app.post('/api/org/teams/create',
-            authenticateMiddleware([{"oidc":[]}]),
+            authenticateMiddleware([{"executive":["su:exclusive"]}]),
             ...(fetchMiddlewares<RequestHandler>(OrgController)),
             ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.createTeam)),
 

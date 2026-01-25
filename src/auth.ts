@@ -21,7 +21,7 @@ import { AuthorizedUser, OpenIdClient } from "./clients/OpenIdClient";
 import jwt from "jsonwebtoken"
 import { BindleController } from "./controllers/BindleController";
 import { AuthentikClient } from "./clients/AuthentikClient";
-import { UserInformationBrief } from "./clients/AuthentikClient/models";
+import { TeamType } from "./clients/AuthentikClient/models";
 import { ResourceAccessError } from "./utils/errors";
 import { formatBindleAccessError } from "./utils/strings";
 
@@ -53,6 +53,9 @@ export async function expressAuthentication(
         else if (securityName == "bindles")
             return await bindlesAuthVerify(request, scopes);
 
+        else if (securityName == "executive")
+            return await executiveAuthVerify(request, scopes);
+
         else if (securityName == "ats_otp") {
             if (!request.session.tempsession?.jwt || !request.session.tempsession?.user) {
                 return Promise.reject(new ResourceAccessError(401, "Session is Invalid"));
@@ -74,6 +77,14 @@ export async function expressAuthentication(
     }
 }
 
+/**
+ * Verifies if user has valid OIDC Token. Verification happens as defined in the OpenID
+ * standard via the OpenIdClient.
+ * 
+ * @param request Express Request Object
+ * @param scopes Array of Scopes
+ * @returns User Authorization Status (Boolean)
+ */
 async function oidcAuthVerify(request: express.Request, scopes?: string[]): Promise<boolean> {
     try {
         const authToken = request.session.accessToken
@@ -91,6 +102,51 @@ async function oidcAuthVerify(request: express.Request, scopes?: string[]): Prom
         /* OIDC Authorization Failed! */
         return Promise.reject(new ResourceAccessError(401, "Invalid or expired token"));
     }
+}
+
+/**
+ * 
+ * 
+ * @param request Express Request Object
+ * @param scopes Array of Scopes
+ * @returns User Authorization Status (Boolean)
+ */
+async function executiveAuthVerify(request: express.Request, scopes?: string[]): Promise<boolean> {
+    const isAuthenticated = await oidcAuthVerify(request, scopes);
+    if (!isAuthenticated || !request.session.authorizedUser)
+        return Promise.reject(new ResourceAccessError(401, "OIDC Authentication Failed!"));
+
+    const authorizedUser: AuthorizedUser = request.session.authorizedUser;
+
+    /* 1. Superuser Exclusive Scope Check */
+    if (scopes && scopes.includes("su:exclusive")) {
+        if (authorizedUser.is_superuser) return Promise.resolve(true);
+        return Promise.reject(new ResourceAccessError(403, "This action is restricted to Superusers only!"));
+    }
+
+    /* 2. Check for Executive Board Membership */
+    /* We fetch the Root Teams for the user */
+    const authentikClient = new AuthentikClient();
+    try {
+        const userTeams = await authentikClient.getRootTeamsForUsername(authorizedUser.username);
+
+        /* Check if any of the teams are EXECBOARD and NOT Flagged for Deletion */
+        const isExecutive = userTeams.teams.some(team =>
+            team.teamType === TeamType.EXECBOARD &&
+            !team.flaggedForDeletion
+        );
+
+        if (isExecutive)
+            return Promise.resolve(true);
+
+    } catch (e) {
+        /* Fallback to Superuser Check if Team Fetch Fails */
+        if (authorizedUser.is_superuser)
+            return Promise.resolve(true);
+    }
+
+    /* Neither Conditions Work! */
+    return Promise.reject(new ResourceAccessError(403, "You must be an Executive Board Member or a Superuser to perform this action!"));
 }
 
 /**

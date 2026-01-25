@@ -96,8 +96,9 @@ export interface GetTeamsForUsernameResponse {
     teams: TeamInformationBrief[]
 }
 
-export interface TeamInformationBrief {
-    parent: string,
+/* Messy but, changing would cause breaking changes */
+export interface TeamInformationBrief extends TeamAttributeDefinition {
+    parent: string | null,
     name: string,
     pk: string,
 }
@@ -171,6 +172,7 @@ export interface UserInformationBrief {
     memberSince: Date,
     active: boolean,
     attributes: UserAttributeDefinition,
+    is_superuser: boolean
 }
 
 export interface GetUserListResponse {

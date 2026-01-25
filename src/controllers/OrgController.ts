@@ -222,7 +222,7 @@ export class OrgController extends Controller {
     @SuccessResponse(200)
     @Security("oidc")
     async getMyTeams(@Request() req: express.Request): Promise<GetTeamsForUsernameResponse> {
-        return await this.authentikClient.getTeamsForUsername(req.session.authorizedUser!.username)
+        return await this.authentikClient.getRootTeamsForUsername(req.session.authorizedUser!.username)
     }
 
     /**
@@ -644,11 +644,16 @@ export class OrgController extends Controller {
         return createdSubTeam
     }
 
-    /** WARN: Fix Authorization? */
+    /**
+     * 
+     * @param req 
+     * @param createTeamReq 
+     * @returns Created Team Information
+     */
     @Post("teams/create")
     @Tags("Team Management")
     @SuccessResponse(201)
-    @Security("oidc")
+    @Security("executive", ["su:exclusive"])
     async createTeam(@Request() req: express.Request, @Body() createTeamReq: APICreateTeamRequest): Promise<GetGroupInfoResponse> {
         /* Validate Team Name Request */
         createTeamReq.friendlyName = validateTeamName(createTeamReq.friendlyName);

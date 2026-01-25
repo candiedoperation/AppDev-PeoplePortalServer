@@ -89,6 +89,7 @@ export class AuthentikClient {
                 memberSince: res.data.date_joined,
                 active: res.data.is_active,
                 attributes: res.data.attributes,
+                is_superuser: res.data.is_superuser,
             };
         } catch (e) {
             log.error(AuthentikClient.TAG, "User Info Request Failed with Error: ", e)
@@ -137,7 +138,7 @@ export class AuthentikClient {
         }
     }
 
-    public getTeamsForUsername = async (username: string): Promise<GetTeamsForUsernameResponse> => {
+    public getRootTeamsForUsername = async (username: string): Promise<GetTeamsForUsernameResponse> => {
         var RequestConfig: any = {
             ...this.AxiosBaseConfig,
             method: 'get',
@@ -610,6 +611,7 @@ export class AuthentikClient {
                 memberSince: user.date_joined,
                 active: user.is_active,
                 attributes: user.attributes,
+                is_superuser: user.is_superuser,
             }
         } catch (e) {
             log.error(AuthentikClient.TAG, "Get User PK Request Failed with Error: ", e)

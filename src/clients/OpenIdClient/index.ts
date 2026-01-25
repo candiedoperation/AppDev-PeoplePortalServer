@@ -19,11 +19,15 @@
 import jwt from "jsonwebtoken"
 import jwksClient from 'jwks-rsa';
 import * as client from 'openid-client'
+import { UserAttributeDefinition } from "../AuthentikClient/models";
 
 export interface AuthorizedUser {
   sub: string,
   email: string,
   name: string,
+  pk: number,
+  attributes: UserAttributeDefinition,
+  is_superuser: boolean,
   username: string,
   groups: string[]
 }
@@ -75,7 +79,7 @@ export class OpenIdClient {
     const expectedState = client.randomState()
     let parameters: Record<string, string> = {
       redirect_uri: this.redirect_uri!,
-      scope: 'openid profile email',
+      scope: 'openid profile email people_portal',
       code_challenge: this.code_challenge,
       code_challenge_method: this.code_challenge_method,
     }
@@ -105,7 +109,10 @@ export class OpenIdClient {
         email: claims.email as string,
         name: claims.name as string,
         username: claims.preferred_username as string,
-        groups: claims.groups as string[]
+        groups: claims.groups as string[],
+        pk: (claims.pk as number),
+        attributes: (claims.attributes as unknown as UserAttributeDefinition),
+        is_superuser: claims.is_superuser as boolean
       }
     }
   }
