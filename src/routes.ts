@@ -987,7 +987,7 @@ export function RegisterRoutes(app: Router) {
         // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
         const argsOrgController_addTeamMember: Record<string, TsoaRoute.ParameterSchema> = {
                 teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
-                req: {"in":"body","name":"req","required":true,"dataType":"nestedObjectLiteral","nestedProperties":{"userPk":{"dataType":"double","required":true}}},
+                req: {"in":"body","name":"req","required":true,"dataType":"nestedObjectLiteral","nestedProperties":{"roleTitle":{"dataType":"string","required":true},"userPk":{"dataType":"double","required":true}}},
         };
         app.post('/api/org/teams/:teamId/addmember',
             authenticateMiddleware([{"bindles":["corp:membermgmt"]}]),

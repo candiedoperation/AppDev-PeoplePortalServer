@@ -128,7 +128,8 @@ export interface GetGroupInfoResponse {
 
 export interface AddGroupMemberRequest {
     groupId: string,
-    userPk: number
+    userPk: number,
+    roleTitle: string
 }
 
 export interface RemoveGroupMemberRequest {

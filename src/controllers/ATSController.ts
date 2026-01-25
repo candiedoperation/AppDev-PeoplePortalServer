@@ -1293,7 +1293,7 @@ export class ATSController extends Controller {
         const applicantEmail = applicant.email;
         this.authentikClient.getUserInfoFromEmail(applicantEmail).then(async (user: UserInformationBrief) => {
             /* We didn't fail so, Add the Member to the Team & Send Email */
-            await this.orgController.addTeamMember(application.hiredSubteamPk!, { userPk: +user.pk });
+            await this.orgController.addTeamMember(application.hiredSubteamPk!, { userPk: +user.pk, roleTitle: application.hiredRole! });
             await this.emailClient.send({
                 to: applicantEmail,
                 cc: [authorizedUser.email],

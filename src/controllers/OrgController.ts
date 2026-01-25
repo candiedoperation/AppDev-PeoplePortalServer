@@ -82,7 +82,6 @@ interface APITeamInfoResponse {
 
 interface APITeamMemberAddResponse {
     coreAdditionComplete: boolean,
-    slackAdditionComplete: boolean
 }
 
 interface APITeamInviteCreateRequest {
@@ -590,11 +589,12 @@ export class OrgController extends Controller {
     @Tags("Team Management")
     @SuccessResponse(201)
     @Security("bindles", ["corp:membermgmt"])
-    async addTeamMember(@Path() teamId: string, @Body() req: { userPk: number }) {
+    async addTeamMember(@Path() teamId: string, @Body() req: { userPk: number, roleTitle: string }) {
         /* Needs Is Team owner Middleware?! */
         await this.addTeamMemberWrapper({
             groupId: teamId,
-            userPk: req.userPk
+            userPk: req.userPk,
+            roleTitle: req.roleTitle
         })
     }
 
@@ -842,10 +842,12 @@ export class OrgController extends Controller {
         /* Create the New Team */
         const newTeam = await this.authentikClient.createNewTeam({ attributes: { ...createTeamReq } })
 
-        /* Add the Creator (us) to Team Owners */
-        this.addTeamMemberWrapper({ groupId: newTeam.pk, userPk: ownerPk }) /* Add Creator to Team Owners */
-
-        /* Update Owner to Pick Team Role */
+        /* Add the Creator to Team Owners */
+        this.addTeamMemberWrapper({
+            groupId: newTeam.pk,
+            userPk: ownerPk,
+            roleTitle: createTeamReq.requestorRole
+        })
 
         /* Construct Bindle Shim for Optimized Create Sub Team Calls */
         const bindleShim: ExpressRequestBindleShim = {
@@ -1025,11 +1027,18 @@ export class OrgController extends Controller {
     /* Other Wrapper Functions */
     async addTeamMemberWrapper(request: AddGroupMemberRequest): Promise<APITeamMemberAddResponse> {
         const coreAdditionComplete = await this.authentikClient.addGroupMember(request)
-        /* DO SLACK and GIT REPO here! */
+        const userInfo = await this.authentikClient.getUserInfo(request.userPk);
+
+        /* Update User's Role Attribute */
+        this.authentikClient.updateUserAttributes(request.userPk, {
+            roles: {
+                ...userInfo.attributes.roles,
+                [request.groupId]: request.roleTitle
+            }
+        })
 
         return {
             coreAdditionComplete,
-            slackAdditionComplete: false
         }
     }
 
@@ -1060,7 +1069,5 @@ export class OrgController extends Controller {
         }
 
         await this.authentikClient.removeGroupMember(request)
-
-        /* DO SLACK and GIT REPO here! */
     }
 }
