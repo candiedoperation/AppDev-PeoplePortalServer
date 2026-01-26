@@ -66,7 +66,7 @@ export function formatBindleAccessError(owners: string[], missingBindles: string
     return `${rest} ${conjunction} ${last}`;
   };
 
-  const ownersStr = formatList(owners, "or");
+  const ownersStr = formatList(owners, "or") || "an administrator";
   const bindlesStr = formatList(missingBindles, "and");
 
   return `You do not have permission to access this resource. Please ask ${ownersStr} to grant you the ${bindlesStr} bindle${missingBindles.length === 1 ? "" : "s"}.`;

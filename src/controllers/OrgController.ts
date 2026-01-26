@@ -816,6 +816,16 @@ export class OrgController extends Controller {
             this.setStatus(201);
             return team;
         } else {
+            /* Fetch Executive Board (Service Team) Members for CC */
+            /* We do this BEFORE creating the request because if we can't notify the Exec Board,
+               there is no point in creating the request as it will sit in limbo. */
+            const execTeamPk = await this.authentikClient.getGroupPkFromName("ExecutiveBoardMembers");
+            const execTeamInfo = await this.authentikClient.getGroupInfo(execTeamPk);
+            const execEmails = execTeamInfo.users.map(u => u.email);
+
+            if (execEmails.length < 1)
+                throw new CustomValidationError(500, "No Executive Board Members found. Please contact an Administrator.");
+
             /* Submit Request */
             const teamCreationRequest = await TeamCreationRequest.create({
                 requestorPk: authorizedUser.pk,
@@ -827,8 +837,8 @@ export class OrgController extends Controller {
 
             /* Send Email to Executive Board */
             await this.emailClient.send({
-                to: "eboard@example.com",
-                cc: [authorizedUser.email],
+                to: authorizedUser.email,
+                cc: execEmails,
                 subject: `New Team Creation Request: ${createTeamReq.friendlyName}`,
                 templateName: "MgmtTeamCreateRequest",
                 templateVars: {
