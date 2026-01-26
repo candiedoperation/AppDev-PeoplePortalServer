@@ -65,11 +65,18 @@ export const ENABLED_SERVICE_TEAMS: Record<string, ServiceTeamConfig> = {
   ExecutiveBoard: {
     friendlyName: "Executive Board",
     description: "The President and Other Club Executives",
-    subteams: [{
-      uniqueName: "ExecutiveBoardHistory",
-      friendlyName: "Previous Executives",
-      description: "The Previous Presidents and Club Executives"
-    }]
+    subteams: [
+      {
+        uniqueName: "ExecutiveBoardMembers",
+        friendlyName: "Current Executives",
+        description: "The Current President and Club Executives"
+      },
+      {
+        uniqueName: "ExecutiveBoardAlumni",
+        friendlyName: "Previous Executives",
+        description: "The Previous Presidents and Club Executives"
+      },
+    ]
   }
 }
 

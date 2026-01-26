@@ -16,12 +16,25 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-export function computeStringArrStateDiff(finalState: string[], currentState: string[]) {
-  const finalSet = new Set(finalState);
-  const currentSet = new Set(currentState);
+import { ENABLED_SERVICE_TEAMS } from "../config";
 
-  const additions = Array.from(finalSet).filter(user => !currentSet.has(user));
-  const deletions = Array.from(currentSet).filter(user => !finalSet.has(user));
+/* Function to Get All Reserved Team Names */
+const getReservedTeamNames = (): Set<string> => {
+    const reservedNames = new Set<string>();
 
-  return { additions, deletions };
+    for (const serviceTeamName in ENABLED_SERVICE_TEAMS) {
+        reservedNames.add(serviceTeamName);
+
+        const config = ENABLED_SERVICE_TEAMS[serviceTeamName];
+        if (config && config.subteams) {
+            config.subteams.forEach(subteam => {
+                reservedNames.add(subteam.uniqueName);
+            });
+        }
+    }
+
+    return reservedNames;
 }
+
+/* Define Flattened Set of Service Teams */
+export const ENABLED_SERVICE_TEAM_NAMES: Set<string> = getReservedTeamNames();

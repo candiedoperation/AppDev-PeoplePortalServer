@@ -23,6 +23,7 @@ import { sanitizeGroupName } from "../../utils/strings"
 import { EnabledRootSettings } from "../../controllers/OrgController"
 import { BindleController, EnabledBindlePermissions } from "../../controllers/BindleController"
 import { ENABLED_SERVICE_TEAMS } from "../../config"
+import { ENABLED_SERVICE_TEAM_NAMES } from "../../utils/services"
 
 export class AuthentikClient {
     private static readonly TAG = "AuthentikClient"
@@ -772,6 +773,15 @@ export class AuthentikClient {
         const teamName = request.serviceTeamName ?
             request.serviceTeamName :
             sanitizeGroupName(`${attr.friendlyName.replaceAll(" ", "")}${attr.seasonType}${attr.seasonYear}`)
+
+        /* Validation: Ensure Regular Teams do not use Service Team Names */
+        if (!request.serviceTeamName) {
+            for (const reservedName of ENABLED_SERVICE_TEAM_NAMES) {
+                if (teamName.toLowerCase().includes(reservedName.toLowerCase())) {
+                    throw new AuthentikClientError(AuthentikClientErrorType.GROUP_DUPLICATE_EXISTS);
+                }
+            }
+        }
 
         /* Define Default Attributes */
         const teamAttributes: TeamAttributeDefinition = {

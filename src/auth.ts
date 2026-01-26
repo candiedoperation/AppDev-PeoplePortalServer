@@ -21,7 +21,7 @@ import { AuthorizedUser, OpenIdClient } from "./clients/OpenIdClient";
 import jwt from "jsonwebtoken"
 import { BindleController } from "./controllers/BindleController";
 import { AuthentikClient } from "./clients/AuthentikClient";
-import { TeamType } from "./clients/AuthentikClient/models";
+import { ENABLED_SERVICE_TEAM_NAMES } from "./utils/services";
 import { ResourceAccessError } from "./utils/errors";
 import { formatBindleAccessError } from "./utils/strings";
 
@@ -146,13 +146,13 @@ export async function executiveAuthVerify(
         const userTeams = await authentikClient.getRootTeamsForUsername(authorizedUser.username);
 
         /* Check if any of the teams are EXECBOARD and NOT Flagged for Deletion */
-        // const isExecutive = userTeams.teams.some(team =>
-        //     team.teamType === TeamType.EXECBOARD &&
-        //     !team.flaggedForDeletion
-        // );
+        const isExecutive = userTeams.teams.some(team =>
+            team.name === "ExecutiveBoard" &&
+            !team.flaggedForDeletion
+        );
 
-        // if (isExecutive)
-        //     return Promise.resolve(true);
+        if (isExecutive)
+            return Promise.resolve(true);
 
     } catch (e) {
         /* Failed to Fetch Root Teams */
@@ -174,7 +174,8 @@ export async function executiveAuthVerify(
  * 
  * **Authorization Override**
  * The Executive Authorization Layer overrides and automatically approves all Bindle Authorization
- * checks thereby, providing superusers and executive administrators full access.
+ * checks thereby, providing superusers and executive administrators full access. However, for
+ * Service Team Bindle Manipulation, we explicitly require the "su:exclusive" scope.
  * 
  * @param request Express Request Object
  * @param scopes Array of Bindles or Dynamic Locator + Bindles
@@ -236,8 +237,12 @@ async function bindlesAuthVerify(request: express.Request, scopes?: string[]): P
         /* 2.75: Executive Authorization Override */
         /* Since team info is populated, we can now check for override */
         try {
-            const isExecutive = await executiveAuthVerify(request, [], true);
-            if (isExecutive) return Promise.resolve(true);
+            /* Service Teams are Restricted to Superusers! */
+            const teamScopes = ENABLED_SERVICE_TEAM_NAMES.has(teamInfo.name) ? ["su:exclusive"] : [];
+            const isExecutive = await executiveAuthVerify(request, teamScopes, true);
+
+            if (isExecutive)
+                return Promise.resolve(true);
         } catch (e) {
             /* Failed Executive Override, Continue */
         }
