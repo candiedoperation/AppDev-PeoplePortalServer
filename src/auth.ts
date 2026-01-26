@@ -146,13 +146,13 @@ export async function executiveAuthVerify(
         const userTeams = await authentikClient.getRootTeamsForUsername(authorizedUser.username);
 
         /* Check if any of the teams are EXECBOARD and NOT Flagged for Deletion */
-        const isExecutive = userTeams.teams.some(team =>
-            team.teamType === TeamType.EXECBOARD &&
-            !team.flaggedForDeletion
-        );
+        // const isExecutive = userTeams.teams.some(team =>
+        //     team.teamType === TeamType.EXECBOARD &&
+        //     !team.flaggedForDeletion
+        // );
 
-        if (isExecutive)
-            return Promise.resolve(true);
+        // if (isExecutive)
+        //     return Promise.resolve(true);
 
     } catch (e) {
         /* Failed to Fetch Root Teams */

@@ -31,6 +31,7 @@ import path from "path";
 import { NativeExpressOIDCAuthPort } from "./auth";
 import { AuthentikClient } from "./clients/AuthentikClient";
 import { CustomValidationError, ResourceAccessError } from "./utils/errors";
+import { OrgController } from "./controllers/OrgController";
 
 if (!process.env.PEOPLEPORTAL_TOKEN_SECRET)
   process.env.PEOPLEPORTAL_TOKEN_SECRET = generateSecureRandomString(16)
@@ -151,6 +152,12 @@ app.listen(PORT, async () => {
   /* Validate Connections */
   await OpenIdClient.init()
   await AuthentikClient.validateAuthentikConnection()
+
+  /* Validate Service Team Creation */
+  const authentikClient = new AuthentikClient()
+  await authentikClient.validateServiceExistance()
+
+  /* Validate Database Connection */
   await mongoose.connect(process.env.PEOPLEPORTAL_MONGO_URL!)
   console.log(`Server running at http://localhost:${PORT}`);
 });

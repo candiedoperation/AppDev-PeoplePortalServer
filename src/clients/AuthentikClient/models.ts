@@ -22,8 +22,7 @@ import { EnabledRootSettings, RootTeamSettingInfo } from "../../controllers/OrgC
 export enum TeamType {
     PROJECT = "PROJECT",
     CORPORATE = "CORPORATE",
-    BOOTCAMP = "BOOTCAMP",
-    EXECBOARD = "EXECBOARD"
+    BOOTCAMP = "BOOTCAMP"
 }
 
 export enum SeasonType {
@@ -31,10 +30,14 @@ export enum SeasonType {
     SPRING = "SPRING"
 }
 
+export enum ServiceSeasonType {
+    ROLLING = "ROLLING"
+}
+
 export interface TeamAttributeDefinition {
     friendlyName: string,
     teamType: TeamType,
-    seasonType: SeasonType,
+    seasonType: SeasonType | ServiceSeasonType,
     seasonYear: number,
     peoplePortalCreation?: boolean,
     flaggedForDeletion?: boolean,
@@ -155,10 +158,11 @@ export interface CreateTeamRequest {
     parent?: string,
     parentName?: string,
     isSuperuser?: boolean,
+    serviceTeamName?: string,
     attributes: {
         friendlyName: string,
         teamType: TeamType,
-        seasonType: SeasonType,
+        seasonType: SeasonType | ServiceSeasonType,
         seasonYear: number,
         description: string
     }
@@ -181,10 +185,76 @@ export interface GetUserListResponse {
     users: UserInformationBrief[]
 }
 
+export enum AuthentikClientErrorType {
+    SERVER_VERSION_MISTMATCH = 100,
+    SERVER_CONNECTION_ERROR = 101,
+    MULTIPLE_RESULTS_RETURNED = 102,
+
+    USERINFO_REQUEST_FAILED = 200,
+    USERLIST_REQUEST_FAILED = 201,
+    USERATTR_UPDATE_FAILED = 202,
+    USER_NOT_FOUND = 203,
+    USER_CREATE_FAILED = 204,
+
+    GROUP_NOT_FOUND = 300,
+    GROUPLIST_REQUEST_FAILED = 302,
+    GROUPINFO_REQUEST_FAILED = 303,
+    GROUPATTR_UPDATE_FAILED = 304,
+    GROUP_ADD_MEMBER_FAILED = 305,
+    GROUP_DEL_MEMBER_FAILED = 306,
+    GROUP_SEASON_NOTPERMITTED = 307,
+    GROUP_DUPLICATE_EXISTS = 308,
+    GROUP_CREATE_FAILED = 309,
+}
+
 export class AuthentikClientError extends Error {
-    constructor(message: string) {
-        super(message)
+    constructor(public readonly code: AuthentikClientErrorType, messageOverride?: string) {
+        super(messageOverride ?? AuthentikClientError.getMessage(code))
         this.name = "AuthentikClientError"
+    }
+
+    private static getMessage(code: AuthentikClientErrorType): string {
+        switch (code) {
+            case AuthentikClientErrorType.SERVER_VERSION_MISTMATCH:
+                return "Authentik Server Version Mistmatch";
+            case AuthentikClientErrorType.SERVER_CONNECTION_ERROR:
+                return "Failed to validate Authentik Connection or Version.";
+            case AuthentikClientErrorType.MULTIPLE_RESULTS_RETURNED:
+                return "Mutiple Results with Same Name Returned!";
+
+            case AuthentikClientErrorType.USERINFO_REQUEST_FAILED:
+                return "Failed to fetch User Information.";
+            case AuthentikClientErrorType.USERLIST_REQUEST_FAILED:
+                return "Failed to fetch User List";
+            case AuthentikClientErrorType.USERATTR_UPDATE_FAILED:
+                return "Failed to update User Attributes";
+            case AuthentikClientErrorType.USER_NOT_FOUND:
+                return "User Not Found";
+            case AuthentikClientErrorType.USER_CREATE_FAILED:
+                return "Failed to Create User";
+
+            case AuthentikClientErrorType.GROUPLIST_REQUEST_FAILED:
+                return "Failed to fetch Group List for User";
+            case AuthentikClientErrorType.GROUP_NOT_FOUND:
+                return "Group Not Found";
+            case AuthentikClientErrorType.GROUPINFO_REQUEST_FAILED:
+                return "Failed to fetch Group Information";
+            case AuthentikClientErrorType.GROUPATTR_UPDATE_FAILED:
+                return "Failed to update Group Attributes";
+            case AuthentikClientErrorType.GROUP_ADD_MEMBER_FAILED:
+                return "Failed to Add Member to Group";
+            case AuthentikClientErrorType.GROUP_DEL_MEMBER_FAILED:
+                return "Failed to Remove Member from Group";
+            case AuthentikClientErrorType.GROUP_SEASON_NOTPERMITTED:
+                return "Season Not Permitted for Regular Teams";
+            case AuthentikClientErrorType.GROUP_DUPLICATE_EXISTS:
+                return "Team with the Same Name Already Exists!";
+            case AuthentikClientErrorType.GROUP_CREATE_FAILED:
+                return "Failed to Create Team";
+
+            default:
+                return "Unknown Error";
+        }
     }
 }
 

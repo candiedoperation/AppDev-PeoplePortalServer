@@ -131,12 +131,17 @@ const models: TsoaRoute.Models = {
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
     "TeamType": {
         "dataType": "refEnum",
-        "enums": ["PROJECT","CORPORATE","BOOTCAMP","EXECBOARD"],
+        "enums": ["PROJECT","CORPORATE","BOOTCAMP"],
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
     "SeasonType": {
         "dataType": "refEnum",
         "enums": ["FALL","SPRING"],
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "ServiceSeasonType": {
+        "dataType": "refEnum",
+        "enums": ["ROLLING"],
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
     "EnabledRootSettings": {
@@ -158,7 +163,7 @@ const models: TsoaRoute.Models = {
         "properties": {
             "friendlyName": {"dataType":"string","required":true},
             "teamType": {"ref":"TeamType","required":true},
-            "seasonType": {"ref":"SeasonType","required":true},
+            "seasonType": {"dataType":"union","subSchemas":[{"ref":"SeasonType"},{"ref":"ServiceSeasonType"}],"required":true},
             "seasonYear": {"dataType":"double","required":true},
             "peoplePortalCreation": {"dataType":"boolean"},
             "flaggedForDeletion": {"dataType":"boolean"},
@@ -257,7 +262,7 @@ const models: TsoaRoute.Models = {
         "properties": {
             "friendlyName": {"dataType":"string","required":true},
             "teamType": {"ref":"TeamType","required":true},
-            "seasonType": {"ref":"SeasonType","required":true},
+            "seasonType": {"dataType":"union","subSchemas":[{"ref":"SeasonType"},{"ref":"ServiceSeasonType"}],"required":true},
             "seasonYear": {"dataType":"double","required":true},
             "peoplePortalCreation": {"dataType":"boolean"},
             "flaggedForDeletion": {"dataType":"boolean"},

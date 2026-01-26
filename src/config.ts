@@ -25,21 +25,22 @@ export interface TeamTypeConfig {
 }
 
 /**
- * This interface helps define the configuration for special teams.
- * Special teams are teams that are unique to the organization and are created
+ * This interface helps define the configuration for service teams.
+ * Service teams are teams that are unique to the organization and are created
  * automatically by People Portal if they don't exist.
  * 
- * Some special teams enable hardcoded internal functionality. For example, the
+ * Some service teams enable hardcoded internal functionality. For example, the
  * ExecutiveBoard team integrates with the Executive Authorization Layer to override
  * all bindles just as how superusers would do.
  * 
- * Adding to and removing members from these special teams have predefined rulesets
+ * Adding to and removing members from these service teams have predefined rulesets
  * that are defined in the code.
  */
-export interface SpecialTeamConfig {
+export interface ServiceTeamConfig {
   friendlyName: string;
   description: string;
   subteams: {
+    uniqueName: string;
     friendlyName: string;
     description: string;
     bindles?: { [key: string]: EnabledBindlePermissions };
@@ -59,6 +60,20 @@ export const ENABLED_TEAMSETTING_RESOURCES: { [key: string]: RootTeamSettingClie
   awsClient: new AWSClient()
 }
 
+/* Define Enabled Service Teams Here */
+export const ENABLED_SERVICE_TEAMS: Record<string, ServiceTeamConfig> = {
+  ExecutiveBoard: {
+    friendlyName: "Executive Board",
+    description: "The President and Other Club Executives",
+    subteams: [{
+      uniqueName: "ExecutiveBoardHistory",
+      friendlyName: "Previous Executives",
+      description: "The Previous Presidents and Club Executives"
+    }]
+  }
+}
+
+/* Define Team Type Templates Here */
 export const TEAM_TYPE_CONFIGS: Partial<Record<TeamType, TeamTypeConfig>> = {
   [TeamType.PROJECT]: {
     defaultSubteams: [
@@ -110,8 +125,4 @@ export const TEAM_TYPE_CONFIGS: Partial<Record<TeamType, TeamTypeConfig>> = {
       }
     ]
   }
-}
-
-export const SPECIAL_TEAMS: Record<string, SpecialTeamConfig> = {
-
 }

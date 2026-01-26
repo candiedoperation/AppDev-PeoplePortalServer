@@ -18,12 +18,12 @@
 
 import * as express from 'express'
 import { Request, Body, Controller, Get, Patch, Path, Post, Queries, Route, SuccessResponse, Put, Security, Delete, Tags } from "tsoa";
-import { AddGroupMemberRequest, GetGroupInfoResponse, GetTeamsListResponse, GetUserListOptions, GetUserListResponse, RemoveGroupMemberRequest, SeasonType, TeamType, UserInformationBrief, GetTeamsForUsernameResponse, AuthentikClientError, CreateUserRequest } from "../clients/AuthentikClient/models";
+import { AddGroupMemberRequest, GetGroupInfoResponse, GetTeamsListResponse, GetUserListOptions, GetUserListResponse, RemoveGroupMemberRequest, SeasonType, TeamType, UserInformationBrief, GetTeamsForUsernameResponse, AuthentikClientError, CreateUserRequest, ServiceSeasonType, AuthentikClientErrorType } from "../clients/AuthentikClient/models";
 import { AuthentikClient } from "../clients/AuthentikClient";
 import { Invite } from "../models/Invites";
 import { EmailClient } from "../clients/EmailClient";
 import { SharedResourceClient } from '../clients';
-import { ENABLED_SHARED_RESOURCES, ENABLED_TEAMSETTING_RESOURCES, TEAM_TYPE_CONFIGS } from '../config';
+import { ENABLED_SHARED_RESOURCES, ENABLED_TEAMSETTING_RESOURCES, ENABLED_SERVICE_TEAMS, TEAM_TYPE_CONFIGS } from '../config';
 import { SlackClient } from '../clients/SlackClient';
 import { AWSClient } from '../clients/AWSClient';
 import { sanitizeUserFullName, validateTeamName } from '../utils/strings';

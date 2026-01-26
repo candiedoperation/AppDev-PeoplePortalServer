@@ -18,10 +18,11 @@
 
 import axios from "axios"
 import log from "loglevel"
-import { AddGroupMemberRequest, AuthentikClientError, AuthentikServerVersion, CreateTeamRequest, CreateUserRequest, GetGroupInfoRequestOptions, GetGroupInfoResponse as GetGroupInfoResponse, GetTeamsListOptions as GetGroupsListOptions, GetTeamsListResponse as GetGroupsListResponse, GetTeamsForUsernameResponse, GetUserListOptions, GetUserListResponse, RemoveGroupMemberRequest, TeamAttributeDefinition, TeamInformationBrief, UserAttributeDefinition, UserInformationBrief, AuthentikFilterCursor } from "./models"
+import { AddGroupMemberRequest, AuthentikClientError, AuthentikServerVersion, CreateTeamRequest, CreateUserRequest, GetGroupInfoRequestOptions, GetGroupInfoResponse as GetGroupInfoResponse, GetTeamsListOptions as GetGroupsListOptions, GetTeamsListResponse as GetGroupsListResponse, GetTeamsForUsernameResponse, GetUserListOptions, GetUserListResponse, RemoveGroupMemberRequest, TeamAttributeDefinition, TeamInformationBrief, UserAttributeDefinition, UserInformationBrief, AuthentikFilterCursor, ServiceSeasonType, AuthentikClientErrorType, TeamType } from "./models"
 import { sanitizeGroupName } from "../../utils/strings"
 import { EnabledRootSettings } from "../../controllers/OrgController"
-import { EnabledBindlePermissions } from "../../controllers/BindleController"
+import { BindleController, EnabledBindlePermissions } from "../../controllers/BindleController"
+import { ENABLED_SERVICE_TEAMS } from "../../config"
 
 export class AuthentikClient {
     private static readonly TAG = "AuthentikClient"
@@ -59,13 +60,95 @@ export class AuthentikClient {
             const res = await axios.request(RequestConfig)
             const version = new AuthentikServerVersion(res.data.version_current);
             if (!version.isAtLeast(AuthentikClient.MIN_SERVER_VERSION) || !version.isAtMost(AuthentikClient.MAX_SERVER_VERSION))
-                throw new AuthentikClientError(`Authentik Server Version ${version} is not compatible with People Portal. Please ensure the server is greater than ${AuthentikClient.MIN_SERVER_VERSION} and less than ${AuthentikClient.MAX_SERVER_VERSION}`);
+                throw new AuthentikClientError(
+                    AuthentikClientErrorType.SERVER_VERSION_MISTMATCH,
+                    `Authentik Server Version ${version} is not compatible with People Portal. Please ensure the server is greater than ${AuthentikClient.MIN_SERVER_VERSION} and less than ${AuthentikClient.MAX_SERVER_VERSION}`
+                );
 
             /* Log Authentik Connection */
             log.info(AuthentikClient.TAG, `Connection Validated to Authentik v${version}`);
         } catch (e) {
             log.error(AuthentikClient.TAG, "Authentik Connection Validation Failed: ", e);
-            throw new AuthentikClientError("Critical: Failed to validate Authentik Connection or Version.");
+            throw new AuthentikClientError(AuthentikClientErrorType.SERVER_CONNECTION_ERROR);
+        }
+    }
+
+    public validateServiceExistance = async () => {
+        log.info(AuthentikClient.TAG, "Validating Service Teams");
+        for (const rootTeamName in ENABLED_SERVICE_TEAMS) {
+            let rootTeamPk = "";
+            const rootTeamConfig = ENABLED_SERVICE_TEAMS[rootTeamName]!;
+
+            /* 1. Ensure Root Team Exists */
+            try {
+                const rootServiceTeam = await this.createNewTeam({
+                    serviceTeamName: rootTeamName,
+                    attributes: {
+                        friendlyName: rootTeamConfig.friendlyName,
+                        teamType: TeamType.CORPORATE,
+                        seasonType: ServiceSeasonType.ROLLING,
+                        seasonYear: new Date().getFullYear(),
+                        description: rootTeamConfig.description
+                    }
+                })
+
+                /* Set Root Team PK */
+                rootTeamPk = rootServiceTeam.pk;
+            } catch (e) {
+                /* If Duplicate Group Exists, Fetch the Existing Group */
+                if (e instanceof AuthentikClientError && e.code == AuthentikClientErrorType.GROUP_DUPLICATE_EXISTS) {
+                    try {
+                        rootTeamPk = await this.getGroupPkFromName(rootTeamName);
+                    } catch (fetchError) {
+                        console.error(`Failed to fetch existing service team ${rootTeamName}`, fetchError);
+                        continue;
+                    }
+                } else {
+                    console.error(`Failed to create service team ${rootTeamName}`, e);
+                    continue;
+                }
+            }
+
+            /* 2. Process Subteams */
+            for (const subTeam of rootTeamConfig.subteams) {
+                let subTeamPk = "";
+
+                try {
+                    const createdSubTeam = await this.createNewTeam({
+                        parent: rootTeamPk,
+                        parentName: rootTeamName,
+                        serviceTeamName: subTeam.uniqueName,
+                        attributes: {
+                            friendlyName: subTeam.friendlyName,
+                            teamType: TeamType.CORPORATE,
+                            seasonType: ServiceSeasonType.ROLLING,
+                            seasonYear: new Date().getFullYear(),
+                            description: subTeam.description
+                        }
+                    })
+                    subTeamPk = createdSubTeam.pk;
+                } catch (e) {
+                    if (e instanceof AuthentikClientError && e.code == AuthentikClientErrorType.GROUP_DUPLICATE_EXISTS) {
+                        try {
+                            subTeamPk = await this.getGroupPkFromName(subTeam.uniqueName);
+                        } catch (fetchError) {
+                            console.error(`Failed to fetch existing subteam ${subTeam.uniqueName}`, fetchError);
+                            continue;
+                        }
+                    } else {
+                        console.error(`Failed to create subteam ${subTeam.uniqueName}`, e);
+                        continue;
+                    }
+                }
+
+                /* 3. Apply Bindles */
+                if (subTeam.bindles && subTeamPk) {
+                    await this.updateBindlePermissions(
+                        subTeamPk,
+                        BindleController.sanitizeBindlePermissions(subTeam.bindles)
+                    );
+                }
+            }
         }
     }
 
@@ -93,7 +176,7 @@ export class AuthentikClient {
             };
         } catch (e) {
             log.error(AuthentikClient.TAG, "User Info Request Failed with Error: ", e)
-            throw new AuthentikClientError("User Info Request Failed")
+            throw new AuthentikClientError(AuthentikClientErrorType.USERINFO_REQUEST_FAILED)
         }
     }
 
@@ -134,7 +217,7 @@ export class AuthentikClient {
             };
         } catch (e) {
             log.error(AuthentikClient.TAG, "Get User List Request Failed with Error: ", e)
-            throw new AuthentikClientError("Get User Request Failed")
+            throw new AuthentikClientError(AuthentikClientErrorType.USERLIST_REQUEST_FAILED)
         }
     }
 
@@ -194,7 +277,7 @@ export class AuthentikClient {
             };
         } catch (e) {
             log.error(AuthentikClient.TAG, "Get Group List for User Request Failed with Error: ", e)
-            throw new AuthentikClientError("Get Group List for User Request Failed")
+            throw new AuthentikClientError(AuthentikClientErrorType.GROUPLIST_REQUEST_FAILED)
         }
     }
 
@@ -310,7 +393,7 @@ export class AuthentikClient {
 
         } catch (e) {
             log.error(AuthentikClient.TAG, "Get Teams List Request Failed with Error: ", e)
-            throw new AuthentikClientError("Get Team Request Failed")
+            throw new AuthentikClientError(AuthentikClientErrorType.GROUPLIST_REQUEST_FAILED)
         }
     }
 
@@ -334,10 +417,10 @@ export class AuthentikClient {
             const exactMatches = teams.filter((t: any) => t.name === teamName)
 
             if (exactMatches.length < 1)
-                throw new AuthentikClientError("Team Not Found!")
+                throw new AuthentikClientError(AuthentikClientErrorType.GROUP_NOT_FOUND)
 
             if (exactMatches.length > 1)
-                throw new AuthentikClientError("Multiple Exact Matches Found!")
+                throw new AuthentikClientError(AuthentikClientErrorType.MULTIPLE_RESULTS_RETURNED)
 
             const team = exactMatches[0]
             return team.pk
@@ -389,7 +472,7 @@ export class AuthentikClient {
             }
         } catch (e) {
             log.error(AuthentikClient.TAG, "Get Teams List Request Failed with Error: ", e)
-            throw new AuthentikClientError("Get Team Request Failed")
+            throw new AuthentikClientError(AuthentikClientErrorType.GROUPINFO_REQUEST_FAILED)
         }
     }
 
@@ -420,8 +503,8 @@ export class AuthentikClient {
             await axios.request(RequestConfig)
             return true
         } catch (e) {
-            log.error(AuthentikClient.TAG, "Update Group AttributesFailed with Error: ", e)
-            throw new AuthentikClientError("Update Group Attributes Failed")
+            log.error(AuthentikClient.TAG, "Update Group Attributes Failed with Error: ", e)
+            throw new AuthentikClientError(AuthentikClientErrorType.GROUPATTR_UPDATE_FAILED)
         }
     }
 
@@ -523,7 +606,7 @@ export class AuthentikClient {
             return true
         } catch (e) {
             log.error(AuthentikClient.TAG, "Update User Attributes Failed with Error: ", e)
-            throw new AuthentikClientError("Update User Attributes Failed")
+            throw new AuthentikClientError(AuthentikClientErrorType.USERATTR_UPDATE_FAILED)
         }
     }
 
@@ -540,7 +623,7 @@ export class AuthentikClient {
             return true
         } catch (e) {
             log.error(AuthentikClient.TAG, "Add Team Member Request Failed with Error: ", e)
-            throw new AuthentikClientError("Add Team Member Request Failed")
+            throw new AuthentikClientError(AuthentikClientErrorType.GROUP_ADD_MEMBER_FAILED)
         }
     }
 
@@ -557,7 +640,7 @@ export class AuthentikClient {
             return true
         } catch (e) {
             log.error(AuthentikClient.TAG, "Remove Team Member Request Failed with Error: ", e)
-            throw new AuthentikClientError("Remove Team Member Request Failed")
+            throw new AuthentikClientError(AuthentikClientErrorType.GROUP_DEL_MEMBER_FAILED)
         }
     }
 
@@ -574,7 +657,7 @@ export class AuthentikClient {
             return true
         } catch (e) {
             log.error(AuthentikClient.TAG, "Remove All Team Members Request Failed with Error: ", e)
-            throw new AuthentikClientError("Remove All Team Members Request Failed")
+            throw new AuthentikClientError(AuthentikClientErrorType.GROUP_DEL_MEMBER_FAILED)
         }
     }
 
@@ -597,10 +680,10 @@ export class AuthentikClient {
             const exactMatches = users.filter((u: any) => u.email === email)
 
             if (exactMatches.length < 1)
-                throw new AuthentikClientError("User Not Found!")
+                throw new AuthentikClientError(AuthentikClientErrorType.USER_NOT_FOUND)
 
             if (exactMatches.length > 1)
-                throw new AuthentikClientError("Multiple Exact Matches Found!")
+                throw new AuthentikClientError(AuthentikClientErrorType.MULTIPLE_RESULTS_RETURNED)
 
             const user = exactMatches[0]
             return {
@@ -615,7 +698,7 @@ export class AuthentikClient {
             }
         } catch (e) {
             log.error(AuthentikClient.TAG, "Get User PK Request Failed with Error: ", e)
-            throw new AuthentikClientError("Get User PK Request Failed")
+            throw new AuthentikClientError(AuthentikClientErrorType.USERINFO_REQUEST_FAILED)
         }
     }
 
@@ -659,16 +742,38 @@ export class AuthentikClient {
             return true
         } catch (e) {
             log.error(AuthentikClient.TAG, "Create New User Failed with Error: ", e)
-            throw new AuthentikClientError("Create New User Failed")
+            throw new AuthentikClientError(AuthentikClientErrorType.USER_CREATE_FAILED)
         }
     }
 
+    /**
+     * Creates a New Team in the Authentik database and sets default People Portal
+     * creation attributes.
+     * 
+     * This method supports providing a parent to assist in the creation of subteams
+     * within an existing team.
+     * 
+     * Additionally, this method supports creating service teams using the Service Team Name
+     * parameter to create a service team with the specified name.
+     * 
+     * @param request Create Team Request
+     * @returns Newly Created Team
+     */
     public createNewTeam = async (request: CreateTeamRequest): Promise<GetGroupInfoResponse> => {
         if (request.parent && !request.parentName)
             throw new Error("Creating a SubTeam needs a Parent Name!")
 
+        /* Validation: Service Season Types are restricted to Service Teams */
+        if (!request.serviceTeamName && (Object.values(ServiceSeasonType) as string[]).includes(request.attributes.seasonType)) {
+            throw new AuthentikClientError(AuthentikClientErrorType.GROUP_SEASON_NOTPERMITTED);
+        }
+
         const attr = request.attributes
-        const teamName = sanitizeGroupName(`${attr.friendlyName.replaceAll(" ", "")}${attr.seasonType}${attr.seasonYear}`)
+        const teamName = request.serviceTeamName ?
+            request.serviceTeamName :
+            sanitizeGroupName(`${attr.friendlyName.replaceAll(" ", "")}${attr.seasonType}${attr.seasonYear}`)
+
+        /* Define Default Attributes */
         const teamAttributes: TeamAttributeDefinition = {
             ...request.attributes,
             peoplePortalCreation: true,  /* Helps Identify People Portal Managed Entires! */
@@ -688,7 +793,7 @@ export class AuthentikClient {
         }
 
         if (teamExists)
-            throw new AuthentikClientError("Team with the Same Name Already Exists!")
+            throw new AuthentikClientError(AuthentikClientErrorType.GROUP_DUPLICATE_EXISTS)
 
         var RequestConfig: any = {
             ...this.AxiosBaseConfig,
@@ -696,7 +801,7 @@ export class AuthentikClient {
             url: '/api/v3/core/groups/',
             data: {
                 is_superuser: false,
-                name: (request.parent) ? `${sanitizeGroupName(request.parentName!)}${teamName}` : teamName,
+                name: (request.parent && !request.serviceTeamName) ? `${sanitizeGroupName(request.parentName!)}${teamName}` : teamName,
                 parents: request.parent ? [request.parent] : [], /* Patched for Authentik v2025.12+ */
                 attributes: teamAttributes
             }
@@ -722,7 +827,7 @@ export class AuthentikClient {
             }
         } catch (e) {
             log.error(AuthentikClient.TAG, "Create Team Request Failed with Error: ", e)
-            throw new AuthentikClientError("Create Team Request Failed")
+            throw new AuthentikClientError(AuthentikClientErrorType.GROUP_CREATE_FAILED)
         }
     }
 }
