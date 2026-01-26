@@ -2,7 +2,7 @@ import { Body, Request, Controller, Delete, Get, Path, Post, Put, Route, Success
 import { SubteamConfig, ISubteamConfig } from "../models/SubteamConfig";
 import { TeamRecruitingStatus, ITeamRecruitingStatus } from "../models/TeamRecruitingStatus";
 import { AuthentikClient } from "../clients/AuthentikClient";
-import { GetGroupInfoResponse, UserInformationBrief } from "../clients/AuthentikClient/models";
+import { GetGroupInfoResponse, UserInformationBrief, AuthentikClientError, AuthentikClientErrorType } from "../clients/AuthentikClient/models";
 import { Applicant, IApplicant, ApplicantProfile } from '../models/Applicant';
 import { Application, IApplication, ApplicationStage } from "../models/Application";
 import { Security } from "tsoa";
@@ -351,45 +351,57 @@ export class ATSController extends Controller {
         const configMap = new Map(allConfigs.map((c: any) => [c.subteamPk, c]));
 
         /* Populate Team and Subteam Info */
+        const validRecruitingTeams: any[] = [];
         for (const team of recruitingTeams) {
-            const recruitingSubteams = new Set(team.recruitingSubteamPks)
-            const authentikTeamInfo = await this.authentikClient.getGroupInfo(team.teamPk);
+            try {
+                const recruitingSubteams = new Set(team.recruitingSubteamPks)
+                const authentikTeamInfo = await this.authentikClient.getGroupInfo(team.teamPk);
 
-            const parentInfoObj = {
-                name: authentikTeamInfo.name,
-                friendlyName: authentikTeamInfo.attributes.friendlyName,
-                description: authentikTeamInfo.attributes.description,
-                seasonText: `${authentikTeamInfo.attributes.seasonType} ${authentikTeamInfo.attributes.seasonYear}`,
-                pk: authentikTeamInfo.pk
-            };
+                const parentInfoObj = {
+                    name: authentikTeamInfo.name,
+                    friendlyName: authentikTeamInfo.attributes.friendlyName,
+                    description: authentikTeamInfo.attributes.description,
+                    seasonText: `${authentikTeamInfo.attributes.seasonType} ${authentikTeamInfo.attributes.seasonYear}`,
+                    pk: authentikTeamInfo.pk
+                };
 
-            team.teamInfo = parentInfoObj;
-            team.subteamInfo = {};
-            for (const sub of authentikTeamInfo.subteams) {
-                if (recruitingSubteams.has(sub.pk)) {
-                    const config = configMap.get(sub.pk);
+                team.teamInfo = parentInfoObj;
+                team.subteamInfo = {};
+                for (const sub of authentikTeamInfo.subteams) {
+                    if (recruitingSubteams.has(sub.pk)) {
+                        const config = configMap.get(sub.pk);
 
-                    const subteamInfoObj = {
-                        name: sub.name,
-                        friendlyName: sub.attributes.friendlyName,
-                        description: sub.attributes.description,
-                        seasonText: `${sub.attributes.seasonType} ${sub.attributes.seasonYear}`,
-                        pk: sub.pk
-                    };
+                        const subteamInfoObj = {
+                            name: sub.name,
+                            friendlyName: sub.attributes.friendlyName,
+                            description: sub.attributes.description,
+                            seasonText: `${sub.attributes.seasonType} ${sub.attributes.seasonYear}`,
+                            pk: sub.pk
+                        };
 
-                    team.subteamInfo[sub.pk] = {
-                        ...subteamInfoObj,
-                        recruitmentInfo: config ? {
-                            ...config,
-                            subteamInfo: subteamInfoObj,
-                            parentInfo: parentInfoObj
-                        } : null,
-                    };
+                        team.subteamInfo[sub.pk] = {
+                            ...subteamInfoObj,
+                            recruitmentInfo: config ? {
+                                ...config,
+                                subteamInfo: subteamInfoObj,
+                                parentInfo: parentInfoObj
+                            } : null,
+                        };
+                    }
+                }
+
+                validRecruitingTeams.push(team);
+            } catch (e) {
+                if (e instanceof AuthentikClientError && e.code === AuthentikClientErrorType.GROUP_NOT_FOUND) {
+                    console.warn(`Recruiting Team with PK ${team.teamPk} not found in Authentik. Cleaning up.`);
+                    await TeamRecruitingStatus.deleteOne({ teamPk: team.teamPk }).exec();
+                } else {
+                    throw e;
                 }
             }
         }
 
-        return recruitingTeams;
+        return validRecruitingTeams;
     }
 
     /**
@@ -470,7 +482,14 @@ export class ATSController extends Controller {
             };
 
         } catch (err) {
-            console.error("Error fetching team details:", err);
+            if (err instanceof AuthentikClientError && err.code === AuthentikClientErrorType.GROUP_NOT_FOUND) {
+                this.setStatus(404);
+                return {
+                    error: "TeamNotFound",
+                    message: "The requested team could not be found."
+                };
+            }
+
             this.setStatus(500);
             return {
                 error: "ServerError",

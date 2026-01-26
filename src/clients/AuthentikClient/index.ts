@@ -473,6 +473,10 @@ export class AuthentikClient {
             }
         } catch (e) {
             log.error(AuthentikClient.TAG, "Get Teams List Request Failed with Error: ", e)
+            if (axios.isAxiosError(e) && e.response?.status === 404)
+                throw new AuthentikClientError(AuthentikClientErrorType.GROUP_NOT_FOUND)
+
+            /* We Just Know that the Request Failed! */
             throw new AuthentikClientError(AuthentikClientErrorType.GROUPINFO_REQUEST_FAILED)
         }
     }
