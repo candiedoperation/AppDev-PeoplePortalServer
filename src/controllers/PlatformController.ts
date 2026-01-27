@@ -19,6 +19,7 @@
 import { Controller, Get, Route, Tags, SuccessResponse, Security } from "tsoa";
 import fs from 'fs';
 import path from 'path';
+import { getGPLv3License } from "../utils/strings";
 
 interface PlatformLicenseResponse {
     licenseText: string;
@@ -36,18 +37,6 @@ export class PlatformController extends Controller {
     @SuccessResponse(200)
     @Security("oidc")
     public async getPlatformLicense(): Promise<PlatformLicenseResponse> {
-        // Read LICENSE file
-        const licensePath = path.join(process.cwd(), 'LICENSE');
-        let licenseText = "License file not found.";
-        try {
-            if (fs.existsSync(licensePath)) {
-                licenseText = fs.readFileSync(licensePath, 'utf-8');
-            }
-        } catch (e) {
-            console.error("Failed to read LICENSE file", e);
-        }
-
-        // Read package.json for dependencies
         const packageJsonPath = path.join(process.cwd(), 'package.json');
         let dependencies: { name: string; version: string }[] = [];
         try {
@@ -65,7 +54,7 @@ export class PlatformController extends Controller {
         }
 
         return {
-            licenseText,
+            licenseText: getGPLv3License(),
             dependencies
         };
     }
