@@ -1,6 +1,6 @@
 /**
-  App Dev Club People Portal Server
-  Copyright (C) 2025  Atheesh Thirumalairajan
+  People Portal Server
+  Copyright (C) 2026  Atheesh Thirumalairajan
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -31,7 +31,7 @@ class GiteaClientResourceNotExists extends Error {
 }
 
 interface GiteaOrgCreateRequest {
-    grpSharedResourceId: string, 
+    grpSharedResourceId: string,
     displayName: string,
     orgWebsite: string
 }
@@ -131,17 +131,17 @@ export class GiteaClient implements SharedResourceClient {
                 .then(() => callback(1, "Git Permissions Updated for " + username))
                 .catch(() => callback(1, "Permission Update Failed for " + username))
         }
-        
-        for (const username of deletions) { 
-            this.removeTeamMember(teamInfoBrief.id, username) 
-                .then(() => callback(1, "Git Permissions Updated for " + username) )
+
+        for (const username of deletions) {
+            this.removeTeamMember(teamInfoBrief.id, username)
+                .then(() => callback(1, "Git Permissions Updated for " + username))
                 .catch(() => callback(1, "Permission Update Failed for " + username))
         }
 
         /* Increased Processed Count for Existing Elements */
         const existingCount = finalStateUsernames.length - additions.length
         callback(existingCount, "Git Permissions Updated for " + teamInfoBrief.name)
-        
+
         /* Recurse Sub Teams */
         for (const subteam of team.subteams ?? []) {
             await this.handleTeamBindleSync(subteam, orgId, callback)
@@ -161,7 +161,7 @@ export class GiteaClient implements SharedResourceClient {
         /* Excecute Request */
         await axios.request(RequestConfig)
     }
-    
+
     private async removeTeamMember(teamId: number, username: string) {
         var RequestConfig: any = {
             ...this.GiteaBaseConfig,
