@@ -1,5 +1,5 @@
 /**
-  People Portal UI
+  People Portal Server
   Copyright (C) 2026  Atheesh Thirumalairajan
 
   This program is free software: you can redistribute it and/or modify
