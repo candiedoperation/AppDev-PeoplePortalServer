@@ -22,7 +22,8 @@ import { EnabledRootSettings, RootTeamSettingInfo } from "../../controllers/OrgC
 export enum TeamType {
     PROJECT = "PROJECT",
     CORPORATE = "CORPORATE",
-    BOOTCAMP = "BOOTCAMP"
+    BOOTCAMP = "BOOTCAMP",
+    SERVICE = "SERVICE"
 }
 
 export enum SeasonType {

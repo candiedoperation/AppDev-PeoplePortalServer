@@ -86,7 +86,7 @@ export class AuthentikClient {
                     serviceTeamName: rootTeamName,
                     attributes: {
                         friendlyName: rootTeamConfig.friendlyName,
-                        teamType: TeamType.CORPORATE,
+                        teamType: TeamType.SERVICE,
                         seasonType: ServiceSeasonType.ROLLING,
                         seasonYear: new Date().getFullYear(),
                         description: rootTeamConfig.description

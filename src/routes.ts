@@ -131,7 +131,7 @@ const models: TsoaRoute.Models = {
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
     "TeamType": {
         "dataType": "refEnum",
-        "enums": ["PROJECT","CORPORATE","BOOTCAMP"],
+        "enums": ["PROJECT","CORPORATE","BOOTCAMP","SERVICE"],
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
     "SeasonType": {
@@ -194,6 +194,37 @@ const models: TsoaRoute.Models = {
             "includeUsers": {"dataType":"boolean"},
             "limit": {"dataType":"double","default":20},
             "cursor": {"dataType":"string"},
+        },
+        "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "OrgChartNode": {
+        "dataType": "refObject",
+        "properties": {
+            "id": {"dataType":"string","required":true},
+            "name": {"dataType":"string","required":true},
+            "type": {"dataType":"union","subSchemas":[{"dataType":"enum","enums":["ROOT_MEMBER"]},{"dataType":"enum","enums":["DIVISION"]},{"dataType":"enum","enums":["PERSON"]}],"required":true},
+            "attributes": {"dataType":"nestedObjectLiteral","nestedProperties":{"teamContext":{"dataType":"array","array":{"dataType":"string"}},"email":{"dataType":"string"},"role":{"dataType":"string"},"description":{"dataType":"string"},"friendlyName":{"dataType":"string"}},"additionalProperties":{"dataType":"any"}},
+            "children": {"dataType":"array","array":{"dataType":"refObject","ref":"OrgChartNode"}},
+            "siblings": {"dataType":"array","array":{"dataType":"refObject","ref":"OrgChartNode"}},
+            "isPrimaryExpansion": {"dataType":"boolean"},
+            "hasChildren": {"dataType":"boolean"},
+        },
+        "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "APIGetOrgChartResponse": {
+        "dataType": "refObject",
+        "properties": {
+            "root": {"ref":"OrgChartNode","required":true},
+        },
+        "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "APIGetOrgChartOptions": {
+        "dataType": "refObject",
+        "properties": {
+            "expandAll": {"dataType":"boolean","default":true},
         },
         "additionalProperties": false,
     },
@@ -667,6 +698,67 @@ export function RegisterRoutes(app: Router) {
 
               await templateService.apiHandler({
                 methodName: 'getTeams',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsOrgController_getOrgChart: Record<string, TsoaRoute.ParameterSchema> = {
+                options: {"in":"queries","name":"options","ref":"APIGetOrgChartOptions"},
+        };
+        app.get('/api/org/orgchart',
+            authenticateMiddleware([{"oidc":[]}]),
+            ...(fetchMiddlewares<RequestHandler>(OrgController)),
+            ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.getOrgChart)),
+
+            async function OrgController_getOrgChart(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsOrgController_getOrgChart, request, response });
+
+                const controller = new OrgController();
+
+              await templateService.apiHandler({
+                methodName: 'getOrgChart',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsOrgController_getOrgChartNode: Record<string, TsoaRoute.ParameterSchema> = {
+                teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
+        };
+        app.get('/api/org/orgchart/node/:teamId',
+            ...(fetchMiddlewares<RequestHandler>(OrgController)),
+            ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.getOrgChartNode)),
+
+            async function OrgController_getOrgChartNode(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsOrgController_getOrgChartNode, request, response });
+
+                const controller = new OrgController();
+
+              await templateService.apiHandler({
+                methodName: 'getOrgChartNode',
                 controller,
                 response,
                 next,
