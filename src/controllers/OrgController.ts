@@ -17,7 +17,7 @@
 */
 
 import * as express from 'express'
-import { Request, Body, Controller, Get, Patch, Path, Post, Queries, Route, SuccessResponse, Put, Security, Delete, Tags } from "tsoa";
+import { Request, Body, Controller, Get, Patch, Path, Post, Queries, Route, SuccessResponse, Put, Security, Delete, Tags, Query } from "tsoa";
 import { AddGroupMemberRequest, GetGroupInfoResponse, GetTeamsListResponse, GetUserListOptions, GetUserListResponse, RemoveGroupMemberRequest, SeasonType, TeamType, UserInformationBrief, GetTeamsForUsernameResponse, AuthentikClientError, CreateUserRequest, ServiceSeasonType, AuthentikClientErrorType } from "../clients/AuthentikClient/models";
 import { AuthentikClient } from "../clients/AuthentikClient";
 import { Invite } from "../models/Invites";
@@ -222,6 +222,28 @@ export class OrgController extends Controller {
         return {
             ...authentikUserInfo
         }
+    }
+
+    /**
+     * Fetches the list of all People Portal teams in the organization that
+     * the user is a member of. Uses the username query parameter for user
+     * information. **List size is capped to 1000.**
+     * 
+     * **Code Duplication Warning:**
+     * This API is the same as `/api/org/myteams` except that the latter uses
+     * the session cookie to obtain the username. The latter API is still
+     * kept and will not be deprecated considering breaking changes.
+     * 
+     * @param req Express Request Object
+     * @param username People Portal Username
+     * @returns Teams user is a member of
+     */
+    @Get("people/{username}/memberof")
+    @Tags("Team Management")
+    @SuccessResponse(200)
+    @Security("oidc")
+    async getUserRootTeams(@Request() req: express.Request, @Path() username: string): Promise<GetTeamsForUsernameResponse> {
+        return await this.authentikClient.getRootTeamsForUsername(username)
     }
 
     /**

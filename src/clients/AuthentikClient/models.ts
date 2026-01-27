@@ -56,6 +56,7 @@ export interface TeamAttributeDefinition {
 
 export interface UserAttributeDefinition {
     peoplePortalCreation?: boolean,
+    alumniAccount: boolean,
     major: string,
     expectedGrad: Date,
     phoneNumber: string,
@@ -178,7 +179,19 @@ export interface UserInformationBrief {
     memberSince: Date,
     active: boolean,
     attributes: UserAttributeDefinition,
-    is_superuser: boolean
+    is_superuser: boolean,
+    avatar: string,
+}
+
+export interface UserInformationDetail extends UserInformationBrief {
+    groups: string[],
+    last_login: Date,
+    type: string,
+    groupsInfo: {
+        name: string,
+        pk: string,
+        attributes: TeamAttributeDefinition
+    }[],
 }
 
 export interface GetUserListResponse {

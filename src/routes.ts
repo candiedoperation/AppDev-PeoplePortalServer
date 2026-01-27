@@ -68,6 +68,7 @@ const models: TsoaRoute.Models = {
         "dataType": "refObject",
         "properties": {
             "peoplePortalCreation": {"dataType":"boolean"},
+            "alumniAccount": {"dataType":"boolean","required":true},
             "major": {"dataType":"string","required":true},
             "expectedGrad": {"dataType":"datetime","required":true},
             "phoneNumber": {"dataType":"string","required":true},
@@ -87,6 +88,7 @@ const models: TsoaRoute.Models = {
             "active": {"dataType":"boolean","required":true},
             "attributes": {"ref":"UserAttributeDefinition","required":true},
             "is_superuser": {"dataType":"boolean","required":true},
+            "avatar": {"dataType":"string","required":true},
         },
         "additionalProperties": false,
     },
@@ -120,24 +122,9 @@ const models: TsoaRoute.Models = {
             "active": {"dataType":"boolean","required":true},
             "attributes": {"ref":"UserAttributeDefinition","required":true},
             "is_superuser": {"dataType":"boolean","required":true},
+            "avatar": {"dataType":"string","required":true},
         },
         "additionalProperties": false,
-    },
-    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-    "RootTeamSettingInfo": {
-        "dataType": "refObject",
-        "properties": {
-            "friendlyName": {"dataType":"string","required":true},
-            "description": {"dataType":"string","required":true},
-        },
-        "additionalProperties": false,
-    },
-    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-    "RootTeamSettingMap": {
-        "dataType": "refObject",
-        "properties": {
-        },
-        "additionalProperties": {"ref":"RootTeamSettingInfo"},
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
     "TeamType": {
@@ -188,6 +175,30 @@ const models: TsoaRoute.Models = {
         "additionalProperties": false,
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "GetTeamsForUsernameResponse": {
+        "dataType": "refObject",
+        "properties": {
+            "teams": {"dataType":"array","array":{"dataType":"refObject","ref":"TeamInformationBrief"},"required":true},
+        },
+        "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "RootTeamSettingInfo": {
+        "dataType": "refObject",
+        "properties": {
+            "friendlyName": {"dataType":"string","required":true},
+            "description": {"dataType":"string","required":true},
+        },
+        "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "RootTeamSettingMap": {
+        "dataType": "refObject",
+        "properties": {
+        },
+        "additionalProperties": {"ref":"RootTeamSettingInfo"},
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
     "GetTeamsListResponse": {
         "dataType": "refObject",
         "properties": {
@@ -236,14 +247,6 @@ const models: TsoaRoute.Models = {
         "dataType": "refObject",
         "properties": {
             "expandAll": {"dataType":"boolean","default":true},
-        },
-        "additionalProperties": false,
-    },
-    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-    "GetTeamsForUsernameResponse": {
-        "dataType": "refObject",
-        "properties": {
-            "teams": {"dataType":"array","array":{"dataType":"refObject","ref":"TeamInformationBrief"},"required":true},
         },
         "additionalProperties": false,
     },
@@ -678,6 +681,38 @@ export function RegisterRoutes(app: Router) {
 
               await templateService.apiHandler({
                 methodName: 'getPersonInfo',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsOrgController_getUserRootTeams: Record<string, TsoaRoute.ParameterSchema> = {
+                req: {"in":"request","name":"req","required":true,"dataType":"object"},
+                username: {"in":"path","name":"username","required":true,"dataType":"string"},
+        };
+        app.get('/api/org/people/:username/memberof',
+            authenticateMiddleware([{"oidc":[]}]),
+            ...(fetchMiddlewares<RequestHandler>(OrgController)),
+            ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.getUserRootTeams)),
+
+            async function OrgController_getUserRootTeams(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsOrgController_getUserRootTeams, request, response });
+
+                const controller = new OrgController();
+
+              await templateService.apiHandler({
+                methodName: 'getUserRootTeams',
                 controller,
                 response,
                 next,

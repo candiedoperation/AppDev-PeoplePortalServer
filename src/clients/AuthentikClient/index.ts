@@ -18,7 +18,7 @@
 
 import axios from "axios"
 import log from "loglevel"
-import { AddGroupMemberRequest, AuthentikClientError, AuthentikServerVersion, CreateTeamRequest, CreateUserRequest, GetGroupInfoRequestOptions, GetGroupInfoResponse as GetGroupInfoResponse, GetTeamsListOptions as GetGroupsListOptions, GetTeamsListResponse as GetGroupsListResponse, GetTeamsForUsernameResponse, GetUserListOptions, GetUserListResponse, RemoveGroupMemberRequest, TeamAttributeDefinition, TeamInformationBrief, UserAttributeDefinition, UserInformationBrief, AuthentikFilterCursor, ServiceSeasonType, AuthentikClientErrorType, TeamType } from "./models"
+import { AddGroupMemberRequest, AuthentikClientError, AuthentikServerVersion, CreateTeamRequest, CreateUserRequest, GetGroupInfoRequestOptions, GetGroupInfoResponse as GetGroupInfoResponse, GetTeamsListOptions as GetGroupsListOptions, GetTeamsListResponse as GetGroupsListResponse, GetTeamsForUsernameResponse, GetUserListOptions, GetUserListResponse, RemoveGroupMemberRequest, TeamAttributeDefinition, TeamInformationBrief, UserAttributeDefinition, UserInformationBrief, AuthentikFilterCursor, ServiceSeasonType, AuthentikClientErrorType, TeamType, UserInformationDetail } from "./models"
 import { sanitizeGroupName } from "../../utils/strings"
 import { EnabledRootSettings } from "../../controllers/OrgController"
 import { BindleController, EnabledBindlePermissions } from "../../controllers/BindleController"
@@ -153,7 +153,7 @@ export class AuthentikClient {
         }
     }
 
-    public getUserInfo = async (userId: number): Promise<UserInformationBrief> => {
+    public getUserInfo = async (userId: number): Promise<UserInformationDetail> => {
         var RequestConfig: any = {
             ...this.AxiosBaseConfig,
             method: 'get',
@@ -174,6 +174,11 @@ export class AuthentikClient {
                 active: res.data.is_active,
                 attributes: res.data.attributes,
                 is_superuser: res.data.is_superuser,
+                last_login: res.data.last_login,
+                groups: res.data.groups,
+                type: res.data.type,
+                groupsInfo: res.data.groups_obj,
+                avatar: res.data.avatar,
             };
         } catch (e) {
             log.error(AuthentikClient.TAG, "User Info Request Failed with Error: ", e)
@@ -700,6 +705,7 @@ export class AuthentikClient {
                 active: user.is_active,
                 attributes: user.attributes,
                 is_superuser: user.is_superuser,
+                avatar: user.avatar,
             }
         } catch (e) {
             log.error(AuthentikClient.TAG, "Get User PK Request Failed with Error: ", e)
