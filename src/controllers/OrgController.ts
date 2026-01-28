@@ -17,6 +17,7 @@
 */
 
 import * as express from 'express'
+import path from 'path';
 import { Request, Body, Controller, Get, Patch, Path, Post, Queries, Route, SuccessResponse, Put, Security, Delete, Tags, Query } from "tsoa";
 import { AddGroupMemberRequest, GetGroupInfoResponse, GetTeamsListResponse, GetUserListOptions, GetUserListResponse, RemoveGroupMemberRequest, SeasonType, TeamType, UserInformationBrief, GetTeamsForUsernameResponse, AuthentikClientError, CreateUserRequest, ServiceSeasonType, AuthentikClientErrorType } from "../clients/AuthentikClient/models";
 import { AuthentikClient } from "../clients/AuthentikClient";
@@ -37,6 +38,7 @@ import { executiveAuthVerify } from '../auth';
 import { TeamCreationRequest, TeamCreationRequestStatus, ITeamCreationRequest } from '../models/TeamCreationRequest';
 import { CustomValidationError } from '../utils/errors';
 import { ExpressRequestBindleExtension } from '../types/express';
+import { validateS3FileSignature, FILE_SIGNATURES } from '../utils/s3-validation';
 
 export interface EnabledRootSettings {
     [key: string]: boolean
@@ -830,7 +832,9 @@ export class OrgController extends Controller {
         }
 
         if (req.avatarKey) {
-            if (!req.avatarKey.startsWith(`avatars/temp/${inviteId}/`)) {
+            const normalizedKey = path.posix.normalize(req.avatarKey);
+            const expectedPrefix = `avatars/temp/${inviteId}/`;
+            if (!normalizedKey.startsWith(expectedPrefix) || normalizedKey.includes('..')) {
                 throw new CustomValidationError(400, "Invalid avatar key");
             }
         }
@@ -848,7 +852,8 @@ export class OrgController extends Controller {
 
 
                 // Server-Side Magic Number Validation
-                const isValid = await this.validateS3FileSignature(req.avatarKey);
+                const allowedAvatars = [FILE_SIGNATURES.PNG, FILE_SIGNATURES.JPEG, FILE_SIGNATURES.GIF, FILE_SIGNATURES.WEBP];
+                const isValid = await validateS3FileSignature(req.avatarKey, allowedAvatars);
                 if (!isValid) {
                     console.error(`Invalid avatar signature for ${req.avatarKey}`);
                     // Delete the bad file
@@ -861,6 +866,7 @@ export class OrgController extends Controller {
                         console.error("Failed to delete invalid avatar", e);
                     }
                     // Proceed without setting avatar
+                    console.error("Profile picture was not valid. Account created anyway.")
                     await invite.deleteOne()
                     return;
                 }
@@ -1607,41 +1613,5 @@ export class OrgController extends Controller {
         }
 
         await this.authentikClient.removeGroupMember(request)
-    }
-
-    private async validateS3FileSignature(key: string): Promise<boolean> {
-        try {
-            const { Body } = await s3Client.send(new GetObjectCommand({
-                Bucket: BUCKET_NAME,
-                Key: key,
-                Range: "bytes=0-7"
-            }));
-
-            if (!Body) return false;
-
-            const byteArray = await Body.transformToByteArray();
-            let header = "";
-            for (let i = 0; i < byteArray.length; i++) {
-                const byte = byteArray[i];
-                if (byte !== undefined) {
-                    header += byte.toString(16).padStart(2, '0');
-                }
-            }
-
-            // Check signatures
-            // PNG: 89 50 4E 47
-            // JPEG: FF D8 FF
-            // GIF: 47 49 46 38
-            // WebP: 52 49 46 46 (RIFF)
-            return (
-                header.startsWith("89504e47") || // PNG
-                header.startsWith("ffd8ff") ||   // JPEG
-                header.startsWith("47494638") || // GIF
-                header.startsWith("52494646")    // RIFF (WebP)
-            );
-        } catch (e) {
-            console.error("Signature check failed", e);
-            return false;
-        }
     }
 }

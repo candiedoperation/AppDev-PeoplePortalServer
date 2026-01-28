@@ -25,13 +25,16 @@ import { Applicant, IApplicant, ApplicantProfile } from '../models/Applicant';
 import { Application, IApplication, ApplicationStage } from "../models/Application";
 import { Security } from "tsoa";
 import * as express from 'express'
-import { PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import path from 'path';
+import { PutObjectCommand, GetObjectCommand, CopyObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { createPresignedPost } from "@aws-sdk/s3-presigned-post";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { s3Client, BUCKET_NAME } from "../clients/AWSClient/S3Client";
 import { Query } from "tsoa";
 import { EmailClient } from "../clients/EmailClient";
 import { OrgController } from "./OrgController";
 import { AuthorizedUser } from "../clients/OpenIdClient";
+import { validateS3FileSignature, FILE_SIGNATURES } from '../utils/s3-validation';
 import MarkdownIt from "markdown-it";
 
 // ====================
@@ -159,14 +162,22 @@ export class ATSController extends Controller {
             return { error: "ApplicantNotFound", message: "Applicant not found" };
         }
 
-        const key = `resumes/${applicant._id}/${Date.now()}.${fileExtension}`;
-        const command = new PutObjectCommand({
+        const timestamp = Date.now();
+        const key = `resumes/temp/${applicant._id}/${timestamp}.${fileExtension}`;
+
+        // Use presigned POST to enforce file size limits on S3 side
+        const { url, fields } = await createPresignedPost(s3Client, {
             Bucket: BUCKET_NAME,
             Key: key,
-            ContentType: "application/pdf", /* Forces another check, just in case! */
+            Conditions: [
+                ["content-length-range", 0, 10 * 1024 * 1024], // 10MB limit
+                { "content-type": "application/pdf" }
+            ],
+            Fields: {
+                "content-type": "application/pdf"
+            },
+            Expires: 600 // 10 minutes
         });
-
-        const uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
 
         // Construct the proxy URL using the request headers
         const protocol = request.protocol;
@@ -174,7 +185,8 @@ export class ATSController extends Controller {
         const publicUrl = `${protocol}://${host}/api/ats/resume/download?key=${encodeURIComponent(key)}`;
 
         return {
-            uploadUrl,
+            uploadUrl: url,
+            fields,
             publicUrl,
             key
         };
@@ -203,7 +215,11 @@ export class ATSController extends Controller {
         }
 
         const applicant = await Applicant.findOne({ email: userEmail });
-        if (!applicant || !key.startsWith(`resumes/${applicant._id}/`)) {
+        const normalizedKey = path.posix.normalize(key);
+        const expectedPrefix = `resumes/${applicant?._id}/`;
+        const tempPrefix = `resumes/temp/${applicant?._id}/`;
+
+        if (!applicant || (!normalizedKey.startsWith(expectedPrefix) && !normalizedKey.startsWith(tempPrefix)) || normalizedKey.includes('..')) {
             this.setStatus(403);
             return { error: "Forbidden", message: "You do not have permission to access this file." };
         }
@@ -1230,6 +1246,46 @@ export class ATSController extends Controller {
                 { upsert: true, new: true, setDefaultsOnInsert: true }
             ).exec();
 
+            // 9.1 Validate Resume Signature and Move to Permanent Location
+            try {
+                const isValidSignature = await validateS3FileSignature(profile.resumeUrl, [FILE_SIGNATURES.PDF]);
+                if (!isValidSignature) {
+                    // Delete temp file
+                    await s3Client.send(new DeleteObjectCommand({
+                        Bucket: BUCKET_NAME,
+                        Key: profile.resumeUrl
+                    })).catch(e => console.error("Failed to delete invalid resume", e));
+
+                    this.setStatus(400);
+                    return { error: "InvalidFileSignature", message: "The uploaded file is not a valid PDF." };
+                }
+
+                // Move from temp to permanent
+                const ext = profile.resumeUrl.split('.').pop();
+                const permanentKey = `resumes/${updatedApplicant._id}/resume.${ext}`;
+
+                await s3Client.send(new CopyObjectCommand({
+                    Bucket: BUCKET_NAME,
+                    CopySource: `${BUCKET_NAME}/${profile.resumeUrl}`,
+                    Key: permanentKey
+                }));
+
+                await s3Client.send(new DeleteObjectCommand({
+                    Bucket: BUCKET_NAME,
+                    Key: profile.resumeUrl
+                }));
+
+                // Update applicant with permanent URL
+                profile.resumeUrl = permanentKey;
+                updatedApplicant.profile = new Map(Object.entries(profile) as any);
+                await updatedApplicant.save();
+
+            } catch (e) {
+                console.error("Failed to validate or move resume", e);
+                this.setStatus(500);
+                return { error: "FileProcessingError", message: "Failed to process resume file." };
+            }
+
             // 9.5 Check Previous App Dev History, if exists!
             let appDevInternalPk = null;
             try {
@@ -1303,6 +1359,22 @@ export class ATSController extends Controller {
 
             // Merge existing profile with new updates
             const currentProfile = applicant.profile ? Object.fromEntries(applicant.profile) : {};
+
+            // Immediate Signature Validation for new Resume Uploads
+            if (body.resumeUrl && body.resumeUrl !== currentProfile.resumeUrl && body.resumeUrl.includes('/temp/')) {
+                const isValid = await validateS3FileSignature(body.resumeUrl, [FILE_SIGNATURES.PDF]);
+                if (!isValid) {
+                    // Cleanup invalid file
+                    await s3Client.send(new DeleteObjectCommand({
+                        Bucket: BUCKET_NAME,
+                        Key: body.resumeUrl
+                    })).catch(e => console.error("Failed to delete invalid resume", e));
+
+                    this.setStatus(400);
+                    return { error: "InvalidFileSignature", message: "The uploaded file is not a valid PDF." };
+                }
+            }
+
             const updatedProfile = { ...currentProfile, ...body };
 
             await Applicant.findOneAndUpdate(
