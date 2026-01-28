@@ -17,6 +17,7 @@
     "@aws-sdk/client-organizations": "^3.940.0",
     "@aws-sdk/client-s3": "^3.965.0",
     "@aws-sdk/client-sts": "^3.940.0",
+    "@aws-sdk/s3-presigned-post": "^3.975.0",
     "@aws-sdk/s3-request-presigner": "^3.965.0",
     "@scalar/express-api-reference": "^0.8.35",
     "@slack/oauth": "^3.0.4",
