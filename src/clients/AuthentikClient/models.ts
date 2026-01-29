@@ -63,7 +63,8 @@ export interface UserAttributeDefinition {
     roles: {
         /* Org ID Mapped to Role Title */
         [key: string]: string
-    }
+    },
+    avatar?: string
 }
 
 export interface AuthentikFilterCursor {

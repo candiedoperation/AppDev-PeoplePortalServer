@@ -73,6 +73,7 @@ const models: TsoaRoute.Models = {
             "expectedGrad": {"dataType":"datetime","required":true},
             "phoneNumber": {"dataType":"string","required":true},
             "roles": {"dataType":"nestedObjectLiteral","nestedProperties":{},"additionalProperties":{"dataType":"string"},"required":true},
+            "avatar": {"dataType":"string"},
         },
         "additionalProperties": false,
     },
@@ -262,6 +263,11 @@ const models: TsoaRoute.Models = {
         "additionalProperties": false,
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "Record_string.string_": {
+        "dataType": "refAlias",
+        "type": {"dataType":"nestedObjectLiteral","nestedProperties":{},"additionalProperties":{"dataType":"string"},"validators":{}},
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
     "APITeamInviteGetResponse": {
         "dataType": "refObject",
         "properties": {
@@ -283,6 +289,7 @@ const models: TsoaRoute.Models = {
             "major": {"dataType":"string","required":true},
             "expectedGrad": {"dataType":"datetime","required":true},
             "phoneNumber": {"dataType":"string","required":true},
+            "avatarKey": {"dataType":"string"},
         },
         "additionalProperties": false,
     },
@@ -491,11 +498,6 @@ const models: TsoaRoute.Models = {
             "stars": {"dataType":"double","required":true,"validators":{"minimum":{"errorMsg":"Minimum Stars is 0","value":0},"maximum":{"errorMsg":"Maximum Stars is 5","value":5}}},
         },
         "additionalProperties": false,
-    },
-    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-    "Record_string.string_": {
-        "dataType": "refAlias",
-        "type": {"dataType":"nestedObjectLiteral","nestedProperties":{},"additionalProperties":{"dataType":"string"},"validators":{}},
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
     "ATSApplicationDetails": {
@@ -903,6 +905,69 @@ export function RegisterRoutes(app: Router) {
                 next,
                 validatedArgs,
                 successStatus: 201,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsOrgController_getAvatarUploadUrl: Record<string, TsoaRoute.ParameterSchema> = {
+                inviteId: {"in":"query","name":"inviteId","required":true,"dataType":"string"},
+                fileName: {"in":"query","name":"fileName","required":true,"dataType":"string"},
+                contentType: {"in":"query","name":"contentType","required":true,"dataType":"string"},
+        };
+        app.get('/api/org/people/avatar/upload-url',
+            ...(fetchMiddlewares<RequestHandler>(OrgController)),
+            ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.getAvatarUploadUrl)),
+
+            async function OrgController_getAvatarUploadUrl(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsOrgController_getAvatarUploadUrl, request, response });
+
+                const controller = new OrgController();
+
+              await templateService.apiHandler({
+                methodName: 'getAvatarUploadUrl',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsOrgController_getAvatarDownloadUrl: Record<string, TsoaRoute.ParameterSchema> = {
+                userPk: {"in":"query","name":"userPk","required":true,"dataType":"string"},
+        };
+        app.get('/api/org/people/avatar/download-url',
+            authenticateMiddleware([{"oidc":[]}]),
+            ...(fetchMiddlewares<RequestHandler>(OrgController)),
+            ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.getAvatarDownloadUrl)),
+
+            async function OrgController_getAvatarDownloadUrl(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsOrgController_getAvatarDownloadUrl, request, response });
+
+                const controller = new OrgController();
+
+              await templateService.apiHandler({
+                methodName: 'getAvatarDownloadUrl',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 200,
               });
             } catch (err) {
                 return next(err);
