@@ -33,6 +33,10 @@ export class SlackClient implements SharedResourceClient {
         this.slackClient = new WebClient(process.env.PEOPLEPORTAL_SLACK_BOT_TOKEN);
     }
 
+    async init(): Promise<void> {
+        return Promise.resolve();
+    }
+
     getResourceName(): string {
         return SlackClient.TAG
     }

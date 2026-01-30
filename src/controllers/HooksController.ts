@@ -18,14 +18,30 @@
 
 import { Route, Controller, Get, SuccessResponse, Post, Body, Tags } from "tsoa";
 import { BindlePermissionMap } from "./BindleController";
+import { GiteaHookRepositoryTrigger } from "../clients/GiteaClient/models";
+import { GiteaClient } from "../clients/GiteaClient";
 
 @Route("/api/webhook")
 export class HooksController extends Controller {
-    @Post("git/sysevent")
-    @Tags("System Web Hooks")
-    @SuccessResponse(200)
-    async processGitSysEventHook(@Body() requestBody: any) {
-        console.log(requestBody);
-        return "OK"
+  private readonly giteaClient: GiteaClient
+
+  constructor() {
+    super()
+    this.giteaClient = new GiteaClient()
+  }
+
+  @Post("git/repoevent")
+  @Tags("Git Web Hooks")
+  @SuccessResponse(200)
+  async processGitRepoEventHook(@Body() repoEvent: GiteaHookRepositoryTrigger) {
+    console.log(repoEvent.action);
+    console.log(repoEvent.repository.full_name);
+
+    if (repoEvent.action == "created") {
+      console.log("DELETEING THE REPO")
+      await this.giteaClient.deleteRepository(repoEvent.repository.owner.username, repoEvent.repository.name)
     }
+
+    return "OK"
+  }
 }

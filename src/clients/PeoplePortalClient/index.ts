@@ -59,6 +59,10 @@ export class PeoplePortalClient implements SharedResourceClient {
         },
     }
 
+    async init(): Promise<void> {
+        return Promise.resolve()
+    }
+
     getResourceName(): string {
         return PeoplePortalClient.TAG
     }

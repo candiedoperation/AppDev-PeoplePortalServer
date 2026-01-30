@@ -25,6 +25,7 @@ import { GetGroupInfoResponse } from "./AuthentikClient/models";
  * Gitea, Slack, etc.
  */
 export interface SharedResourceClient {
+    init(): Promise<void>
     getResourceName(): string
     getSupportedBindles(): BindlePermissionMap
 

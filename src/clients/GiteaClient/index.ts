@@ -22,6 +22,7 @@ import { GetGroupInfoResponse } from "../AuthentikClient/models"
 import { GiteaAPITeamDefinition, GiteaAPIUserDefinition } from "./models";
 import { computeStringArrStateDiff } from "../../utils/operations";
 import { BindlePermission, BindlePermissionMap } from "../../controllers/BindleController";
+import { GiteaHookSetup } from "./hooksetup";
 
 class GiteaClientResourceNotExists extends Error {
     constructor(message: string) {
@@ -45,9 +46,10 @@ interface GiteaTeamCreateRequest {
 }
 
 export class GiteaClient implements SharedResourceClient {
+    private static INITIALIZED = false
     private static readonly TAG = "GiteaClient"
     private GITEA_TOKEN = process.env.PEOPLEPORTAL_GITEA_TOKEN
-    private readonly GiteaBaseConfig = {
+    public readonly GiteaBaseConfig = {
         baseURL: process.env.PEOPLEPORTAL_GITEA_ENDPOINT ?? "",
         maxBodyLength: Infinity,
         headers: {
@@ -61,11 +63,6 @@ export class GiteaClient implements SharedResourceClient {
             friendlyName: "Allow Repository Creation",
             description: "Enabling this allows members in this subteam to create repositories",
         },
-
-        "repo:allowsome": {
-            friendlyName: "Allow Something Else",
-            description: "This Allows Something Else to Happen on the Gitea Interface"
-        }
     }
 
     constructor() {
@@ -74,6 +71,13 @@ export class GiteaClient implements SharedResourceClient {
 
         if (!this.GITEA_TOKEN)
             throw new Error("Gitea Token is Invalid!")
+    }
+
+    async init(): Promise<void> {
+        if (!GiteaClient.INITIALIZED) {
+            await GiteaHookSetup.setupHooks(this.GiteaBaseConfig)
+            GiteaClient.INITIALIZED = true
+        }
     }
 
     getResourceName(): string {
@@ -219,7 +223,7 @@ export class GiteaClient implements SharedResourceClient {
             data: {
                 username: req.grpSharedResourceId,
                 full_name: req.displayName,
-                description: `Code Repository for the ${req.displayName} team. Managed by App Dev People Portal (https://github.com/candiedoperation/AppDev-PeoplePortalServer).`,
+                description: `Code Repository for the ${req.displayName} team.  \nManaged by [**People Portal**](https://github.com/candiedoperation/AppDev-PeoplePortalServer).`,
                 website: req.orgWebsite
             }
         }
@@ -276,7 +280,24 @@ export class GiteaClient implements SharedResourceClient {
         }
     }
 
-    private createTeam() {
+    /* Repository Management */
+    public async deleteRepository(owner: string, repo: string) {
+        var RequestConfig: any = {
+            ...this.GiteaBaseConfig,
+            method: 'delete',
+            url: `/api/v1/repos/${owner}/${repo}`
+        }
 
+        try {
+            /* Call the DELETE API */
+            await axios.request(RequestConfig)
+        } catch (e) {
+            const error = e as AxiosError;
+            if (error.response?.status == 404)
+                throw new GiteaClientResourceNotExists("Repository Doesn't Exist")
+
+            /* Throw the error, otherwise */
+            throw e
+        }
     }
 }
