@@ -26,6 +26,13 @@ import jwt from "jsonwebtoken"
 import { generateSecureRandomString } from '../utils/strings';
 import { AuthentikClient } from '../clients/AuthentikClient';
 import { EmailClient } from '../clients/EmailClient';
+import { signAvatarUrl } from '../utils/avatars';
+
+export interface CorpUserInfo {
+    name: string;
+    email: string;
+    avatar: string;
+}
 
 interface OtpInitRequest {
     email: string;
@@ -58,12 +65,21 @@ export class AuthController extends Controller {
     @Tags("Core Authentication")
     @Security("oidc")
     @SuccessResponse(200)
-    async getUserInfo(@Request() req: express.Request): Promise<UserInfoResponse> {
+    async getUserInfo(@Request() req: express.Request): Promise<CorpUserInfo> {
         if (!req.session.accessToken || !req.session.authorizedUser)
             throw new Error("Unauthorized")
 
         const userInfo = await OpenIdClient.getUserInfo(req.session.accessToken, req.session.authorizedUser.sub)
-        return userInfo
+
+        // Remap to CorpUserInfo and sign avatar URL
+        const avatarKey = (userInfo as any).attributes?.avatar
+        const avatarUrl = await signAvatarUrl(req.session.authorizedUser.pk, avatarKey)
+
+        return {
+            name: userInfo.name || "Unknown",
+            email: userInfo.email || "unknown@unknown.local",
+            avatar: avatarUrl
+        }
     }
 
     /**

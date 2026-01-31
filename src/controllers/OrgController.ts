@@ -39,6 +39,7 @@ import { TeamCreationRequest, TeamCreationRequestStatus, ITeamCreationRequest } 
 import { CustomValidationError } from '../utils/errors';
 import { ExpressRequestBindleExtension } from '../types/express';
 import { validateS3FileSignature, FILE_SIGNATURES } from '../utils/s3-validation';
+import { signAvatarUrl } from '../utils/avatars';
 
 export interface EnabledRootSettings {
     [key: string]: boolean
@@ -179,7 +180,6 @@ interface APITeamCreationRequestResponse {
 
 @Route("/api/org")
 export class OrgController extends Controller {
-    private avatarUrlCache = new Map<string, { url: string, expiresAt: number }>();
     private teamSettingList: { [key: string]: RootTeamSettingMap } = {}
     private sharedResources: SharedResourceClient[];
     private readonly authentikClient;
@@ -215,7 +215,7 @@ export class OrgController extends Controller {
 
         /* Enrich with Avatars */
         await Promise.all(userList.users.map(async (user) => {
-            user.avatar = await this.signAvatarUrl(user.pk, user.attributes.avatar);
+            user.avatar = await signAvatarUrl(user.pk, user.attributes.avatar);
         }));
 
         return userList;
@@ -234,7 +234,7 @@ export class OrgController extends Controller {
     @Security("oidc")
     async getPersonInfo(@Path() personId: number): Promise<APIUserInfoResponse> {
         const authentikUserInfo = await this.authentikClient.getUserInfo(personId)
-        authentikUserInfo.avatar = await this.signAvatarUrl(personId.toString(), authentikUserInfo.attributes.avatar);
+        authentikUserInfo.avatar = await signAvatarUrl(personId.toString(), authentikUserInfo.attributes.avatar);
 
         return {
             ...authentikUserInfo
@@ -334,7 +334,7 @@ export class OrgController extends Controller {
                 email: presidentUser.email,
                 teamContext: [execTeamName],
                 realUserPk: presidentUser.pk,
-                avatar: await this.signAvatarUrl(presidentUser.pk, presidentUser.attributes.avatar)
+                avatar: await signAvatarUrl(presidentUser.pk, presidentUser.attributes.avatar)
             },
             siblings: [],
             children: []
@@ -352,7 +352,7 @@ export class OrgController extends Controller {
                     role: u.attributes?.roles?.[execTeam.pk] || "Executive",
                     email: u.email,
                     teamContext: [execTeamName],
-                    avatar: await this.signAvatarUrl(u.pk, u.attributes.avatar)
+                    avatar: await signAvatarUrl(u.pk, u.attributes.avatar)
                 },
                 children: []
             });
@@ -401,7 +401,7 @@ export class OrgController extends Controller {
                                 email: primaryOwner.email,
                                 teamContext: [teamName],
                                 realUserPk: primaryOwner.pk,
-                                avatar: await this.signAvatarUrl(primaryOwner.pk, primaryOwner.attributes.avatar)
+                                avatar: await signAvatarUrl(primaryOwner.pk, primaryOwner.attributes.avatar)
                             },
                             siblings: [],
                             children: [],
@@ -417,7 +417,7 @@ export class OrgController extends Controller {
                                 attributes: {
                                     role: o.attributes?.roles?.[team.pk] || "Co-Owner",
                                     email: o.email,
-                                    avatar: await this.signAvatarUrl(o.pk, o.attributes.avatar)
+                                    avatar: await signAvatarUrl(o.pk, o.attributes.avatar)
                                 }
                             });
                         }));
@@ -514,7 +514,7 @@ export class OrgController extends Controller {
                 role: "Owner",
                 email: primaryOwner.email,
                 teamContext: [rootTeamName],
-                avatar: await this.signAvatarUrl(primaryOwner.pk, primaryOwner.attributes.avatar)
+                avatar: await signAvatarUrl(primaryOwner.pk, primaryOwner.attributes.avatar)
             },
             children: subMembers,
             hasChildren: subMembers.length > 0
@@ -545,7 +545,7 @@ export class OrgController extends Controller {
                             role: m.attributes?.roles?.[sub.pk] || "Member",
                             email: m.email,
                             teamContext: [rootTeamName, subName],
-                            avatar: await this.signAvatarUrl(m.pk, m.attributes.avatar)
+                            avatar: await signAvatarUrl(m.pk, m.attributes.avatar)
                         },
                         children: []
                         // Members are leaves in this structure
@@ -730,38 +730,15 @@ export class OrgController extends Controller {
     @Security("oidc")
     async getAvatarDownloadUrl(@Query() userPk: string): Promise<{ url: string }> {
 
-        const cached = this.avatarUrlCache.get(userPk);
-        if (cached && cached.expiresAt > Date.now()) {
-            this.setHeader('Cache-Control', 'public, max-age=86400');
-            return { url: cached.url };
-        }
-
         const pkNumber = parseInt(userPk);
         if (isNaN(pkNumber)) {
             throw new CustomValidationError(400, "Invalid User PK");
         }
 
         const userInfo = await this.authentikClient.getUserInfo(pkNumber);
-
         const avatarKey = userInfo.attributes.avatar;
 
-        let url: string = "";
-
-        if (!avatarKey) {
-            url = "";
-        } else {
-            const command = new GetObjectCommand({
-                Bucket: BUCKET_NAME,
-                Key: avatarKey,
-            });
-
-            url = await getSignedUrl(s3Client, command, { expiresIn: 86400 });
-
-            this.avatarUrlCache.set(userPk, {
-                url: url,
-                expiresAt: Date.now() + 86400 * 1000 // 24 hours
-            });
-        }
+        const url = await signAvatarUrl(userPk, avatarKey);
 
         this.setHeader('Cache-Control', 'public, max-age=86400');
         return { url };
@@ -938,7 +915,7 @@ export class OrgController extends Controller {
 
         if (primaryTeam.users) {
             await Promise.all(primaryTeam.users.map(async (user) => {
-                user.avatar = await this.signAvatarUrl(user.pk, user.attributes.avatar);
+                user.avatar = await signAvatarUrl(user.pk, user.attributes.avatar);
             }));
         }
 
@@ -946,7 +923,7 @@ export class OrgController extends Controller {
             await Promise.all(primaryTeam.subteams.map(async (sub) => {
                 if (sub.users) {
                     await Promise.all(sub.users.map(async (user) => {
-                        user.avatar = await this.signAvatarUrl(user.pk, user.attributes.avatar);
+                        user.avatar = await signAvatarUrl(user.pk, user.attributes.avatar);
                     }));
                 }
             }));
@@ -1005,36 +982,6 @@ export class OrgController extends Controller {
      * @param avatarKey S3 Key for Avatar
      * @returns Signed URL or empty string
      */
-    private async signAvatarUrl(userPk: string | number, avatarKey?: string): Promise<string> {
-        const pk = userPk.toString();
-
-        if (!avatarKey) return "";
-
-        const cached = this.avatarUrlCache.get(pk);
-        if (cached && cached.expiresAt > Date.now()) {
-            return cached.url;
-        }
-
-        try {
-            const command = new GetObjectCommand({
-                Bucket: BUCKET_NAME,
-                Key: avatarKey,
-            });
-
-            const url = await getSignedUrl(s3Client, command, { expiresIn: 86400 });
-
-            this.avatarUrlCache.set(pk, {
-                url: url,
-                expiresAt: Date.now() + 86400 * 1000
-            });
-
-            return url;
-        } catch (e) {
-            console.error(`Failed to sign avatar URL for user ${pk}`, e);
-            return "";
-        }
-    }
-
     /**
      * Generates a temporary link to access the team's AWS Console. Account Provisioning
      * is handled by AWSClient and Root Team Settings. Access is moderated by the Bindle
