@@ -28,12 +28,6 @@ import { AuthentikClient } from '../clients/AuthentikClient';
 import { EmailClient } from '../clients/EmailClient';
 import { signAvatarUrl } from '../utils/avatars';
 
-export interface CorpUserInfo {
-    name: string;
-    email: string;
-    avatar: string;
-}
-
 interface OtpInitRequest {
     email: string;
     name: string;
@@ -65,7 +59,7 @@ export class AuthController extends Controller {
     @Tags("Core Authentication")
     @Security("oidc")
     @SuccessResponse(200)
-    async getUserInfo(@Request() req: express.Request): Promise<CorpUserInfo> {
+    async getUserInfo(@Request() req: express.Request): Promise<UserInfoResponse> {
         if (!req.session.accessToken || !req.session.authorizedUser)
             throw new Error("Unauthorized")
 
@@ -76,8 +70,7 @@ export class AuthController extends Controller {
         const avatarUrl = await signAvatarUrl(req.session.authorizedUser.pk, avatarKey)
 
         return {
-            name: userInfo.name || "Unknown",
-            email: userInfo.email || "unknown@unknown.local",
+            ...userInfo,
             avatar: avatarUrl
         }
     }

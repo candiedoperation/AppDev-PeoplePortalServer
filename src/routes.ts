@@ -510,14 +510,63 @@ const models: TsoaRoute.Models = {
         "additionalProperties": false,
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-    "CorpUserInfo": {
+    "JsonPrimitive": {
+        "dataType": "refAlias",
+        "type": {"dataType":"union","subSchemas":[{"dataType":"string"},{"dataType":"double"},{"dataType":"boolean"},{"dataType":"enum","enums":[null]}],"validators":{}},
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "JsonValue": {
+        "dataType": "refAlias",
+        "type": {"dataType":"union","subSchemas":[{"ref":"JsonPrimitive"},{"ref":"JsonObject"},{"ref":"JsonArray"}],"validators":{}},
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "JsonObject": {
+        "dataType": "refAlias",
+        "type": {"dataType":"nestedObjectLiteral","nestedProperties":{},"additionalProperties":{"ref":"JsonValue"},"validators":{}},
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "JsonArray": {
+        "dataType": "refAlias",
+        "type": {"dataType":"array","array":{"dataType":"refAlias","ref":"JsonValue"},"validators":{}},
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "UserInfoAddress": {
         "dataType": "refObject",
         "properties": {
-            "name": {"dataType":"string","required":true},
-            "email": {"dataType":"string","required":true},
-            "avatar": {"dataType":"string","required":true},
+            "formatted": {"dataType":"string"},
+            "street_address": {"dataType":"string"},
+            "locality": {"dataType":"string"},
+            "region": {"dataType":"string"},
+            "postal_code": {"dataType":"string"},
+            "country": {"dataType":"string"},
         },
-        "additionalProperties": false,
+        "additionalProperties": {"dataType":"union","subSchemas":[{"ref":"JsonValue"},{"dataType":"undefined"}]},
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "UserInfoResponse": {
+        "dataType": "refObject",
+        "properties": {
+            "sub": {"dataType":"string","required":true},
+            "name": {"dataType":"string"},
+            "given_name": {"dataType":"string"},
+            "family_name": {"dataType":"string"},
+            "middle_name": {"dataType":"string"},
+            "nickname": {"dataType":"string"},
+            "preferred_username": {"dataType":"string"},
+            "profile": {"dataType":"string"},
+            "picture": {"dataType":"string"},
+            "website": {"dataType":"string"},
+            "email": {"dataType":"string"},
+            "email_verified": {"dataType":"boolean"},
+            "gender": {"dataType":"string"},
+            "birthdate": {"dataType":"string"},
+            "zoneinfo": {"dataType":"string"},
+            "locale": {"dataType":"string"},
+            "phone_number": {"dataType":"string"},
+            "updated_at": {"dataType":"double"},
+            "address": {"ref":"UserInfoAddress"},
+        },
+        "additionalProperties": {"dataType":"union","subSchemas":[{"ref":"JsonValue"},{"dataType":"undefined"}]},
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
     "OtpInitRequest": {
