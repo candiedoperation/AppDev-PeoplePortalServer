@@ -5,7 +5,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "tsoa spec-and-routes && tsc && cpx src/**/*.hbs dist",
-    "start": "npm run build && node dist/app.js",
+    "start": "node dist/app.js",
     "dev": "npm run build && nodemon src/app.ts"
   },
   "keywords": [],
