@@ -29,6 +29,10 @@ export class AppleAccountClient implements SharedResourceClient {
         },
     }
 
+    async init(): Promise<void> {
+        return Promise.resolve()
+    }
+
     getResourceName(): string {
         return AppleAccountClient.TAG;
     }

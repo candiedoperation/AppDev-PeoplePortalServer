@@ -31,3 +31,11 @@ export class CustomValidationError extends Error {
         Object.setPrototypeOf(this, CustomValidationError.prototype);
     }
 }
+
+export class SharedResourcesError extends Error {
+    constructor(public status: number, public message: string) {
+        super(message);
+        this.name = "SharedResourcesError";
+        Object.setPrototypeOf(this, SharedResourcesError.prototype);
+    }
+}

@@ -36,7 +36,7 @@ import { BindleController, EnabledBindlePermissions } from '../controllers/Bindl
 import { AuthorizedUser } from '../clients/OpenIdClient';
 import { executiveAuthVerify } from '../auth';
 import { TeamCreationRequest, TeamCreationRequestStatus, ITeamCreationRequest } from '../models/TeamCreationRequest';
-import { CustomValidationError } from '../utils/errors';
+import { CustomValidationError, SharedResourcesError } from '../utils/errors';
 import { ExpressRequestBindleExtension } from '../types/express';
 import { validateS3FileSignature, FILE_SIGNATURES } from '../utils/s3-validation';
 import { signAvatarUrl } from '../utils/avatars';
@@ -1392,13 +1392,27 @@ export class OrgController extends Controller {
             teamInfo.subteams.reduce((acc, val) => acc + val.users.length, 0)
 
         let updatedResources = 0
+        let errors: Map<string, Error> = new Map();
+
         for (const sharedResource of this.sharedResources) {
-            await sharedResource.handleOrgBindleSync(teamInfo, (updatedResourceCount, status) => {
-                /* Update Progress and Write Output */
-                updatedResources += updatedResourceCount
-                res.write(JSON.stringify({ progressPercent: (updatedResources / computeEffort) * 100, status }))
-            })
+            try {
+                await sharedResource.handleOrgBindleSync(teamInfo, (updatedResourceCount, status) => {
+                    /* Update Progress and Write Output */
+                    updatedResources += updatedResourceCount
+                    res.write(JSON.stringify({ progressPercent: (updatedResources / computeEffort) * 100, status }))
+                })
+            } catch (e) {
+                if (e instanceof Error) {
+                    errors.set(sharedResource.getResourceName(), e);
+                } else {
+                    errors.set(sharedResource.getResourceName(), new Error(
+                        `Unknown Error: ${e ? e.toString() : ""}`
+                    ));
+                }
+            }
         }
+
+        /* Write All the Errors during the Process... */
 
         res.end()
     }

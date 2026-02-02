@@ -16,13 +16,15 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+/* Configure ENV Variables before other imports */
+import dotenv from 'dotenv'
+dotenv.config()
+
 import express, { Router, Request, Response, NextFunction } from "express"
 import cors from "cors"
-import dotenv from 'dotenv'
 import { RegisterRoutes } from "./routes";
 import { apiReference } from '@scalar/express-api-reference'
 import { ValidateError } from "tsoa";
-import bodyParser from "body-parser";
 import mongoose from "mongoose";
 import { OpenIdClient } from "./clients/OpenIdClient";
 import expressSession from 'express-session'
@@ -31,7 +33,7 @@ import path from "path";
 import { NativeExpressOIDCAuthPort } from "./auth";
 import { AuthentikClient } from "./clients/AuthentikClient";
 import { CustomValidationError, ResourceAccessError } from "./utils/errors";
-import { OrgController } from "./controllers/OrgController";
+import { ENABLED_SHARED_RESOURCES } from "./config";
 
 if (!process.env.PEOPLEPORTAL_TOKEN_SECRET)
   process.env.PEOPLEPORTAL_TOKEN_SECRET = generateSecureRandomString(16)
@@ -39,7 +41,6 @@ if (!process.env.PEOPLEPORTAL_TOKEN_SECRET)
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-dotenv.config()
 app.use(express.urlencoded({ extended: true }))
 app.use(express.json())
 
@@ -156,6 +157,13 @@ app.listen(PORT, async () => {
   /* Validate Service Team Creation */
   const authentikClient = new AuthentikClient()
   await authentikClient.validateServiceExistance()
+
+  /* Initialize Shared Resource Clients */
+  for (const client in ENABLED_SHARED_RESOURCES) {
+    console.log(`Initializing Shared Resource Client: ${client}`)
+    const clientInstance = ENABLED_SHARED_RESOURCES[client]!;
+    await clientInstance.init()
+  }
 
   /* Validate Database Connection */
   await mongoose.connect(process.env.PEOPLEPORTAL_MONGO_URL!)

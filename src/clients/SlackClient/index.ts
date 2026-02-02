@@ -1,6 +1,6 @@
 /**
   App Dev Club People Portal Server
-  Copyright (C) 2025  Atheesh Thirumalairajan
+  Copyright (C) 2026  Atheesh Thirumalairajan
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -21,6 +21,7 @@ import { BindlePermissionMap } from '../../controllers/BindleController';
 import { SharedResourceClient } from '..';
 import { GetGroupInfoResponse, UserInformationBrief } from '../AuthentikClient/models';
 import { computeStringArrStateDiff } from '../../utils/operations';
+import log from 'loglevel';
 
 export class SlackClient implements SharedResourceClient {
     private static readonly TAG = "SlackClient"
@@ -61,6 +62,10 @@ export class SlackClient implements SharedResourceClient {
         throw new Error("Could not fetch Bot User ID");
     }
 
+    async init(): Promise<void> {
+        return Promise.resolve();
+    }
+
     getResourceName(): string {
         return SlackClient.TAG
     }
@@ -70,8 +75,9 @@ export class SlackClient implements SharedResourceClient {
     }
 
     async handleOrgBindleSync(org: GetGroupInfoResponse, callback: (updatedResourceCount: number, status: string) => void): Promise<boolean> {
-        console.log(`[SlackClient] handleOrgBindleSync started for org: ${org.name}`);
-        console.log(`[SlackClient] Found ${org.subteams?.length ?? 0} subteams`);
+        log.info(`[SlackClient] handleOrgBindleSync started for org: ${org.name}`);
+        log.info(`[SlackClient] Found ${org.subteams?.length ?? 0} subteams`);
+
         // Cache for email -> userId mapping to avoid redundant API calls across channels
         const userIdCache = new Map<string, string>();
         const botId = await this.getBotUserId();
@@ -99,7 +105,7 @@ export class SlackClient implements SharedResourceClient {
         for (const subteam of org.subteams) {
             const bindlePermissions = subteam.attributes.bindlePermissions;
             if (bindlePermissions && bindlePermissions[SlackClient.TAG]?.["channels:universalaccess"]) {
-                console.log(`[SlackClient] Subteam ${subteam.name} has universal access enabled`);
+                log.info(`[SlackClient] Subteam ${subteam.name} has universal access enabled`);
                 for (const user of subteam.users) {
                     if (!universalAccessEmailSet.has(user.email)) {
                         universalAccessUsers.push(user);
@@ -108,7 +114,8 @@ export class SlackClient implements SharedResourceClient {
                 }
             }
         }
-        console.log(`[SlackClient] Identified ${universalAccessUsers.length} users for universal access`);
+
+        log.info(`[SlackClient] Identified ${universalAccessUsers.length} users for universal access`);
 
         // Pre-resolve common users (Org Owners + Universal Access)
         const commonUserIds = new Set<string>();
@@ -124,11 +131,8 @@ export class SlackClient implements SharedResourceClient {
                 .replace(/(?<!^)(?=(FALL|SPRING|SUMMER|WINTER)\d{4})/g, '-')
                 .toLowerCase();
 
-            //callback(0, `Processing Slack Channel: ${channelName.trim()}`);
-
             try {
                 const channelId = await this.createOrGetChannel(channelName);
-
                 if (channelId) {
                     // 1. Get Current Channel Members
                     const currentMemberIds = await this.getChannelMembers(channelId);
@@ -163,12 +167,9 @@ export class SlackClient implements SharedResourceClient {
                         if (uid === botId) continue; // NEVER remove the bot
                         await this.removeUserFromChannel(channelId, uid);
                     }
-
-                    //callback(0, `Synced Slack Channel: ${channelName.trim()}`);
                 } else {
                     console.error(`Could not create or find channel: ${channelName}`);
                 }
-
             } catch (e: any) {
                 console.error(`Error processing slack channel ${channelName}: ${e.message}`);
             }
@@ -233,8 +234,6 @@ export class SlackClient implements SharedResourceClient {
         return currentMemberIds;
     }
 
-
-
     private async removeUserFromChannel(channelId: string, userId: string) {
         try {
             await this.executeWithRateLimitRetry(() => this.slackClient.conversations.kick({
@@ -257,6 +256,7 @@ export class SlackClient implements SharedResourceClient {
             if (error?.data?.error === 'users_not_found') {
                 return false;
             }
+
             throw new Error(`Slack verification failed: ${error.message}`);
         }
     }

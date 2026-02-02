@@ -1,7 +1,6 @@
 /**
   People Portal Server
   Copyright (C) 2026  Atheesh Thirumalairajan
-  Copyright (C) 2025  Ian Coutinho
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -17,14 +16,7 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-import { S3Client } from "@aws-sdk/client-s3";
 
-export const s3Client = new S3Client({
-  region: process.env.AWS_REGION || 'us-east-1',
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
-  },
-});
-
-export const BUCKET_NAME = process.env.S3_BUCKET_NAME || '';
+export type DeepPartial<T> = T extends object ? {
+  [P in keyof T]?: DeepPartial<T[P]>;
+} : T;

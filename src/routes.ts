@@ -384,63 +384,140 @@ const models: TsoaRoute.Models = {
         "additionalProperties": {"dataType":"string"},
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-    "JsonPrimitive": {
-        "dataType": "refAlias",
-        "type": {"dataType":"union","subSchemas":[{"dataType":"string"},{"dataType":"double"},{"dataType":"boolean"},{"dataType":"enum","enums":[null]}],"validators":{}},
-    },
-    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-    "JsonValue": {
-        "dataType": "refAlias",
-        "type": {"dataType":"union","subSchemas":[{"ref":"JsonPrimitive"},{"ref":"JsonObject"},{"ref":"JsonArray"}],"validators":{}},
-    },
-    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-    "JsonObject": {
-        "dataType": "refAlias",
-        "type": {"dataType":"nestedObjectLiteral","nestedProperties":{},"additionalProperties":{"ref":"JsonValue"},"validators":{}},
-    },
-    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-    "JsonArray": {
-        "dataType": "refAlias",
-        "type": {"dataType":"array","array":{"dataType":"refAlias","ref":"JsonValue"},"validators":{}},
-    },
-    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-    "UserInfoAddress": {
+    "GiteaRepositoryPermissions": {
         "dataType": "refObject",
         "properties": {
-            "formatted": {"dataType":"string"},
-            "street_address": {"dataType":"string"},
-            "locality": {"dataType":"string"},
-            "region": {"dataType":"string"},
-            "postal_code": {"dataType":"string"},
-            "country": {"dataType":"string"},
+            "admin": {"dataType":"boolean","required":true},
+            "push": {"dataType":"boolean","required":true},
+            "pull": {"dataType":"boolean","required":true},
         },
-        "additionalProperties": {"dataType":"union","subSchemas":[{"ref":"JsonValue"},{"dataType":"undefined"}]},
+        "additionalProperties": false,
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-    "UserInfoResponse": {
+    "GiteaRepositoryInternalTracker": {
         "dataType": "refObject",
         "properties": {
-            "sub": {"dataType":"string","required":true},
-            "name": {"dataType":"string"},
-            "given_name": {"dataType":"string"},
-            "family_name": {"dataType":"string"},
-            "middle_name": {"dataType":"string"},
-            "nickname": {"dataType":"string"},
-            "preferred_username": {"dataType":"string"},
-            "profile": {"dataType":"string"},
-            "picture": {"dataType":"string"},
-            "website": {"dataType":"string"},
-            "email": {"dataType":"string"},
-            "email_verified": {"dataType":"boolean"},
-            "gender": {"dataType":"string"},
-            "birthdate": {"dataType":"string"},
-            "zoneinfo": {"dataType":"string"},
-            "locale": {"dataType":"string"},
-            "phone_number": {"dataType":"string"},
-            "updated_at": {"dataType":"double"},
-            "address": {"ref":"UserInfoAddress"},
+            "enable_time_tracker": {"dataType":"boolean","required":true},
+            "allow_only_contributors_to_track_time": {"dataType":"boolean","required":true},
+            "enable_issue_dependencies": {"dataType":"boolean","required":true},
         },
-        "additionalProperties": {"dataType":"union","subSchemas":[{"ref":"JsonValue"},{"dataType":"undefined"}]},
+        "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "GiteaUser": {
+        "dataType": "refObject",
+        "properties": {
+            "id": {"dataType":"double","required":true},
+            "login": {"dataType":"string","required":true},
+            "login_name": {"dataType":"string","required":true},
+            "source_id": {"dataType":"double","required":true},
+            "full_name": {"dataType":"string","required":true},
+            "email": {"dataType":"string","required":true},
+            "avatar_url": {"dataType":"string","required":true},
+            "html_url": {"dataType":"string","required":true},
+            "language": {"dataType":"string","required":true},
+            "is_admin": {"dataType":"boolean","required":true},
+            "last_login": {"dataType":"string","required":true},
+            "created": {"dataType":"string","required":true},
+            "restricted": {"dataType":"boolean","required":true},
+            "active": {"dataType":"boolean","required":true},
+            "prohibit_login": {"dataType":"boolean","required":true},
+            "location": {"dataType":"string","required":true},
+            "website": {"dataType":"string","required":true},
+            "description": {"dataType":"string","required":true},
+            "visibility": {"dataType":"string","required":true},
+            "followers_count": {"dataType":"double","required":true},
+            "following_count": {"dataType":"double","required":true},
+            "starred_repos_count": {"dataType":"double","required":true},
+            "username": {"dataType":"string","required":true},
+        },
+        "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "GiteaRepository": {
+        "dataType": "refObject",
+        "properties": {
+            "owner": {"ref":"GiteaUser","required":true},
+            "name": {"dataType":"string","required":true},
+            "id": {"dataType":"double","required":true},
+            "full_name": {"dataType":"string","required":true},
+            "description": {"dataType":"string","required":true},
+            "empty": {"dataType":"boolean","required":true},
+            "private": {"dataType":"boolean","required":true},
+            "fork": {"dataType":"boolean","required":true},
+            "template": {"dataType":"boolean","required":true},
+            "mirror": {"dataType":"boolean","required":true},
+            "size": {"dataType":"double","required":true},
+            "language": {"dataType":"string","required":true},
+            "languages_url": {"dataType":"string","required":true},
+            "html_url": {"dataType":"string","required":true},
+            "url": {"dataType":"string","required":true},
+            "link": {"dataType":"string","required":true},
+            "ssh_url": {"dataType":"string","required":true},
+            "clone_url": {"dataType":"string","required":true},
+            "original_url": {"dataType":"string","required":true},
+            "website": {"dataType":"string","required":true},
+            "stars_count": {"dataType":"double","required":true},
+            "forks_count": {"dataType":"double","required":true},
+            "watchers_count": {"dataType":"double","required":true},
+            "open_issues_count": {"dataType":"double","required":true},
+            "open_pr_counter": {"dataType":"double","required":true},
+            "release_counter": {"dataType":"double","required":true},
+            "default_branch": {"dataType":"string","required":true},
+            "archived": {"dataType":"boolean","required":true},
+            "created_at": {"dataType":"string","required":true},
+            "updated_at": {"dataType":"string","required":true},
+            "archived_at": {"dataType":"string","required":true},
+            "permissions": {"ref":"GiteaRepositoryPermissions","required":true},
+            "has_issues": {"dataType":"boolean","required":true},
+            "internal_tracker": {"ref":"GiteaRepositoryInternalTracker","required":true},
+            "has_wiki": {"dataType":"boolean","required":true},
+            "has_pull_requests": {"dataType":"boolean","required":true},
+            "has_projects": {"dataType":"boolean","required":true},
+            "projects_mode": {"dataType":"string","required":true},
+            "has_releases": {"dataType":"boolean","required":true},
+            "has_packages": {"dataType":"boolean","required":true},
+            "has_actions": {"dataType":"boolean","required":true},
+            "ignore_whitespace_conflicts": {"dataType":"boolean","required":true},
+            "allow_merge_commits": {"dataType":"boolean","required":true},
+            "allow_rebase": {"dataType":"boolean","required":true},
+            "allow_rebase_explicit": {"dataType":"boolean","required":true},
+            "allow_squash_merge": {"dataType":"boolean","required":true},
+            "allow_fast_forward_only_merge": {"dataType":"boolean","required":true},
+            "allow_rebase_update": {"dataType":"boolean","required":true},
+            "default_delete_branch_after_merge": {"dataType":"boolean","required":true},
+            "default_merge_style": {"dataType":"string","required":true},
+            "default_allow_maintainer_edit": {"dataType":"boolean","required":true},
+            "avatar_url": {"dataType":"string","required":true},
+            "internal": {"dataType":"boolean","required":true},
+            "mirror_interval": {"dataType":"string","required":true},
+            "object_format_name": {"dataType":"string","required":true},
+            "mirror_updated": {"dataType":"string","required":true},
+            "topics": {"dataType":"array","array":{"dataType":"string"},"required":true},
+            "licenses": {"dataType":"array","array":{"dataType":"string"},"required":true},
+        },
+        "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "GiteaHookRepositoryTrigger": {
+        "dataType": "refObject",
+        "properties": {
+            "action": {"dataType":"string","required":true},
+            "repository": {"ref":"GiteaRepository","required":true},
+            "organization": {"ref":"GiteaUser","required":true},
+            "sender": {"ref":"GiteaUser","required":true},
+        },
+        "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "CorpUserInfo": {
+        "dataType": "refObject",
+        "properties": {
+            "name": {"dataType":"string","required":true},
+            "email": {"dataType":"string","required":true},
+            "avatar": {"dataType":"string","required":true},
+        },
+        "additionalProperties": false,
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
     "OtpInitRequest": {
@@ -1549,25 +1626,25 @@ export function RegisterRoutes(app: Router) {
             }
         });
         // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-        const argsHooksController_processGitSysEventHook: Record<string, TsoaRoute.ParameterSchema> = {
-                requestBody: {"in":"body","name":"requestBody","required":true,"dataType":"any"},
+        const argsHooksController_processGitRepoEventHook: Record<string, TsoaRoute.ParameterSchema> = {
+                repoEvent: {"in":"body","name":"repoEvent","required":true,"ref":"GiteaHookRepositoryTrigger"},
         };
-        app.post('/api/webhook/git/sysevent',
+        app.post('/api/webhook/git/repoevent',
             ...(fetchMiddlewares<RequestHandler>(HooksController)),
-            ...(fetchMiddlewares<RequestHandler>(HooksController.prototype.processGitSysEventHook)),
+            ...(fetchMiddlewares<RequestHandler>(HooksController.prototype.processGitRepoEventHook)),
 
-            async function HooksController_processGitSysEventHook(request: ExRequest, response: ExResponse, next: any) {
+            async function HooksController_processGitRepoEventHook(request: ExRequest, response: ExResponse, next: any) {
 
             // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
 
             let validatedArgs: any[] = [];
             try {
-                validatedArgs = templateService.getValidatedArgs({ args: argsHooksController_processGitSysEventHook, request, response });
+                validatedArgs = templateService.getValidatedArgs({ args: argsHooksController_processGitRepoEventHook, request, response });
 
                 const controller = new HooksController();
 
               await templateService.apiHandler({
-                methodName: 'processGitSysEventHook',
+                methodName: 'processGitRepoEventHook',
                 controller,
                 response,
                 next,

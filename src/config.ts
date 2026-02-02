@@ -16,7 +16,6 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-import dotenv from "dotenv"
 import { GiteaClient } from "./clients/GiteaClient";
 import { SlackClient } from "./clients/SlackClient";
 import { RootTeamSettingClient, SharedResourceClient } from "./clients";
@@ -25,9 +24,6 @@ import { AppleAccountClient } from "./clients/AppleAccountClient";
 import { PeoplePortalClient } from "./clients/PeoplePortalClient";
 import { EnabledBindlePermissions } from "./controllers/BindleController";
 import { TeamType } from "./clients/AuthentikClient/models";
-
-/* Load environment variables */
-dotenv.config()
 
 /**
  * This interface helps define the default configuration that needs to be applied
