@@ -106,6 +106,7 @@ interface APITeamInviteGetResponse {
     subteamPk: string;
     inviterPk: number;
     expiresAt: Date;
+    slackInviteLink: string;
 }
 
 interface APITeamInviteAcceptRequest {
@@ -759,7 +760,10 @@ export class OrgController extends Controller {
         if (!invite)
             throw new Error("Invalid Invite ID!")
 
-        return invite
+        return {
+            ...invite,
+            slackInviteLink: this.slackClient.getSlackInviteLink()
+        }
     }
 
     /**
@@ -1413,7 +1417,7 @@ export class OrgController extends Controller {
         }
 
         /* Write All the Errors during the Process... */
-
+        console.log(errors);
         res.end()
     }
 

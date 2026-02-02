@@ -278,6 +278,7 @@ const models: TsoaRoute.Models = {
             "subteamPk": {"dataType":"string","required":true},
             "inviterPk": {"dataType":"double","required":true},
             "expiresAt": {"dataType":"datetime","required":true},
+            "slackInviteLink": {"dataType":"string","required":true},
         },
         "additionalProperties": false,
     },
