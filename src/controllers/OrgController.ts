@@ -17,6 +17,7 @@
 */
 
 import * as express from 'express'
+import path from 'path';
 import { Request, Body, Controller, Get, Patch, Path, Post, Queries, Route, SuccessResponse, Put, Security, Delete, Tags, Query } from "tsoa";
 import { AddGroupMemberRequest, GetGroupInfoResponse, GetTeamsListResponse, GetUserListOptions, GetUserListResponse, RemoveGroupMemberRequest, SeasonType, TeamType, UserInformationBrief, GetTeamsForUsernameResponse, AuthentikClientError, CreateUserRequest, ServiceSeasonType, AuthentikClientErrorType } from "../clients/AuthentikClient/models";
 import { AuthentikClient } from "../clients/AuthentikClient";
@@ -26,6 +27,10 @@ import { SharedResourceClient } from '../clients';
 import { ENABLED_SHARED_RESOURCES, ENABLED_TEAMSETTING_RESOURCES, ENABLED_SERVICE_TEAMS, TEAM_TYPE_CONFIGS } from '../config';
 import { SlackClient } from '../clients/SlackClient';
 import { AWSClient } from '../clients/AWSClient';
+import { s3Client, BUCKET_NAME } from '../clients/AWSClient/S3Client';
+import { GetObjectCommand, PutObjectCommand, CopyObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { createPresignedPost } from "@aws-sdk/s3-presigned-post";
 import { sanitizeUserFullName, validateTeamName } from '../utils/strings';
 import { BindleController, EnabledBindlePermissions } from '../controllers/BindleController';
 import { AuthorizedUser } from '../clients/OpenIdClient';
@@ -33,6 +38,8 @@ import { executiveAuthVerify } from '../auth';
 import { TeamCreationRequest, TeamCreationRequestStatus, ITeamCreationRequest } from '../models/TeamCreationRequest';
 import { CustomValidationError, SharedResourcesError } from '../utils/errors';
 import { ExpressRequestBindleExtension } from '../types/express';
+import { validateS3FileSignature, FILE_SIGNATURES } from '../utils/s3-validation';
+import { signAvatarUrl } from '../utils/avatars';
 
 export interface EnabledRootSettings {
     [key: string]: boolean
@@ -106,6 +113,7 @@ interface APITeamInviteAcceptRequest {
     major: string;
     expectedGrad: Date;
     phoneNumber: string;
+    avatarKey?: string;
 }
 
 interface APIGetTeamsListOptions {
@@ -203,7 +211,14 @@ export class OrgController extends Controller {
     @SuccessResponse(200)
     @Security("oidc")
     async getPeople(@Queries() options: GetUserListOptions): Promise<GetUserListResponse> {
-        return await this.authentikClient.getUserList(options)
+        const userList = await this.authentikClient.getUserList(options)
+
+        /* Enrich with Avatars */
+        await Promise.all(userList.users.map(async (user) => {
+            user.avatar = await signAvatarUrl(user.pk, user.attributes.avatar);
+        }));
+
+        return userList;
     }
 
     /**
@@ -219,6 +234,8 @@ export class OrgController extends Controller {
     @Security("oidc")
     async getPersonInfo(@Path() personId: number): Promise<APIUserInfoResponse> {
         const authentikUserInfo = await this.authentikClient.getUserInfo(personId)
+        authentikUserInfo.avatar = await signAvatarUrl(personId.toString(), authentikUserInfo.attributes.avatar);
+
         return {
             ...authentikUserInfo
         }
@@ -316,14 +333,16 @@ export class OrgController extends Controller {
                 role: presidentUser.attributes?.roles?.[execTeam.pk] || "President",
                 email: presidentUser.email,
                 teamContext: [execTeamName],
-                realUserPk: presidentUser.pk
+                realUserPk: presidentUser.pk,
+                avatar: await signAvatarUrl(presidentUser.pk, presidentUser.attributes.avatar)
             },
             siblings: [],
             children: []
         };
 
         // 4. Add Other Execs as Siblings
-        execUsers.forEach((u: any, idx: number) => {
+        // We use Promise.all to map async operations
+        await Promise.all(execUsers.map(async (u: any, idx: number) => {
             if (idx === presidentIndex) return;
             rootNode.siblings!.push({
                 id: u.pk.toString(), // Siblings are just people
@@ -332,11 +351,12 @@ export class OrgController extends Controller {
                 attributes: {
                     role: u.attributes?.roles?.[execTeam.pk] || "Executive",
                     email: u.email,
-                    teamContext: [execTeamName]
+                    teamContext: [execTeamName],
+                    avatar: await signAvatarUrl(u.pk, u.attributes.avatar)
                 },
                 children: []
             });
-        });
+        }));
 
         // 5. Initialize Divisions
         const divisions: Record<string, OrgChartNode> = {
@@ -380,7 +400,8 @@ export class OrgController extends Controller {
                                 role: primaryOwner.attributes?.roles?.[team.pk] || "Owner",
                                 email: primaryOwner.email,
                                 teamContext: [teamName],
-                                realUserPk: primaryOwner.pk
+                                realUserPk: primaryOwner.pk,
+                                avatar: await signAvatarUrl(primaryOwner.pk, primaryOwner.attributes.avatar)
                             },
                             siblings: [],
                             children: [],
@@ -388,17 +409,18 @@ export class OrgController extends Controller {
                         };
 
                         // Add sibling owners
-                        owners.slice(1).forEach((o: any) => {
+                        await Promise.all(owners.slice(1).map(async (o: any) => {
                             ownerNode.siblings!.push({
                                 id: o.pk.toString(),
                                 name: o.name,
                                 type: "PERSON",
                                 attributes: {
                                     role: o.attributes?.roles?.[team.pk] || "Co-Owner",
-                                    email: o.email
+                                    email: o.email,
+                                    avatar: await signAvatarUrl(o.pk, o.attributes.avatar)
                                 }
                             });
-                        });
+                        }));
 
                         // If expandAll is true, populate children (Subteams)
                         if (shouldExpandAll && hasSubteams) {
@@ -482,7 +504,7 @@ export class OrgController extends Controller {
         // Re-construct the Parent Node (Team Owner) to return with children
         // The frontend merges this result.
         const owners = teamInfo.users || [];
-        const primaryOwner = owners[0] || { name: "Unknown", pk: 0, email: "" };
+        const primaryOwner = owners[0] || { name: "Unknown", pk: 0, email: "", attributes: { avatar: undefined } };
 
         return {
             id: safeTeamId,
@@ -491,7 +513,8 @@ export class OrgController extends Controller {
             attributes: {
                 role: "Owner",
                 email: primaryOwner.email,
-                teamContext: [rootTeamName]
+                teamContext: [rootTeamName],
+                avatar: await signAvatarUrl(primaryOwner.pk, primaryOwner.attributes.avatar)
             },
             children: subMembers,
             hasChildren: subMembers.length > 0
@@ -506,14 +529,14 @@ export class OrgController extends Controller {
         // Note: getGroupInfo internally recurses if we don't disable it.
         const rootDetailed = await this.authentikClient.getGroupInfo(rootTeamId, { includeUsers: true });
 
-        const processSubteams = (subteams: any[]) => {
+        const processSubteams = async (subteams: any[]) => {
             for (const sub of subteams) {
                 if (sub.attributes?.flaggedForDeletion) continue;
 
                 const subName = sub.attributes?.friendlyName || sub.name;
                 const members = sub.users || [];
 
-                for (const m of members) {
+                await Promise.all(members.map(async (m: any) => {
                     results.push({
                         id: m.pk.toString(), // Members are People
                         name: m.name,
@@ -521,21 +544,22 @@ export class OrgController extends Controller {
                         attributes: {
                             role: m.attributes?.roles?.[sub.pk] || "Member",
                             email: m.email,
-                            teamContext: [rootTeamName, subName]
+                            teamContext: [rootTeamName, subName],
+                            avatar: await signAvatarUrl(m.pk, m.attributes.avatar)
                         },
                         children: []
                         // Members are leaves in this structure
                     });
-                }
+                }));
 
                 if (sub.subteams) {
-                    processSubteams(sub.subteams);
+                    await processSubteams(sub.subteams);
                 }
             }
         };
 
         if (rootDetailed.subteams) {
-            processSubteams(rootDetailed.subteams);
+            await processSubteams(rootDetailed.subteams);
         }
 
         return results;
@@ -642,6 +666,85 @@ export class OrgController extends Controller {
     }
 
     /**
+     * Generates a pre-signed URL for uploading a profile picture.
+     * This endpoint is public to allow users to upload avatars during onboarding
+     * (before they have an account).
+     * 
+     * @param inviteId Invite ID for validation and path generation
+     * @param fileName Name of the file
+     * @param contentType MIME type of the file
+     */
+    @Get("people/avatar/upload-url")
+    @Tags("User Onboarding")
+    @SuccessResponse(200)
+    async getAvatarUploadUrl(
+        @Query() inviteId: string,
+        @Query() fileName: string,
+        @Query() contentType: string
+    ): Promise<{ uploadUrl: string, key: string, fields: Record<string, string> }> {
+
+        const invite = await Invite.findById(inviteId).exec();
+        if (!invite) {
+            throw new CustomValidationError(400, "Invalid Invite ID");
+        }
+
+        if (invite.expiresAt < new Date()) {
+            throw new CustomValidationError(400, "Invite has expired");
+        }
+
+        const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+        if (!allowedTypes.includes(contentType)) {
+            throw new CustomValidationError(400, "Invalid file type. Only images are allowed.");
+        }
+
+        const ext = fileName.split('.').pop();
+        const timestamp = Date.now();
+        const key = `avatars/temp/${inviteId}/${timestamp}.${ext}`;
+
+        // Create Presigned POST with conditions
+        const { url, fields } = await createPresignedPost(s3Client, {
+            Bucket: BUCKET_NAME,
+            Key: key,
+            Conditions: [
+                ["content-length-range", 0, 5 * 1024 * 1024], // Max 5MB
+                ["eq", "$Content-Type", contentType], // Enforce Content-Type
+            ],
+            Fields: {
+                "Content-Type": contentType,
+            },
+            Expires: 300, // 5 minutes
+        });
+
+        return { uploadUrl: url, key, fields };
+    }
+
+    /**
+     * Generates a pre-signed URL for downloading a user's avatar.
+     * Uses in-memory caching to reduce S3 API calls.
+     * 
+     * @param userPk The PK of the user whose avatar to fetch
+     */
+    @Get("people/avatar/download-url")
+    @Tags("People Management")
+    @SuccessResponse(200)
+    @Security("oidc")
+    async getAvatarDownloadUrl(@Query() userPk: string): Promise<{ url: string }> {
+
+        const pkNumber = parseInt(userPk);
+        if (isNaN(pkNumber)) {
+            throw new CustomValidationError(400, "Invalid User PK");
+        }
+
+        const userInfo = await this.authentikClient.getUserInfo(pkNumber);
+        const avatarKey = userInfo.attributes.avatar;
+
+        const url = await signAvatarUrl(userPk, avatarKey);
+
+        this.setHeader('Cache-Control', 'public, max-age=86400');
+        return { url };
+    }
+
+    /**
      * Public API since Invite IDs are unique and can't be guessed. Additionally,
      * temporary authentication through OTP is supported but would need an overhaul.
      * 
@@ -705,8 +808,67 @@ export class OrgController extends Controller {
             }
         }
 
-        /* Create the New User, Add to Group and Delete Invite */
+        if (req.avatarKey) {
+            const normalizedKey = path.posix.normalize(req.avatarKey);
+            const expectedPrefix = `avatars/temp/${inviteId}/`;
+            if (!normalizedKey.startsWith(expectedPrefix) || normalizedKey.includes('..')) {
+                throw new CustomValidationError(400, "Invalid avatar key");
+            }
+        }
+
         await this.authentikClient.createNewUser(createUserRequest)
+
+        if (req.avatarKey) {
+            try {
+                const createdUser = await this.authentikClient.getUserInfoFromEmail(createUserRequest.email);
+                const userPk = createdUser.pk;
+
+                const ext = req.avatarKey.split('.').pop();
+                const newKey = `avatars/${userPk}/avatar.${ext}`;
+
+
+
+                // Server-Side Magic Number Validation
+                const allowedAvatars = [FILE_SIGNATURES.PNG, FILE_SIGNATURES.JPEG, FILE_SIGNATURES.GIF, FILE_SIGNATURES.WEBP];
+                const isValid = await validateS3FileSignature(req.avatarKey, allowedAvatars);
+                if (!isValid) {
+                    console.error(`Invalid avatar signature for ${req.avatarKey}`);
+                    // Delete the bad file
+                    try {
+                        await s3Client.send(new DeleteObjectCommand({
+                            Bucket: BUCKET_NAME,
+                            Key: req.avatarKey
+                        }));
+                    } catch (e) {
+                        console.error("Failed to delete invalid avatar", e);
+                    }
+                    // Proceed without setting avatar
+                    console.error("Profile picture was not valid. Account created anyway.")
+                    await invite.deleteOne()
+                    return;
+                }
+
+                await s3Client.send(new CopyObjectCommand({
+                    Bucket: BUCKET_NAME,
+                    CopySource: `${BUCKET_NAME}/${req.avatarKey}`,
+                    Key: newKey
+                }));
+
+                await s3Client.send(new DeleteObjectCommand({
+                    Bucket: BUCKET_NAME,
+                    Key: req.avatarKey
+                }));
+
+                await this.authentikClient.updateUserAttributes(parseInt(userPk as any), {
+                    avatar: newKey
+                });
+
+            } catch (e) {
+                // Don't fail the whole request, just log error. User is created.
+                console.error("Failed to process avatar", e);
+            }
+        }
+
         await invite.deleteOne()
     }
 
@@ -750,6 +912,22 @@ export class OrgController extends Controller {
         // for (const team of filteredSubTeams) {
         //     subteamResponses.push(await this.authentikClient.getGroupInfo(team.pk))
         // }
+
+        if (primaryTeam.users) {
+            await Promise.all(primaryTeam.users.map(async (user) => {
+                user.avatar = await signAvatarUrl(user.pk, user.attributes.avatar);
+            }));
+        }
+
+        if (primaryTeam.subteams) {
+            await Promise.all(primaryTeam.subteams.map(async (sub) => {
+                if (sub.users) {
+                    await Promise.all(sub.users.map(async (user) => {
+                        user.avatar = await signAvatarUrl(user.pk, user.attributes.avatar);
+                    }));
+                }
+            }));
+        }
 
         return {
             team: primaryTeam,
@@ -796,6 +974,14 @@ export class OrgController extends Controller {
         await this.authentikClient.updateBindlePermissions(teamId, bindlePermissions);
     }
 
+    /**
+     * Signs the avatar URL for a given user.
+     * Uses in-memory caching to reduce S3 API calls.
+     * 
+     * @param userPk User PK
+     * @param avatarKey S3 Key for Avatar
+     * @returns Signed URL or empty string
+     */
     /**
      * Generates a temporary link to access the team's AWS Console. Account Provisioning
      * is handled by AWSClient and Root Team Settings. Access is moderated by the Bindle
