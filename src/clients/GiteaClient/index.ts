@@ -106,7 +106,7 @@ export class GiteaClient implements SharedResourceClient {
 
     public async handleOrgBindleSync(org: GetGroupInfoResponse, callback: (updatedResourceCount: number, status: string) => void): Promise<boolean> {
         /* If the Org's Not Created, Create it! */
-        await this.createOrganizationIfNotExists({
+        await this.ensureOrganizationExists({
             grpSharedResourceId: org.name,
             displayName: `${org.attributes.friendlyName} ${org.attributes.seasonType} ${org.attributes.seasonYear}`,
             orgWebsite: `${process.env.PEOPLEPORTAL_BASE_URL}/org/teams/${org.pk}`
@@ -119,7 +119,8 @@ export class GiteaClient implements SharedResourceClient {
     }
 
     /**
-     * 
+     * Creates a team if doesn't exist and syncs the team members. Translates Bindle Permissions
+     * to the Organization's Rules.
      * 
      * @param team 
      * @param orgRoot If Org Root, we create a fake resource to map the root team members
@@ -314,10 +315,18 @@ export class GiteaClient implements SharedResourceClient {
         return true;
     }
 
-    private async createOrganizationIfNotExists(req: GiteaOrgCreateRequest): Promise<boolean> {
+    private async ensureOrganizationExists(req: GiteaOrgCreateRequest): Promise<boolean> {
         try {
             /* Try to Obtain Org Info */
-            await this.getOrganizationInfo(req.grpSharedResourceId)
+            const orgInfo = await this.getOrganizationInfo(req.grpSharedResourceId)
+
+            /* Check if we need to update the organization */
+            const description = `Code Repository for the ${req.displayName} team.  \nManaged by [**People Portal**](https://github.com/candiedoperation/AppDev-PeoplePortalServer).`
+
+            if (orgInfo.full_name != req.displayName || orgInfo.website != req.orgWebsite || orgInfo.description != description) {
+                await this.updateOrganization(req)
+            }
+
             return true;
         } catch (error: any) {
             if (!(error instanceof GiteaClientResourceNotExists)) {
@@ -332,6 +341,23 @@ export class GiteaClient implements SharedResourceClient {
             url: `/api/v1/orgs`,
             data: {
                 username: req.grpSharedResourceId,
+                full_name: req.displayName,
+                description: `Code Repository for the ${req.displayName} team.  \nManaged by [**People Portal**](https://github.com/candiedoperation/AppDev-PeoplePortalServer).`,
+                website: req.orgWebsite
+            }
+        }
+
+        /* Throws an Exception! */
+        await axios.request(RequestConfig)
+        return true;
+    }
+
+    private async updateOrganization(req: GiteaOrgCreateRequest): Promise<boolean> {
+        var RequestConfig: any = {
+            ...this.GiteaBaseConfig,
+            method: 'patch',
+            url: `/api/v1/orgs/${req.grpSharedResourceId}`,
+            data: {
                 full_name: req.displayName,
                 description: `Code Repository for the ${req.displayName} team.  \nManaged by [**People Portal**](https://github.com/candiedoperation/AppDev-PeoplePortalServer).`,
                 website: req.orgWebsite

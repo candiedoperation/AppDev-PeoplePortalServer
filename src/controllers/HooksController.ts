@@ -55,6 +55,8 @@ export class HooksController extends Controller {
       /* Apply Branch Protection Rules */
       await this.giteaClient.handleBranchProtectionSync(teamInfo, [repoEvent.repository])
     } catch (e: any) {
+      /* Processing Failed! Delete the Repository */
+      await this.giteaClient.deleteRepository(repoEvent.repository.owner.username, repoEvent.repository.name)
       return `OK (Actions Failed: ${e.message})`;
     }
   }
