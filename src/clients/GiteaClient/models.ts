@@ -91,10 +91,13 @@ export interface GiteaRepositoryInternalTracker {
   enable_issue_dependencies: boolean;
 }
 
-export interface GiteaRepository {
-  id: number;
+export interface GiteaRepositoryBrief {
   owner: GiteaUser;
   name: string;
+}
+
+export interface GiteaRepository extends GiteaRepositoryBrief {
+  id: number;
   full_name: string;
   description: string;
   empty: boolean;
@@ -157,4 +160,43 @@ export interface GiteaHookRepositoryTrigger {
   repository: GiteaRepository,
   organization: GiteaUser,
   sender: GiteaUser,
+}
+
+export interface GiteaBranchProtection {
+  rule_name: string;
+  priority: number;
+
+  approvals_whitelist_teams?: string[];
+  approvals_whitelist_username?: string[];
+  block_on_official_review_requests?: boolean;
+  block_on_rejected_reviews?: boolean;
+  dismiss_stale_approvals?: boolean;
+  enable_approvals_whitelist?: boolean;
+  ignore_stale_approvals?: boolean;
+  required_approvals?: number;
+
+  block_admin_merge_override?: boolean;
+  block_on_outdated_branch?: boolean;
+  enable_force_push?: boolean;
+  enable_force_push_allowlist?: boolean;
+  enable_merge_whitelist?: boolean;
+  enable_push?: boolean;
+  enable_push_whitelist?: boolean;
+
+  merge_whitelist_teams?: string[];
+  merge_whitelist_usernames?: string[];
+
+  push_whitelist_deploy_keys?: boolean;
+  push_whitelist_teams?: string[];
+  push_whitelist_usernames?: string[];
+
+  force_push_allowlist_deploy_keys?: boolean;
+  force_push_allowlist_teams?: string[];
+  force_push_allowlist_usernames?: string[];
+
+  enable_status_check?: boolean;
+  status_check_contexts?: string[];
+  protected_file_patterns?: string;
+  unprotected_file_patterns?: string;
+  require_signed_commits?: boolean;
 }

@@ -20,28 +20,42 @@ import { Route, Controller, Get, SuccessResponse, Post, Body, Tags } from "tsoa"
 import { BindlePermissionMap } from "./BindleController";
 import { GiteaHookRepositoryTrigger } from "../clients/GiteaClient/models";
 import { GiteaClient } from "../clients/GiteaClient";
+import { AuthentikClient } from "../clients/AuthentikClient";
 
 @Route("/api/webhook")
 export class HooksController extends Controller {
   private readonly giteaClient: GiteaClient
+  private readonly authentikClient: AuthentikClient
 
   constructor() {
     super()
     this.giteaClient = new GiteaClient()
+    this.authentikClient = new AuthentikClient()
   }
 
   @Post("git/repoevent")
   @Tags("Git Web Hooks")
   @SuccessResponse(200)
   async processGitRepoEventHook(@Body() repoEvent: GiteaHookRepositoryTrigger) {
-    console.log(repoEvent.action);
-    console.log(repoEvent.repository.full_name);
+    switch (repoEvent.action) {
+      case "created":
+        return this.handleRepoCreation(repoEvent)
 
-    if (repoEvent.action == "created") {
-      console.log("DELETEING THE REPO")
-      await this.giteaClient.deleteRepository(repoEvent.repository.owner.username, repoEvent.repository.name)
+      default:
+        return "OK"
     }
+  }
 
-    return "OK"
+  private async handleRepoCreation(repoEvent: GiteaHookRepositoryTrigger) {
+    try {
+      /* Get Repo Team Information */
+      const teamPk = await this.authentikClient.getGroupPkFromName(repoEvent.organization.username)
+      const teamInfo = await this.authentikClient.getGroupInfo(teamPk)
+
+      /* Apply Branch Protection Rules */
+      await this.giteaClient.handleBranchProtectionSync(teamInfo, [repoEvent.repository])
+    } catch (e: any) {
+      return `OK (Actions Failed: ${e.message})`;
+    }
   }
 }

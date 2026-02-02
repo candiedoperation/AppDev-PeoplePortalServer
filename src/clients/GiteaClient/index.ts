@@ -19,10 +19,11 @@
 import axios, { AxiosError } from "axios"
 import { SharedResourceClient } from ".."
 import { GetGroupInfoResponse } from "../AuthentikClient/models"
-import { GiteaAPITeamDefinition, GiteaAPIUserDefinition } from "./models";
+import { GiteaAPITeamDefinition, GiteaAPIUserDefinition, GiteaBranchProtection, GiteaRepository, GiteaRepositoryBrief } from "./models";
 import { computeStringArrStateDiff } from "../../utils/operations";
 import { BindlePermission, BindlePermissionMap } from "../../controllers/BindleController";
 import { GiteaHookSetup } from "./hooksetup";
+import { GITEA_DEFAULT_BRANCH_PROTECTION, GITEA_DEFAULT_ORG_NAME } from "./config";
 
 class GiteaClientResourceNotExists extends Error {
     constructor(message: string) {
@@ -63,6 +64,21 @@ export class GiteaClient implements SharedResourceClient {
             friendlyName: "Allow Repository Creation",
             description: "Enabling this allows members in this subteam to create repositories",
         },
+
+        "repo:brprotect-approvals": {
+            friendlyName: "Allow Pull Request Approvals",
+            description: "Enabling this allows members in this subteam to approve and review PRs"
+        },
+
+        "repo:brprotect-push": {
+            friendlyName: "Allow Git Push",
+            description: "Enabling this allows members in this subteam to push to the repository",
+        },
+
+        "repo:brprotect-merge": {
+            friendlyName: "Allow Git Merge",
+            description: "Enabling this allows members in this subteam to merge Pull Requests"
+        }
     }
 
     constructor() {
@@ -96,8 +112,9 @@ export class GiteaClient implements SharedResourceClient {
             orgWebsite: `${process.env.PEOPLEPORTAL_BASE_URL}/org/teams/${org.pk}`
         })
 
-        /* Perform Team Bindle Sync */
+        /* Perform Team Bindle Sync & Apply Branch Protections */
         await this.handleTeamBindleSync(org, org.name, callback)
+        await this.handleBranchProtectionSync(org);
         return true
     }
 
@@ -111,7 +128,7 @@ export class GiteaClient implements SharedResourceClient {
      */
     private async handleTeamBindleSync(team: GetGroupInfoResponse, orgId: string, callback: (updatedResourceCount: number, status: string) => void): Promise<boolean> {
         /* We'll put team owners in the Shared Owners Team so, People Portal has Supreme Access */
-        const teamSharedResourceId = (orgId == team.name) ? 'PeoplePortalTeamOwners' : team.name
+        const teamSharedResourceId = (orgId == team.name) ? GITEA_DEFAULT_ORG_NAME : team.name
         await this.createTeamIfNotExists({
             teamSharedResourceId,
             canCreateRespositories: true,
@@ -155,6 +172,98 @@ export class GiteaClient implements SharedResourceClient {
         return true
     }
 
+    public async handleBranchProtectionSync(
+        team: GetGroupInfoResponse,
+        repositories?: GiteaRepositoryBrief[],
+    ) {
+        if (!repositories)
+            repositories = await this.getOrgRepositories(team.name)
+
+        /* Define Base List */
+        const approvals_whitelist_teams = [GITEA_DEFAULT_ORG_NAME]
+        const merge_whitelist_teams = [GITEA_DEFAULT_ORG_NAME]
+        const push_whitelist_teams = [GITEA_DEFAULT_ORG_NAME]
+
+        /* Enumerate Permissions from Team Information */
+        for (const subteam of team.subteams) {
+            const bindlePermissions = subteam.attributes.bindlePermissions[this.getResourceName()]
+            if (!bindlePermissions)
+                continue;
+
+            if (bindlePermissions["repo:brprotect-approvals"] === true)
+                approvals_whitelist_teams.push(subteam.name)
+
+            if (bindlePermissions["repo:brprotect-merge"] === true)
+                merge_whitelist_teams.push(subteam.name)
+
+            if (bindlePermissions["repo:brprotect-push"] === true)
+                push_whitelist_teams.push(subteam.name)
+        }
+
+        /* Define Branch Protection Rules, Apply Default Override */
+        const branchProt: GiteaBranchProtection = {
+            approvals_whitelist_teams,
+            merge_whitelist_teams,
+            push_whitelist_teams,
+            ...GITEA_DEFAULT_BRANCH_PROTECTION
+        }
+
+        /* Apply Branch Protection Rules */
+        await this.applyBranchProtections(repositories, branchProt)
+    }
+
+    private async applyBranchProtections(
+        repositories: GiteaRepositoryBrief[],
+        branchProt: GiteaBranchProtection
+    ) {
+        for (const repository of repositories) {
+            var updateRequestConfig: any = {
+                ...this.GiteaBaseConfig,
+                method: 'patch',
+                url: `/api/v1/repos/${repository.owner.username}/${repository.name}/branch_protections/${branchProt.rule_name}`,
+                data: branchProt,
+            }
+
+            try {
+                /* Apply Branch Protection Update */
+                await axios.request(updateRequestConfig)
+            } catch (e: any) {
+                if (!e.response || e.response.status != 404)
+                    throw e;
+
+                /* Branch Protection Doesn't Exist, Create it! */
+                var createRequestConfig: any = {
+                    ...this.GiteaBaseConfig,
+                    method: 'post',
+                    url: `/api/v1/repos/${repository.owner.username}/${repository.name}/branch_protections`,
+                    data: branchProt,
+                }
+
+                /* Excecute Request, Throws on Error! */
+                await axios.request(createRequestConfig)
+            }
+        }
+    }
+
+    /**
+     * Fetches all repositories owned by an organization.
+     * Uses the Gitea API internally.
+     * 
+     * @param orgName Shared Resource ID
+     * @returns Repository List
+     */
+    private async getOrgRepositories(orgName: string): Promise<GiteaRepository[]> {
+        var RequestConfig: any = {
+            ...this.GiteaBaseConfig,
+            method: 'get',
+            url: `/api/v1/orgs/${orgName}/repos`,
+        }
+
+        /* Excecute Request */
+        const response = await axios.request(RequestConfig)
+        return response.data as GiteaRepository[]
+    }
+
     private async addTeamMember(teamId: number, username: string) {
         var RequestConfig: any = {
             ...this.GiteaBaseConfig,
@@ -195,7 +304,8 @@ export class GiteaClient implements SharedResourceClient {
                 name: req.teamSharedResourceId,
                 description: req.description,
                 permission: req.writeAccess ? "write" : "read",
-                units: ["repo.actions", "repo.code", "repo.issues", "repo.pulls", "repo.releases", "repo.projects"]
+                units: ["repo.actions", "repo.code", "repo.issues", "repo.pulls", "repo.releases", "repo.projects"],
+                includes_all_repositories: true,
             }
         }
 

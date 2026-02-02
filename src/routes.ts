@@ -377,6 +377,26 @@ const models: TsoaRoute.Models = {
         "additionalProperties": {"dataType":"string"},
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "GiteaRepositoryPermissions": {
+        "dataType": "refObject",
+        "properties": {
+            "admin": {"dataType":"boolean","required":true},
+            "push": {"dataType":"boolean","required":true},
+            "pull": {"dataType":"boolean","required":true},
+        },
+        "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "GiteaRepositoryInternalTracker": {
+        "dataType": "refObject",
+        "properties": {
+            "enable_time_tracker": {"dataType":"boolean","required":true},
+            "allow_only_contributors_to_track_time": {"dataType":"boolean","required":true},
+            "enable_issue_dependencies": {"dataType":"boolean","required":true},
+        },
+        "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
     "GiteaUser": {
         "dataType": "refObject",
         "properties": {
@@ -407,32 +427,12 @@ const models: TsoaRoute.Models = {
         "additionalProperties": false,
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-    "GiteaRepositoryPermissions": {
-        "dataType": "refObject",
-        "properties": {
-            "admin": {"dataType":"boolean","required":true},
-            "push": {"dataType":"boolean","required":true},
-            "pull": {"dataType":"boolean","required":true},
-        },
-        "additionalProperties": false,
-    },
-    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-    "GiteaRepositoryInternalTracker": {
-        "dataType": "refObject",
-        "properties": {
-            "enable_time_tracker": {"dataType":"boolean","required":true},
-            "allow_only_contributors_to_track_time": {"dataType":"boolean","required":true},
-            "enable_issue_dependencies": {"dataType":"boolean","required":true},
-        },
-        "additionalProperties": false,
-    },
-    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
     "GiteaRepository": {
         "dataType": "refObject",
         "properties": {
-            "id": {"dataType":"double","required":true},
             "owner": {"ref":"GiteaUser","required":true},
             "name": {"dataType":"string","required":true},
+            "id": {"dataType":"double","required":true},
             "full_name": {"dataType":"string","required":true},
             "description": {"dataType":"string","required":true},
             "empty": {"dataType":"boolean","required":true},
