@@ -883,14 +883,14 @@ export class OrgController extends Controller {
                     Key: newKey
                 }));
 
+                await this.authentikClient.updateUserAttributes(parseInt(userPk as any), {
+                    avatar: newKey
+                });
+
                 await s3Client.send(new DeleteObjectCommand({
                     Bucket: BUCKET_NAME,
                     Key: req.avatarKey
                 }));
-
-                await this.authentikClient.updateUserAttributes(parseInt(userPk as any), {
-                    avatar: newKey
-                });
 
             } catch (e) {
                 // Don't fail the whole request, just log error. User is created.
