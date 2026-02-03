@@ -162,8 +162,7 @@ export class ATSController extends Controller {
             return { error: "ApplicantNotFound", message: "Applicant not found" };
         }
 
-        const timestamp = Date.now();
-        const key = `resumes/temp/${applicant._id}/${timestamp}.${fileExtension}`;
+        const key = `resumes/${applicant._id}.pdf`;
 
         // Use presigned POST to enforce file size limits on S3 side
         const { url, fields } = await createPresignedPost(s3Client, {
@@ -216,10 +215,9 @@ export class ATSController extends Controller {
 
         const applicant = await Applicant.findOne({ email: userEmail });
         const normalizedKey = path.posix.normalize(key);
-        const expectedPrefix = `resumes/${applicant?._id}/`;
-        const tempPrefix = `resumes/temp/${applicant?._id}/`;
+        const expectedKey = `resumes/${applicant?._id}.pdf`;
 
-        if (!applicant || (!normalizedKey.startsWith(expectedPrefix) && !normalizedKey.startsWith(tempPrefix)) || normalizedKey.includes('..')) {
+        if (!applicant || normalizedKey !== expectedKey || normalizedKey.includes('..')) {
             this.setStatus(403);
             return { error: "Forbidden", message: "You do not have permission to access this file." };
         }
@@ -1246,11 +1244,11 @@ export class ATSController extends Controller {
                 { upsert: true, new: true, setDefaultsOnInsert: true }
             ).exec();
 
-            // 9.1 Validate Resume Signature and Move to Permanent Location
+            // 9.1 Validate Resume Signature
             try {
                 const isValidSignature = await validateS3FileSignature(profile.resumeUrl, [FILE_SIGNATURES.PDF]);
                 if (!isValidSignature) {
-                    // Delete temp file
+                    // Delete invalid file
                     await s3Client.send(new DeleteObjectCommand({
                         Bucket: BUCKET_NAME,
                         Key: profile.resumeUrl
@@ -1259,31 +1257,8 @@ export class ATSController extends Controller {
                     this.setStatus(400);
                     return { error: "InvalidFileSignature", message: "The uploaded file is not a valid PDF." };
                 }
-
-                // Move from temp to permanent
-                const ext = profile.resumeUrl.split('.').pop();
-                const permanentKey = `resumes/${updatedApplicant._id}/resume.${ext}`;
-                const tempResumeUrl = profile.resumeUrl;
-
-                await s3Client.send(new CopyObjectCommand({
-                    Bucket: BUCKET_NAME,
-                    CopySource: `${BUCKET_NAME}/${profile.resumeUrl}`,
-                    Key: permanentKey
-                }));
-
-                // Update applicant with permanent URL
-                profile.resumeUrl = permanentKey;
-                updatedApplicant.profile = new Map(Object.entries(profile) as any);
-                await updatedApplicant.save();
-
-                // Delete temp file AFTER successful save
-                await s3Client.send(new DeleteObjectCommand({
-                    Bucket: BUCKET_NAME,
-                    Key: tempResumeUrl
-                }));
-
             } catch (e) {
-                console.error("Failed to validate or move resume", e);
+                console.error("Failed to validate resume", e);
                 this.setStatus(500);
                 return { error: "FileProcessingError", message: "Failed to process resume file." };
             }
@@ -1363,7 +1338,7 @@ export class ATSController extends Controller {
             const currentProfile = applicant.profile ? Object.fromEntries(applicant.profile) : {};
 
             // Immediate Signature Validation for new Resume Uploads
-            if (body.resumeUrl && body.resumeUrl !== currentProfile.resumeUrl && body.resumeUrl.includes('/temp/')) {
+            if (body.resumeUrl && body.resumeUrl !== currentProfile.resumeUrl) {
                 const isValid = await validateS3FileSignature(body.resumeUrl, [FILE_SIGNATURES.PDF]);
                 if (!isValid) {
                     // Cleanup invalid file

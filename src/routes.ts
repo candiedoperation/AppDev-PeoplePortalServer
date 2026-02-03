@@ -618,6 +618,11 @@ const models: TsoaRoute.Models = {
         "enums": ["Applied","Interview","Rejected","Potential Hire","Hired"],
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "Record_string.string-Array_": {
+        "dataType": "refAlias",
+        "type": {"dataType":"nestedObjectLiteral","nestedProperties":{},"validators":{}},
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
     "ATSKanbanApplicationCard": {
         "dataType": "refObject",
         "properties": {
