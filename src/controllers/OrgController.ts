@@ -31,7 +31,7 @@ import { s3Client, BUCKET_NAME } from '../clients/AWSClient/S3Client';
 import { GetObjectCommand, PutObjectCommand, CopyObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { createPresignedPost } from "@aws-sdk/s3-presigned-post";
-import { sanitizeUserFullName, validateTeamName } from '../utils/strings';
+import { sanitizeUserFullName, validateTeamName, capitalizeString } from '../utils/strings';
 import { BindleController, EnabledBindlePermissions } from '../controllers/BindleController';
 import { AuthorizedUser } from '../clients/OpenIdClient';
 import { executiveAuthVerify } from '../auth';
@@ -611,6 +611,9 @@ export class OrgController extends Controller {
         @Request() req: express.Request | ExpressRequestAuthUserShim & ExpressRequestBindleShim,
         @Body() inviteReq: APITeamInviteCreateRequest
     ) {
+        /* Sanitize Request */
+        inviteReq.inviteeName = capitalizeString(inviteReq.inviteeName);
+
         /* Check if Email is in Supported Domain */
         if (!inviteReq.inviteeEmail.endsWith("@terpmail.umd.edu")) {
             throw new CustomValidationError(
@@ -779,6 +782,9 @@ export class OrgController extends Controller {
     @Tags("User Onboarding")
     @SuccessResponse(201)
     async acceptInvite(@Path() inviteId: string, @Body() req: APITeamInviteAcceptRequest) {
+        /* Sanitize Request */
+        req.major = capitalizeString(req.major);
+
         const invite = await Invite.findById(inviteId).exec()
         if (!invite)
             throw new Error("Invalid Invite ID")
@@ -1101,6 +1107,9 @@ export class OrgController extends Controller {
     @SuccessResponse(201)
     @Security("bindles", ["corp:membermgmt"])
     async addTeamMember(@Path() teamId: string, @Body() req: { userPk: number, roleTitle: string }) {
+        /* Sanitize Request */
+
+
         /* Needs Is Team owner Middleware?! */
         await this.addTeamMemberWrapper({
             groupId: teamId,
@@ -1143,6 +1152,7 @@ export class OrgController extends Controller {
     @Security("bindles", ["corp:subteamaccess"])
     async createSubTeam(@Request() req: express.Request | ExpressRequestBindleShim, @Path() teamId: string, @Body() body: APICreateSubTeamRequest): Promise<GetGroupInfoResponse> {
         body.friendlyName = validateTeamName(body.friendlyName);
+        body.description = capitalizeString(body.description);
         const parentInfo = req.bindle!.teamInfo;
 
         if (parentInfo.subteams && parentInfo.subteams.length >= 15) {
@@ -1306,6 +1316,7 @@ export class OrgController extends Controller {
     ): Promise<GetGroupInfoResponse | { message: string, status: string }> {
         /* Santize Request */
         createTeamReq.friendlyName = validateTeamName(createTeamReq.friendlyName);
+        createTeamReq.description = capitalizeString(createTeamReq.description);
 
         /* Check for Authorized User */
         const authorizedUser = req.session.authorizedUser!;
@@ -1436,6 +1447,9 @@ export class OrgController extends Controller {
     async updateTeamAttributes(@Path() teamId: string, @Body() conf: APIUpdateTeamRequest) {
         if (conf.friendlyName) {
             conf.friendlyName = validateTeamName(conf.friendlyName);
+        }
+        if (conf.description) {
+            conf.description = capitalizeString(conf.description);
         }
 
         /* Strictly restrict updates to only name and description to prevent attribute pollution */
