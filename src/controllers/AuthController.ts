@@ -23,7 +23,7 @@ import { UserInfoResponse } from 'openid-client';
 import { Applicant } from '../models/Applicant';
 import { Application } from '../models/Application';
 import jwt from "jsonwebtoken"
-import { generateSecureRandomString } from '../utils/strings';
+import { generateSecureRandomString, capitalizeString } from '../utils/strings';
 import { AuthentikClient } from '../clients/AuthentikClient';
 import { EmailClient } from '../clients/EmailClient';
 import { signAvatarUrl } from '../utils/avatars';
@@ -175,7 +175,8 @@ export class AuthController extends Controller {
                 }
 
                 /* Cleanup */
-                delete req.session.tempsession;
+                delete req.session.tempsession?.redirect_uri;
+                delete req.session.tempsession?.state;
                 return res.redirect(302, redirectUri.toString());
             }
 
@@ -200,7 +201,8 @@ export class AuthController extends Controller {
     @Tags("Guest Authentication")
     @SuccessResponse(200)
     async otpInitRequest(@Body() body: OtpInitRequest, @Request() req: express.Request) {
-        const { email, name } = body;
+        const { email } = body;
+        const name = capitalizeString(body.name);
 
         if (!email || !name) {
             this.setStatus(400);

@@ -36,7 +36,7 @@ export async function NativeExpressOIDCAuthPort(
         next()
     } catch (e) {
         /* Auth Exception */
-        res.redirect(301, "/api/auth/login")
+        res.redirect(302, "/api/auth/login")
     }
 }
 

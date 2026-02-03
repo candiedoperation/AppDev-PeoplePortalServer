@@ -52,7 +52,7 @@ app.use(cors({
   credentials: true
 }));
 
-app.set('trust proxy', 1);
+app.set('trust proxy', true);
 app.use(
   expressSession({
     name: 'peopleportal_sid',
@@ -61,36 +61,8 @@ app.use(
     saveUninitialized: true,
     store: new expressSession.MemoryStore(), /* Use Redis for Horizontal Scaling */
     proxy: true,
-    cookie: {
-      partitioned: true,
-      sameSite: 'lax',
-      secure: true,
-      httpOnly: true,
-    }
   })
 );
-
-app.use((req, res, next) => {
-  console.log('--- SESSION SPY ---');
-  console.log(`Request: ${req.method} ${req.url}`);
-
-  // 1. Did the browser send a cookie?
-  const cookieHeader = req.headers.cookie;
-  console.log('1. Cookie Header Received:', cookieHeader ? 'YES' : 'NO (Browser blocked it)');
-
-  // 2. What is the Session ID?
-  console.log('2. Session ID:', req.sessionID);
-
-  // 3. Is the session new or old?
-  // If this says 'true' on the callback, the old session is dead.
-  // @ts-ignore
-  console.log('3. Is New Session?:', req.session?.isNew || 'Unknown');
-
-  // 4. What data is actually inside?
-  console.log('4. Session Data:', Object.keys(req.session || {}));
-  console.log('-------------------');
-  next();
-});
 
 /* Register TSOA Routes */
 const ApiRouter = Router()
