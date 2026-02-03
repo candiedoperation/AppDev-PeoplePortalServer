@@ -34,9 +34,11 @@ export async function NativeExpressOIDCAuthPort(
     try {
         const res = await expressAuthentication(req, "oidc")
         next()
-    } catch (e) {
+    } catch (e: any) {
         /* Auth Exception */
-        res.redirect(302, "/api/auth/login")
+        // Calculate return_to (Protocol + Host + Original URL)
+        const returnTo = req.protocol + "://" + req.get("host") + req.originalUrl;
+        res.redirect(302, "/api/auth/login?return_to=" + encodeURIComponent(returnTo))
     }
 }
 
@@ -97,7 +99,27 @@ async function oidcAuthVerify(request: express.Request, scopes?: string[]): Prom
         }
 
         return Promise.resolve(true)
-    } catch (e) {
+    } catch (e: any) {
+        /* Check for Token Expiration & Refresh Logic */
+        if ((e.name === 'TokenExpiredError' || e.message?.includes('expired')) && request.session.refreshToken) {
+            try {
+                console.log("Access Token Expired. Attempting Refresh...");
+                const newTokens = await OpenIdClient.refreshAccessToken(request.session.refreshToken);
+
+                /* Update Session */
+                request.session.accessToken = newTokens.accessToken;
+                if (newTokens.refreshToken)
+                    request.session.refreshToken = newTokens.refreshToken;
+
+                request.session.authorizedUser = newTokens.user;
+                request.session.tokenExpiry = newTokens.expiry.getTime();
+
+                return Promise.resolve(true);
+            } catch (refreshError) {
+                console.error("Token Refresh Failed:", refreshError);
+            }
+        }
+
         /* OIDC Authorization Failed! */
         return Promise.reject(new ResourceAccessError(401, "Invalid or expired token"));
     }

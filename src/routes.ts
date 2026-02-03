@@ -1740,6 +1740,7 @@ export function RegisterRoutes(app: Router) {
         const argsAuthController_handleLogin: Record<string, TsoaRoute.ParameterSchema> = {
                 req: {"in":"request","name":"req","required":true,"dataType":"object"},
                 redirect_uri: {"in":"query","name":"redirect_uri","dataType":"string"},
+                return_to: {"in":"query","name":"return_to","dataType":"string"},
                 state: {"in":"query","name":"state","dataType":"string"},
         };
         app.get('/api/auth/login',
