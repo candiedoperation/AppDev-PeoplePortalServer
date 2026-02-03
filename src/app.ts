@@ -34,6 +34,9 @@ import { NativeExpressOIDCAuthPort } from "./auth";
 import { AuthentikClient } from "./clients/AuthentikClient";
 import { CustomValidationError, ResourceAccessError } from "./utils/errors";
 import { ENABLED_SHARED_RESOURCES } from "./config";
+import log from 'loglevel';
+
+log.setLevel("info")
 
 if (!process.env.PEOPLEPORTAL_TOKEN_SECRET)
   process.env.PEOPLEPORTAL_TOKEN_SECRET = generateSecureRandomString(16)

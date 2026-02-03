@@ -31,7 +31,7 @@ import { s3Client, BUCKET_NAME } from '../clients/AWSClient/S3Client';
 import { GetObjectCommand, PutObjectCommand, CopyObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { createPresignedPost } from "@aws-sdk/s3-presigned-post";
-import { sanitizeUserFullName, validateTeamName } from '../utils/strings';
+import { sanitizeUserFullName, validateTeamName, capitalizeString } from '../utils/strings';
 import { BindleController, EnabledBindlePermissions } from '../controllers/BindleController';
 import { AuthorizedUser } from '../clients/OpenIdClient';
 import { executiveAuthVerify } from '../auth';
@@ -40,6 +40,8 @@ import { CustomValidationError, SharedResourcesError } from '../utils/errors';
 import { ExpressRequestBindleExtension } from '../types/express';
 import { validateS3FileSignature, FILE_SIGNATURES } from '../utils/s3-validation';
 import { signAvatarUrl } from '../utils/avatars';
+import MarkdownIt from "markdown-it";
+import zxcvbn from 'zxcvbn';
 
 export interface EnabledRootSettings {
     [key: string]: boolean
@@ -106,6 +108,7 @@ interface APITeamInviteGetResponse {
     subteamPk: string;
     inviterPk: number;
     expiresAt: Date;
+    slackInviteLink: string;
 }
 
 interface APITeamInviteAcceptRequest {
@@ -610,6 +613,9 @@ export class OrgController extends Controller {
         @Request() req: express.Request | ExpressRequestAuthUserShim & ExpressRequestBindleShim,
         @Body() inviteReq: APITeamInviteCreateRequest
     ) {
+        /* Sanitize Request */
+        inviteReq.inviteeName = capitalizeString(inviteReq.inviteeName);
+
         /* Check if Email is in Supported Domain */
         if (!inviteReq.inviteeEmail.endsWith("@terpmail.umd.edu")) {
             throw new CustomValidationError(
@@ -759,7 +765,10 @@ export class OrgController extends Controller {
         if (!invite)
             throw new Error("Invalid Invite ID!")
 
-        return invite
+        return {
+            ...invite,
+            slackInviteLink: this.slackClient.getSlackInviteLink()
+        }
     }
 
     /**
@@ -775,9 +784,30 @@ export class OrgController extends Controller {
     @Tags("User Onboarding")
     @SuccessResponse(201)
     async acceptInvite(@Path() inviteId: string, @Body() req: APITeamInviteAcceptRequest) {
+        /* Sanitize Request */
+        req.major = capitalizeString(req.major);
+
         const invite = await Invite.findById(inviteId).exec()
         if (!invite)
             throw new Error("Invalid Invite ID")
+
+        /* Validate Password Complexity */
+        if (req.password) {
+            if (req.password.length < 12) {
+                throw new CustomValidationError(
+                    400,
+                    "Password must be at least 12 characters long"
+                );
+            }
+
+            const strength = zxcvbn(req.password);
+            if (strength.score < 2) {
+                throw new CustomValidationError(
+                    400,
+                    "Password is too weak. Please choose a stronger password."
+                );
+            }
+        }
 
         /* Check Slack Presence! */
         const slackPresence = await this.slackClient.validateUserPresence(invite.inviteEmail)
@@ -826,8 +856,6 @@ export class OrgController extends Controller {
                 const ext = req.avatarKey.split('.').pop();
                 const newKey = `avatars/${userPk}/avatar.${ext}`;
 
-
-
                 // Server-Side Magic Number Validation
                 const allowedAvatars = [FILE_SIGNATURES.PNG, FILE_SIGNATURES.JPEG, FILE_SIGNATURES.GIF, FILE_SIGNATURES.WEBP];
                 const isValid = await validateS3FileSignature(req.avatarKey, allowedAvatars);
@@ -842,6 +870,7 @@ export class OrgController extends Controller {
                     } catch (e) {
                         console.error("Failed to delete invalid avatar", e);
                     }
+
                     // Proceed without setting avatar
                     console.error("Profile picture was not valid. Account created anyway.")
                     await invite.deleteOne()
@@ -1097,7 +1126,6 @@ export class OrgController extends Controller {
     @SuccessResponse(201)
     @Security("bindles", ["corp:membermgmt"])
     async addTeamMember(@Path() teamId: string, @Body() req: { userPk: number, roleTitle: string }) {
-        /* Needs Is Team owner Middleware?! */
         await this.addTeamMemberWrapper({
             groupId: teamId,
             userPk: req.userPk,
@@ -1139,6 +1167,7 @@ export class OrgController extends Controller {
     @Security("bindles", ["corp:subteamaccess"])
     async createSubTeam(@Request() req: express.Request | ExpressRequestBindleShim, @Path() teamId: string, @Body() body: APICreateSubTeamRequest): Promise<GetGroupInfoResponse> {
         body.friendlyName = validateTeamName(body.friendlyName);
+        body.description = capitalizeString(body.description);
         const parentInfo = req.bindle!.teamInfo;
 
         if (parentInfo.subteams && parentInfo.subteams.length >= 15) {
@@ -1302,6 +1331,7 @@ export class OrgController extends Controller {
     ): Promise<GetGroupInfoResponse | { message: string, status: string }> {
         /* Santize Request */
         createTeamReq.friendlyName = validateTeamName(createTeamReq.friendlyName);
+        createTeamReq.description = capitalizeString(createTeamReq.description);
 
         /* Check for Authorized User */
         const authorizedUser = req.session.authorizedUser!;
@@ -1413,7 +1443,7 @@ export class OrgController extends Controller {
         }
 
         /* Write All the Errors during the Process... */
-
+        console.log(errors);
         res.end()
     }
 
@@ -1432,6 +1462,9 @@ export class OrgController extends Controller {
     async updateTeamAttributes(@Path() teamId: string, @Body() conf: APIUpdateTeamRequest) {
         if (conf.friendlyName) {
             conf.friendlyName = validateTeamName(conf.friendlyName);
+        }
+        if (conf.description) {
+            conf.description = capitalizeString(conf.description);
         }
 
         /* Strictly restrict updates to only name and description to prevent attribute pollution */
@@ -1531,8 +1564,34 @@ export class OrgController extends Controller {
     }
 
     async addTeamMemberWrapper(request: AddGroupMemberRequest): Promise<APITeamMemberAddResponse> {
-        const coreAdditionComplete = await this.authentikClient.addGroupMember(request)
         const userInfo = await this.authentikClient.getUserInfo(request.userPk);
+        const targetGroupInfo = await this.authentikClient.getGroupInfo(request.groupId);
+        let rootTeamInfo: GetGroupInfoResponse;
+
+        /* Identify Root Team */
+        if (targetGroupInfo.parentInfo) {
+            /* It's a subteam, fetch the parent (Root Team) */
+            rootTeamInfo = await this.authentikClient.getGroupInfo(targetGroupInfo.parentInfo.pk);
+        } else {
+            /* It is the Root Team */
+            rootTeamInfo = targetGroupInfo;
+        }
+
+        /* Collect all Forbidden Group IDs (Root + All Subteams) */
+        const familyPks = new Set<string>();
+        familyPks.add(rootTeamInfo.pk);
+        rootTeamInfo.subteamPkList.forEach(pk => familyPks.add(pk));
+
+        /* Check for Intersection with User's Current Groups */
+        const userGroupPks = userInfo.groups;
+        for (const groupPk of userGroupPks) {
+            if (familyPks.has(groupPk)) {
+                this.setStatus(409); // Conflict
+                throw new CustomValidationError(409, "User is already a member of this team hierarchy (Root or another Subteam).");
+            }
+        }
+
+        const coreAdditionComplete = await this.authentikClient.addGroupMember(request)
 
         /* Update User's Role Attribute */
         this.authentikClient.updateUserAttributes(request.userPk, {

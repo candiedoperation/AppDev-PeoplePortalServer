@@ -102,17 +102,27 @@ export const TEAM_TYPE_CONFIGS: Partial<Record<TeamType, TeamTypeConfig>> = {
         friendlyName: "Leadership",
         description: "Project and Tech Leads",
         bindles: {
-          "GiteaClient": { "repo:allowcreate": true },
           "PeoplePortalClient": {
             "corp:awsaccess": true,
             "corp:hiringaccess": true
+          },
+          "GiteaClient": {
+            "repo:allowcreate": true,
+            "repo:brprotect-approvals": true,
+            "repo:brprotect-push": true,
+            "repo:brprotect-merge": true
           },
         }
       },
       {
         friendlyName: "Engineering",
         description: "UI/UX, PMs, SWEs, etc.",
-        /* No special bindles for Engineering */
+        bindles: {
+          "GiteaClient": {
+            "repo:brprotect-push": true,
+            "repo:brprotect-merge": true
+          },
+        }
       }
     ]
   },
@@ -121,7 +131,15 @@ export const TEAM_TYPE_CONFIGS: Partial<Record<TeamType, TeamTypeConfig>> = {
     defaultSubteams: [
       {
         friendlyName: "Learners",
-        description: "Bootcamp Students"
+        description: "Bootcamp Students",
+        bindles: {
+          "GiteaClient": {
+            "repo:allowcreate": true,
+            "repo:brprotect-push": true,
+            "repo:brprotect-merge": true,
+            "repo:brprotect-approvals": true
+          },
+        }
       },
       {
         friendlyName: "Educators",
@@ -132,7 +150,14 @@ export const TEAM_TYPE_CONFIGS: Partial<Record<TeamType, TeamTypeConfig>> = {
             "corp:bindlesync": true,
             "corp:subteamaccess": true,
             "corp:membermgmt": true
-          }
+          },
+
+          "GiteaClient": {
+            "repo:allowcreate": true,
+            "repo:brprotect-push": true,
+            "repo:brprotect-merge": true,
+            "repo:brprotect-approvals": true
+          },
         }
       },
       {

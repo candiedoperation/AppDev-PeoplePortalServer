@@ -27,6 +27,7 @@ export class SlackClient implements SharedResourceClient {
     private static readonly TAG = "SlackClient"
     private readonly slackClient: WebClient;
     private botUserId: string | undefined;
+    private readonly slackInviteUrl: string;
 
     private async executeWithRateLimitRetry<T>(operation: () => Promise<T>): Promise<T> {
         try {
@@ -49,7 +50,14 @@ export class SlackClient implements SharedResourceClient {
     }
 
     constructor() {
+        if (!process.env.PEOPLEPORTAL_SLACK_INVITE_URL)
+            throw new Error("PEOPLEPORTAL_SLACK_INVITE_URL is not defined");
+
+        if (!process.env.PEOPLEPORTAL_SLACK_BOT_TOKEN)
+            throw new Error("PEOPLEPORTAL_SLACK_BOT_TOKEN is not defined");
+
         this.slackClient = new WebClient(process.env.PEOPLEPORTAL_SLACK_BOT_TOKEN);
+        this.slackInviteUrl = process.env.PEOPLEPORTAL_SLACK_INVITE_URL;
     }
 
     private async getBotUserId(): Promise<string> {
@@ -72,6 +80,10 @@ export class SlackClient implements SharedResourceClient {
 
     getSupportedBindles(): BindlePermissionMap {
         return this.supportedBindles
+    }
+
+    public getSlackInviteLink(): string {
+        return this.slackInviteUrl;
     }
 
     async handleOrgBindleSync(org: GetGroupInfoResponse, callback: (updatedResourceCount: number, status: string) => void): Promise<boolean> {

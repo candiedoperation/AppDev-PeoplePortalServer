@@ -23,6 +23,7 @@
     "@slack/oauth": "^3.0.4",
     "@slack/web-api": "^7.10.0",
     "@types/markdown-it": "^14.1.2",
+    "@types/zxcvbn": "^4.4.5",
     "axios": "^1.11.0",
     "body-parser": "^2.2.0",
     "cors": "^2.8.5",
@@ -39,7 +40,8 @@
     "nodemailer": "^7.0.6",
     "nodemailer-express-handlebars": "^7.0.0",
     "openid-client": "^6.7.1",
-    "tsoa": "^6.6.0"
+    "tsoa": "^6.6.0",
+    "zxcvbn": "^4.4.2"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",

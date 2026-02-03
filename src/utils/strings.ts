@@ -33,6 +33,18 @@ export function sanitizeGroupName(str: string) {
 }
 
 /**
+ * Capitalizes the first letter of each word in a string and lowercases the rest.
+ * Example: "HELLO wORLD" -> "Hello World"
+ */
+export function capitalizeString(str: string): string {
+  if (!str) return str;
+  return str.split(' ').map(word => {
+    if (word.length === 0) return "";
+    return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+  }).join(' ');
+}
+
+/**
  * Normalizes a full name into FirstLast format, removing middle names and hyphens while capitalizing segments.
  */
 export function sanitizeUserFullName(fullName: string): string {

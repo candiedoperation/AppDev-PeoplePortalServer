@@ -840,6 +840,7 @@ export class ATSController extends Controller {
         try {
             const { stage, interviewLink, interviewGuidelines, hiredRole, hiredSubteamPk } = body;
 
+
             const application = await Application.findById(applicationId);
             if (!application) {
                 this.setStatus(404);
