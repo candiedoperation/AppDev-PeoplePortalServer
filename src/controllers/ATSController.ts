@@ -336,7 +336,7 @@ export class ATSController extends Controller {
                 subteamPk: teamId,
                 isRecruiting,
                 roles,
-                roleSpecificQuestions: new Map(Object.entries(roleSpecificQuestions || {}))
+                roleSpecificQuestions: roleSpecificQuestions || {}
             }, // update data
             {
                 upsert: true,        // Create if doesn't exist
@@ -497,8 +497,7 @@ export class ATSController extends Controller {
                         friendlyName: subteamInfo.attributes.friendlyName || subteamInfo.name,
                         description: subteamInfo.attributes.description,
                         roles: config?.roles || [],
-                        roleSpecificQuestions: config?.roleSpecificQuestions ?
-                            Object.fromEntries(config.roleSpecificQuestions.entries()) : {}
+                        roleSpecificQuestions: config?.roleSpecificQuestions || {}
                     };
                 })
             );
@@ -1130,8 +1129,8 @@ export class ATSController extends Controller {
                         for (const pref of rolePreferences) {
                             if (pref.subteamPk === subteamPk) { // Only check if this preference belongs to this subteam
                                 if (config.roles.includes(pref.role)) {
-                                    const roleQuestions = config.roleSpecificQuestions.get(pref.role) || [];
-                                    roleQuestions.forEach(q => allQuestions.add(q));
+                                    const roleQuestions = config.roleSpecificQuestions[pref.role] || [];
+                                    roleQuestions.forEach((q: string) => allQuestions.add(q));
                                 }
                             }
                         }

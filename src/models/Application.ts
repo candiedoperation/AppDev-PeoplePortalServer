@@ -31,7 +31,7 @@ export interface IApplication extends Document {
   teamPk: string;
   rolePreferences: { role: string, subteamPk: string }[]; // Ordered array
   stage: ApplicationStage;
-  responses: Map<string, string>;
+  responses: Record<string, string>;
   appliedAt: Date;
   stageHistory: Array<{
     stage: ApplicationStage;
@@ -67,10 +67,9 @@ const ApplicationSchema = new Schema<IApplication>({
     index: true
   },
   responses: {
-    type: Map,
-    of: String,
+    type: Schema.Types.Mixed,
     required: true,
-    default: new Map()
+    default: {}
   },
   appliedAt: { type: Date, default: Date.now, required: true },
   appDevInternalPk: { type: Number, required: false },
