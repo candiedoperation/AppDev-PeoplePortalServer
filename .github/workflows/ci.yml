@@ -2,8 +2,10 @@ name: Build Server and Notify Deploy
 
 on:
   push:
-    # Trigger only when PRs are merged into master?
+    # Trigger only when PRs are merged into master
     branches: [master]
+    
+  workflow_dispatch:
 
 jobs:
   build-server:
