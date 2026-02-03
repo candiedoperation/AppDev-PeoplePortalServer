@@ -1264,6 +1264,7 @@ export class ATSController extends Controller {
                 // Move from temp to permanent
                 const ext = profile.resumeUrl.split('.').pop();
                 const permanentKey = `resumes/${updatedApplicant._id}/resume.${ext}`;
+                const tempResumeUrl = profile.resumeUrl;
 
                 await s3Client.send(new CopyObjectCommand({
                     Bucket: BUCKET_NAME,
@@ -1271,15 +1272,16 @@ export class ATSController extends Controller {
                     Key: permanentKey
                 }));
 
-                await s3Client.send(new DeleteObjectCommand({
-                    Bucket: BUCKET_NAME,
-                    Key: profile.resumeUrl
-                }));
-
                 // Update applicant with permanent URL
                 profile.resumeUrl = permanentKey;
                 updatedApplicant.profile = new Map(Object.entries(profile) as any);
                 await updatedApplicant.save();
+
+                // Delete temp file AFTER successful save
+                await s3Client.send(new DeleteObjectCommand({
+                    Bucket: BUCKET_NAME,
+                    Key: tempResumeUrl
+                }));
 
             } catch (e) {
                 console.error("Failed to validate or move resume", e);
