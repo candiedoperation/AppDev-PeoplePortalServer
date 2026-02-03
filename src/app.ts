@@ -52,12 +52,19 @@ app.use(cors({
   credentials: true
 }));
 
+app.set('trust proxy', 1);
 app.use(
   expressSession({
     secret: process.env.PEOPLEPORTAL_TOKEN_SECRET,
     resave: false,
     saveUninitialized: true,
-    store: new expressSession.MemoryStore() /* Use Redis for Horizontal Scaling */
+    store: new expressSession.MemoryStore(), /* Use Redis for Horizontal Scaling */
+    cookie: {
+      partitioned: true,
+      sameSite: 'none',
+      secure: true,
+      httpOnly: true,
+    }
   })
 );
 
