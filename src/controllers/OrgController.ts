@@ -1126,10 +1126,6 @@ export class OrgController extends Controller {
     @SuccessResponse(201)
     @Security("bindles", ["corp:membermgmt"])
     async addTeamMember(@Path() teamId: string, @Body() req: { userPk: number, roleTitle: string }) {
-        /* Sanitize Request */
-
-
-        /* Needs Is Team owner Middleware?! */
         await this.addTeamMemberWrapper({
             groupId: teamId,
             userPk: req.userPk,
@@ -1568,8 +1564,34 @@ export class OrgController extends Controller {
     }
 
     async addTeamMemberWrapper(request: AddGroupMemberRequest): Promise<APITeamMemberAddResponse> {
-        const coreAdditionComplete = await this.authentikClient.addGroupMember(request)
         const userInfo = await this.authentikClient.getUserInfo(request.userPk);
+        const targetGroupInfo = await this.authentikClient.getGroupInfo(request.groupId);
+        let rootTeamInfo: GetGroupInfoResponse;
+
+        /* Identify Root Team */
+        if (targetGroupInfo.parentInfo) {
+            /* It's a subteam, fetch the parent (Root Team) */
+            rootTeamInfo = await this.authentikClient.getGroupInfo(targetGroupInfo.parentInfo.pk);
+        } else {
+            /* It is the Root Team */
+            rootTeamInfo = targetGroupInfo;
+        }
+
+        /* Collect all Forbidden Group IDs (Root + All Subteams) */
+        const familyPks = new Set<string>();
+        familyPks.add(rootTeamInfo.pk);
+        rootTeamInfo.subteamPkList.forEach(pk => familyPks.add(pk));
+
+        /* Check for Intersection with User's Current Groups */
+        const userGroupPks = userInfo.groups;
+        for (const groupPk of userGroupPks) {
+            if (familyPks.has(groupPk)) {
+                this.setStatus(409); // Conflict
+                throw new CustomValidationError(409, "User is already a member of this team hierarchy (Root or another Subteam).");
+            }
+        }
+
+        const coreAdditionComplete = await this.authentikClient.addGroupMember(request)
 
         /* Update User's Role Attribute */
         this.authentikClient.updateUserAttributes(request.userPk, {
