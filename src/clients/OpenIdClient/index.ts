@@ -35,6 +35,7 @@ export interface AuthorizedUser {
 export interface AuthorizationStamp {
   accessToken: string,
   expiry: Date,
+  refreshToken?: string,
   idToken?: string | undefined,
   user: AuthorizedUser
 }
@@ -79,7 +80,7 @@ export class OpenIdClient {
     const expectedState = client.randomState()
     let parameters: Record<string, string> = {
       redirect_uri: this.redirect_uri!,
-      scope: 'openid profile email people_portal',
+      scope: 'openid profile email people_portal offline_access',
       code_challenge: this.code_challenge,
       code_challenge_method: this.code_challenge_method,
     }
@@ -102,6 +103,7 @@ export class OpenIdClient {
 
     return {
       accessToken: tokens.access_token,
+      ...(tokens.refresh_token ? { refreshToken: tokens.refresh_token } : {}),
       idToken: tokens.id_token,
       expiry: new Date(claims.exp * 1000),
       user: {
@@ -145,6 +147,33 @@ export class OpenIdClient {
         }
       )
     })
+  }
+
+  public static async refreshAccessToken(refreshToken: string): Promise<AuthorizationStamp> {
+    if (!this.config)
+      throw new Error("OpenID Client is Uninitialized!")
+
+    const tokens = await client.refreshTokenGrant(this.config, refreshToken)
+    const claims = tokens.claims()
+    if (!claims)
+      throw new Error("Failed to Obtain OIDC Claims from Refresh!")
+
+    return {
+      accessToken: tokens.access_token,
+      ...(tokens.refresh_token ? { refreshToken: tokens.refresh_token } : {}), // Rotation might give a new one
+      idToken: tokens.id_token,
+      expiry: new Date(claims.exp * 1000),
+      user: {
+        sub: claims.sub,
+        email: claims.email as string,
+        name: claims.name as string,
+        username: claims.preferred_username as string,
+        groups: claims.groups as string[],
+        pk: (claims.pk as number),
+        attributes: (claims.attributes as unknown as UserAttributeDefinition),
+        is_superuser: claims.is_superuser as boolean
+      }
+    }
   }
 
   public static async getUserInfo(accessToken: string, sub: string) {

@@ -93,6 +93,7 @@ export class AuthController extends Controller {
     async handleLogin(
         @Request() req: express.Request,
         @Query() redirect_uri?: string,
+        @Query() return_to?: string,
 
         /** OpenID Connect Shim for API Docs. Ignored for other API Requests. */
         @Query() state?: string,
@@ -107,6 +108,10 @@ export class AuthController extends Controller {
             req.session.tempsession.redirect_uri = redirect_uri;
             if (state)
                 req.session.tempsession.state = state;
+        }
+
+        if (return_to) {
+            req.session.tempsession.return_to = return_to;
         }
 
         let authFlowResponse = OpenIdClient.startAuthFlow()
@@ -142,12 +147,21 @@ export class AuthController extends Controller {
             req.session.accessToken = authorizationStamp.accessToken
             req.session.authorizedUser = authorizationStamp.user
             req.session.tokenExpiry = authorizationStamp.expiry.getTime()
+            if (authorizationStamp.refreshToken)
+                req.session.refreshToken = authorizationStamp.refreshToken
             if (authorizationStamp.idToken)
                 req.session.idToken = authorizationStamp.idToken
 
             /* Redirect Logic */
             const res = (req as any).res as express.Response
             const tempsession = req.session.tempsession;
+
+            /* Case 0: Simple Return To (App Navigation) */
+            if (tempsession?.return_to) {
+                const returnTo = tempsession.return_to;
+                delete req.session.tempsession?.return_to;
+                return res.redirect(302, returnTo);
+            }
 
             /* Case 1: OAuth2 Passthrough (API Docs Portal, Postman, etc.) */
             if (tempsession?.redirect_uri) {

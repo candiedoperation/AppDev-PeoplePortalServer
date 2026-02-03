@@ -40,6 +40,16 @@ export function capitalizeString(str: string): string {
   if (!str) return str;
   return str.split(' ').map(word => {
     if (word.length === 0) return "";
+
+    // 1. Preserve All Caps or Symbols (No lowercase letters)
+    // Example: "UI/UX", "HELLO", "USA"
+    if (/^[^a-z]*$/.test(word)) return word;
+
+    // 2. Preserve Acronym Plurals
+    // Example: "PMs", "SWEs", "APIs"
+    if (/^[A-Z]+s$/.test(word)) return word;
+
+    // 3. Default: Title Case (First Upper, Rest Lower)
     return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
   }).join(' ');
 }
