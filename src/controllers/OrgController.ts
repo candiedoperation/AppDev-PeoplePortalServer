@@ -712,7 +712,7 @@ export class OrgController extends Controller {
             Bucket: BUCKET_NAME,
             Key: key,
             Conditions: [
-                ["content-length-range", 0, 0.5 * 1024 * 1024], // Max 5MB
+                ["content-length-range", 0, 0.8 * 1024 * 1024], // Max 800K
                 ["eq", "$Content-Type", contentType], // Enforce Content-Type
             ],
             Fields: {
