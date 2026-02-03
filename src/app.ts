@@ -55,18 +55,42 @@ app.use(cors({
 app.set('trust proxy', 1);
 app.use(
   expressSession({
+    name: 'peopleportal_sid',
     secret: process.env.PEOPLEPORTAL_TOKEN_SECRET,
     resave: false,
     saveUninitialized: true,
     store: new expressSession.MemoryStore(), /* Use Redis for Horizontal Scaling */
+    proxy: true,
     cookie: {
       partitioned: true,
-      sameSite: 'none',
+      sameSite: 'lax',
       secure: true,
       httpOnly: true,
     }
   })
 );
+
+app.use((req, res, next) => {
+  console.log('--- SESSION SPY ---');
+  console.log(`Request: ${req.method} ${req.url}`);
+
+  // 1. Did the browser send a cookie?
+  const cookieHeader = req.headers.cookie;
+  console.log('1. Cookie Header Received:', cookieHeader ? 'YES' : 'NO (Browser blocked it)');
+
+  // 2. What is the Session ID?
+  console.log('2. Session ID:', req.sessionID);
+
+  // 3. Is the session new or old?
+  // If this says 'true' on the callback, the old session is dead.
+  // @ts-ignore
+  console.log('3. Is New Session?:', req.session?.isNew || 'Unknown');
+
+  // 4. What data is actually inside?
+  console.log('4. Session Data:', Object.keys(req.session || {}));
+  console.log('-------------------');
+  next();
+});
 
 /* Register TSOA Routes */
 const ApiRouter = Router()
@@ -162,11 +186,11 @@ app.use(function errorHandler(
 app.listen(PORT, async () => {
   /* Validate Connections */
   await OpenIdClient.init()
-  await AuthentikClient.validateAuthentikConnection()
+  //await AuthentikClient.validateAuthentikConnection()
 
   /* Validate Service Team Creation */
   const authentikClient = new AuthentikClient()
-  await authentikClient.validateServiceExistance()
+  //await authentikClient.validateServiceExistance()
 
   /* Initialize Shared Resource Clients */
   for (const client in ENABLED_SHARED_RESOURCES) {
