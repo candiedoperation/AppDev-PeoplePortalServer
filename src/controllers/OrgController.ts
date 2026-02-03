@@ -40,6 +40,8 @@ import { CustomValidationError, SharedResourcesError } from '../utils/errors';
 import { ExpressRequestBindleExtension } from '../types/express';
 import { validateS3FileSignature, FILE_SIGNATURES } from '../utils/s3-validation';
 import { signAvatarUrl } from '../utils/avatars';
+import MarkdownIt from "markdown-it";
+import zxcvbn from 'zxcvbn';
 
 export interface EnabledRootSettings {
     [key: string]: boolean
@@ -789,6 +791,24 @@ export class OrgController extends Controller {
         if (!invite)
             throw new Error("Invalid Invite ID")
 
+        /* Validate Password Complexity */
+        if (req.password) {
+            if (req.password.length < 12) {
+                throw new CustomValidationError(
+                    400,
+                    "Password must be at least 12 characters long"
+                );
+            }
+
+            const strength = zxcvbn(req.password);
+            if (strength.score < 2) {
+                throw new CustomValidationError(
+                    400,
+                    "Password is too weak. Please choose a stronger password."
+                );
+            }
+        }
+
         /* Check Slack Presence! */
         const slackPresence = await this.slackClient.validateUserPresence(invite.inviteEmail)
         if (!slackPresence)
@@ -836,8 +856,6 @@ export class OrgController extends Controller {
                 const ext = req.avatarKey.split('.').pop();
                 const newKey = `avatars/${userPk}/avatar.${ext}`;
 
-
-
                 // Server-Side Magic Number Validation
                 const allowedAvatars = [FILE_SIGNATURES.PNG, FILE_SIGNATURES.JPEG, FILE_SIGNATURES.GIF, FILE_SIGNATURES.WEBP];
                 const isValid = await validateS3FileSignature(req.avatarKey, allowedAvatars);
@@ -852,6 +870,7 @@ export class OrgController extends Controller {
                     } catch (e) {
                         console.error("Failed to delete invalid avatar", e);
                     }
+
                     // Proceed without setting avatar
                     console.error("Profile picture was not valid. Account created anyway.")
                     await invite.deleteOne()
