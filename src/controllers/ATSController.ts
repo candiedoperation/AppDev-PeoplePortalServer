@@ -96,7 +96,7 @@ interface ATSApplicationDetails extends ATSKanbanApplicationCard {
 // Constants
 const ALLOWED_RESUME_EXTENSIONS = ['pdf'] as const;
 const ALLOWED_CONTENT_TYPES = ['application/pdf'] as const;
-const MAX_RESPONSE_LENGTH = 500;
+const MAX_RESPONSE_LENGTH = 1500;
 const MAX_WHY_APPDEV_WORDS = 200;
 const MIN_RESPONSE_WORDS = 10;
 
