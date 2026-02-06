@@ -477,8 +477,11 @@ export class AuthentikClient {
                 }))
             }
         } catch (e) {
+            /* Log The Error */
             log.error(AuthentikClient.TAG, "Get Teams List Request Failed with Error: ", e)
-            if (axios.isAxiosError(e) && e.response?.status === 404)
+
+            /* 02-06-2026 (@atheesh): Data Integrity Compromise, See COE at https://wiki.appdevclub.com/people-portal-dev-guide/coe/ats-open-roles-failure */
+            if (axios.isAxiosError(e) && e.response?.status === 404 && e.response?.headers['x-powered-by'] === 'authentik')
                 throw new AuthentikClientError(AuthentikClientErrorType.GROUP_NOT_FOUND)
 
             /* We Just Know that the Request Failed! */
