@@ -36,6 +36,7 @@ import { OrgController } from "./OrgController";
 import { AuthorizedUser } from "../clients/OpenIdClient";
 import { validateS3FileSignature, FILE_SIGNATURES } from '../utils/s3-validation';
 import MarkdownIt from "markdown-it";
+import { normalizeEmail } from '../utils/email';
 
 // ====================
 // Type Definitions
@@ -1083,6 +1084,8 @@ export class ATSController extends Controller {
                 return { error: "Unauthorized", message: "User session not found. Please verify your email." };
             }
 
+            const normalizedUserEmail = normalizeEmail(userEmail);
+
             // 2. Verify team exists and is recruiting
             const teamInfo: GetGroupInfoResponse = await this.authentikClient.getGroupInfo(teamPk);
             const teamStatus = await TeamRecruitingStatus.findOne({ teamPk }).exec();
@@ -1213,7 +1216,7 @@ export class ATSController extends Controller {
             }
 
             // 8. Check for duplicate application
-            const applicant = await Applicant.findOne({ email: userEmail }).exec();
+            const applicant = await Applicant.findOne({ email: normalizedUserEmail }).exec();
 
             if (applicant) {
                 const existingApp = await Application.findOne({
@@ -1232,11 +1235,11 @@ export class ATSController extends Controller {
 
             // 9. Create/update applicant
             const updatedApplicant = await Applicant.findOneAndUpdate(
-                { email: userEmail },
+                { email: normalizedUserEmail },
                 {
                     $set: {
-                        email: userEmail,
-                        fullName: request.session.tempsession?.user?.name || userEmail.split('@')[0],
+                        email: normalizedUserEmail,
+                        fullName: request.session.tempsession?.user?.name || normalizedUserEmail.split('@')[0],
                         profile: new Map(Object.entries(profile)),
                         updatedAt: new Date()
                     }
@@ -1266,7 +1269,7 @@ export class ATSController extends Controller {
             // 9.5 Check Previous App Dev History, if exists!
             let appDevInternalPk = null;
             try {
-                const internalUser = await this.authentikClient.getUserInfoFromEmail(userEmail)
+                const internalUser = await this.authentikClient.getUserInfoFromEmail(normalizedUserEmail)
                 appDevInternalPk = internalUser.pk
             } catch (_e) {
                 /* Not previously in App Dev */
@@ -1328,7 +1331,9 @@ export class ATSController extends Controller {
                 return { error: "Unauthorized", message: "User session not found." };
             }
 
-            const applicant = await Applicant.findOne({ email: userEmail });
+            const normalizedUserEmail = normalizeEmail(userEmail);
+
+            const applicant = await Applicant.findOne({ email: normalizedUserEmail });
             if (!applicant) {
                 this.setStatus(404);
                 return { error: "NotFound", message: "Applicant not found." };
@@ -1355,7 +1360,7 @@ export class ATSController extends Controller {
             const updatedProfile = { ...currentProfile, ...body };
 
             await Applicant.findOneAndUpdate(
-                { email: userEmail },
+                { email: normalizedUserEmail },
                 {
                     $set: {
                         profile: updatedProfile,
@@ -1376,7 +1381,8 @@ export class ATSController extends Controller {
     /* ==== APPLICATION STAGE CHANGE EMAIL HELPERS ==== */
     async processHiredStageTransition(authorizedUser: AuthorizedUser, teamInfo: GetGroupInfoResponse, application: IApplication, applicant: IApplicant) {
         /* If Applicant is an internal member, we do not send onboard invites! */
-        const applicantEmail = applicant.email;
+        const applicantEmail = normalizeEmail(applicant.email);
+
         this.authentikClient.getUserInfoFromEmail(applicantEmail).then(async (user: UserInformationBrief) => {
             /* We didn't fail so, Add the Member to the Team & Send Email */
             await this.orgController.addTeamMember(application.hiredSubteamPk!, { userPk: +user.pk, roleTitle: application.hiredRole! });

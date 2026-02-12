@@ -600,17 +600,27 @@ export class AuthentikClient {
      * @param updatePayload Verified Update Payload
      * @returns True if update was successful
      */
-    public updateUserAttributes = async (userId: number, updatePayload: Partial<UserAttributeDefinition>): Promise<boolean> => {
+    /**
+     * Method to update User Information and Attributes in the Authentik Backend.
+     * 
+     * @param userId Target User ID
+     * @param updatePayload User Update Payload (Core fields like name, or attributes)
+     * @returns True if update was successful
+     */
+    public updateUser = async (userId: number, updatePayload: { name?: string, attributes?: Partial<UserAttributeDefinition> }): Promise<boolean> => {
         let userInfo = await this.getUserInfo(userId);
         var RequestConfig: any = {
             ...this.AxiosBaseConfig,
             method: 'patch',
             url: `/api/v3/core/users/${userId}/`,
             data: {
-                attributes: {
-                    ...userInfo.attributes,
-                    ...updatePayload
-                }
+                ...updatePayload,
+                ...(updatePayload.attributes && {
+                    attributes: {
+                        ...userInfo.attributes,
+                        ...updatePayload.attributes
+                    }
+                })
             }
         }
 
@@ -618,9 +628,13 @@ export class AuthentikClient {
             await axios.request(RequestConfig)
             return true
         } catch (e) {
-            log.error(AuthentikClient.TAG, "Update User Attributes Failed with Error: ", e)
+            log.error(AuthentikClient.TAG, "Update User Failed with Error: ", e)
             throw new AuthentikClientError(AuthentikClientErrorType.USERATTR_UPDATE_FAILED)
         }
+    }
+
+    public updateUserAttributes = async (userId: number, updatePayload: Partial<UserAttributeDefinition>): Promise<boolean> => {
+        return await this.updateUser(userId, { attributes: updatePayload });
     }
 
     public addGroupMember = async (request: AddGroupMemberRequest): Promise<boolean> => {

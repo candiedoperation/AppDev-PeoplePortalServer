@@ -17,6 +17,7 @@
 */
 
 import { Document, Schema, model } from "mongoose";
+import { normalizeEmail } from "../utils/email";
 
 export interface IApplicant extends Document {
   email: string;
@@ -49,6 +50,14 @@ const ApplicantSchema = new Schema<IApplicant>({
   },
   applicationIds: [{ type: Schema.Types.ObjectId, ref: 'Application' }]
 }, { timestamps: true });
+
+// Normalize email before saving
+ApplicantSchema.pre('save', function (next) {
+  if (this.email) {
+    this.email = normalizeEmail(this.email);
+  }
+  next();
+});
 
 export const Applicant = model<IApplicant>('Applicant', ApplicantSchema);
 
