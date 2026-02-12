@@ -19,7 +19,7 @@
 import * as express from 'express'
 import path from 'path';
 import { Request, Body, Controller, Get, Patch, Path, Post, Queries, Route, SuccessResponse, Put, Security, Delete, Tags, Query } from "tsoa";
-import { AddGroupMemberRequest, GetGroupInfoResponse, GetTeamsListResponse, GetUserListOptions, GetUserListResponse, RemoveGroupMemberRequest, SeasonType, TeamType, UserInformationBrief, GetTeamsForUsernameResponse, AuthentikClientError, CreateUserRequest, ServiceSeasonType, AuthentikClientErrorType } from "../clients/AuthentikClient/models";
+import { AddGroupMemberRequest, GetGroupInfoResponse, GetTeamsListResponse, GetUserListOptions, GetUserListResponse, RemoveGroupMemberRequest, SeasonType, TeamType, UserInformationBrief, GetTeamsForUsernameResponse, AuthentikClientError, CreateUserRequest, ServiceSeasonType, AuthentikClientErrorType, UserAttributeDefinition } from "../clients/AuthentikClient/models";
 import { AuthentikClient } from "../clients/AuthentikClient";
 import { Invite } from "../models/Invites";
 import { EmailClient } from "../clients/EmailClient";
@@ -31,7 +31,7 @@ import { s3Client, BUCKET_NAME } from '../clients/AWSClient/S3Client';
 import { GetObjectCommand, PutObjectCommand, CopyObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { createPresignedPost } from "@aws-sdk/s3-presigned-post";
-import { sanitizeUserFullName, validateTeamName, capitalizeString } from '../utils/strings';
+import { sanitizeUserFullName, validateTeamName, capitalizeString, validateFullName } from '../utils/strings';
 import { BindleController, EnabledBindlePermissions } from '../controllers/BindleController';
 import { AuthorizedUser } from '../clients/OpenIdClient';
 import { executiveAuthVerify } from '../auth';
@@ -42,6 +42,7 @@ import { validateS3FileSignature, FILE_SIGNATURES } from '../utils/s3-validation
 import { signAvatarUrl } from '../utils/avatars';
 import MarkdownIt from "markdown-it";
 import zxcvbn from 'zxcvbn';
+import { normalizeEmail } from '../utils/email';
 
 export interface EnabledRootSettings {
     [key: string]: boolean
@@ -59,6 +60,13 @@ export interface RootTeamSettingInfo {
 /* Define Request Interfaces */
 interface APIUserInfoResponse extends UserInformationBrief {
 
+}
+
+interface APIUpdateUserRequest {
+    major?: string,
+    expectedGrad?: Date,
+    phoneNumber?: string,
+    avatar?: string
 }
 
 interface APICreateSubTeamRequest {
@@ -242,6 +250,48 @@ export class OrgController extends Controller {
         return {
             ...authentikUserInfo
         }
+    }
+
+    /**
+     * Updates information for a specific person.
+     * Secure endpoint: Users can only update their own profile unless they are superusers.
+     * 
+     * @param personId Internal User ID
+     * @param updateReq Update Request Body
+     * @param req Express Request for authorization check
+     */
+    @Patch("people/{personId}")
+    @Tags("People Management")
+    @SuccessResponse(200)
+    @Security("oidc")
+    async updatePersonInfo(
+        @Path() personId: number,
+        @Body() updateReq: APIUpdateUserRequest,
+        @Request() req: express.Request
+    ): Promise<boolean> {
+        const authorizedUser = req.session.authorizedUser;
+        if (!authorizedUser) {
+            throw new CustomValidationError(401, "Unauthorized");
+        }
+
+        /* Authorization Check: Only self or superuser */
+        if (authorizedUser.pk !== personId && !authorizedUser.is_superuser) {
+            throw new CustomValidationError(403, "You can only edit your own profile!");
+        }
+
+
+        const attributes: Partial<UserAttributeDefinition> = {};
+        if (updateReq.major !== undefined) attributes.major = updateReq.major;
+        if (updateReq.expectedGrad !== undefined) attributes.expectedGrad = updateReq.expectedGrad;
+        if (updateReq.phoneNumber !== undefined) attributes.phoneNumber = updateReq.phoneNumber;
+        if (updateReq.avatar !== undefined) attributes.avatar = updateReq.avatar;
+
+        /* Update User in Authentik */
+        const updatePayload: { attributes?: Partial<UserAttributeDefinition> } = {
+            attributes
+        };
+
+        return await this.authentikClient.updateUser(personId, updatePayload);
     }
 
     /**
@@ -614,7 +664,9 @@ export class OrgController extends Controller {
         @Body() inviteReq: APITeamInviteCreateRequest
     ) {
         /* Sanitize Request */
+        validateFullName(inviteReq.inviteeName);
         inviteReq.inviteeName = capitalizeString(inviteReq.inviteeName);
+        inviteReq.inviteeEmail = normalizeEmail(inviteReq.inviteeEmail);
 
         /* Check if Email is in Supported Domain */
         if (!inviteReq.inviteeEmail.endsWith("@terpmail.umd.edu")) {
@@ -725,6 +777,55 @@ export class OrgController extends Controller {
     }
 
     /**
+     * Generates a pre-signed URL for an authenticated user to upload/replace
+     * their own profile picture. This uses a fixed key pattern per user
+     * to ensure replacement.
+     * 
+     * @param fileName Name of the file
+     * @param contentType MIME type of the file
+     * @param req Express Request for authorization
+     */
+    @Get("people/avatar/self/upload-url")
+    @Tags("People Management")
+    @SuccessResponse(200)
+    @Security("oidc")
+    async getSelfAvatarUploadUrl(
+        @Query() fileName: string,
+        @Query() contentType: string,
+        @Request() req: express.Request
+    ): Promise<{ uploadUrl: string, key: string, fields: Record<string, string> }> {
+
+        const authorizedUser = req.session.authorizedUser;
+        if (!authorizedUser) {
+            throw new CustomValidationError(401, "Unauthorized");
+        }
+
+        const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+        if (!allowedTypes.includes(contentType)) {
+            throw new CustomValidationError(400, "Invalid file type. Only images are allowed.");
+        }
+
+        // Use a fixed key per user (replace existing)
+        const key = `avatars/${authorizedUser.pk}/avatar.webp`;
+
+        // Create Presigned POST with conditions
+        const { url, fields } = await createPresignedPost(s3Client, {
+            Bucket: BUCKET_NAME,
+            Key: key,
+            Conditions: [
+                ["content-length-range", 0, 819200], // Max 800K
+                ["eq", "$Content-Type", contentType], // Enforce Content-Type
+            ],
+            Fields: {
+                "Content-Type": contentType,
+            },
+            Expires: 300, // 5 minutes
+        });
+
+        return { uploadUrl: url, key, fields };
+    }
+
+    /**
      * Generates a pre-signed URL for downloading a user's avatar.
      * Uses in-memory caching to reduce S3 API calls.
      * 
@@ -791,6 +892,8 @@ export class OrgController extends Controller {
         if (!invite)
             throw new Error("Invalid Invite ID")
 
+        const inviteEmail = normalizeEmail(invite.inviteEmail);
+
         /* Validate Password Complexity */
         if (req.password) {
             if (req.password.length < 12) {
@@ -810,7 +913,7 @@ export class OrgController extends Controller {
         }
 
         /* Check Slack Presence! */
-        const slackPresence = await this.slackClient.validateUserPresence(invite.inviteEmail)
+        const slackPresence = await this.slackClient.validateUserPresence(inviteEmail)
         if (!slackPresence)
             throw new Error("User has not joined the Slack Workspace!")
 
@@ -821,7 +924,7 @@ export class OrgController extends Controller {
         /* Construct New Request */
         const createUserRequest: CreateUserRequest = {
             name: invite.inviteName,
-            email: invite.inviteEmail,
+            email: inviteEmail,
             password: req.password,
             attributes: {
                 major: req.major,
@@ -912,7 +1015,8 @@ export class OrgController extends Controller {
     @Tags("Generic Organization Tools")
     @SuccessResponse(200)
     async verifySlack(@Body() req: { email: string }): Promise<boolean> {
-        return await this.slackClient.validateUserPresence(req.email)
+        const email = normalizeEmail(req.email);
+        return await this.slackClient.validateUserPresence(email)
     }
 
     /**

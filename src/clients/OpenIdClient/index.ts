@@ -182,4 +182,23 @@ export class OpenIdClient {
 
     return await client.fetchUserInfo(this.config, accessToken, sub)
   }
+
+  public static getLogoutUrl(idToken: string | undefined, postLogoutRedirectUri: string): string {
+    if (!this.config)
+      throw new Error("OpenID Client is Uninitialized!")
+
+    const endSessionEndpoint = this.config.serverMetadata().end_session_endpoint
+    if (!endSessionEndpoint) {
+      /* Fallback to basic redirect if end_session_endpoint is not supported */
+      return postLogoutRedirectUri
+    }
+
+    const logoutUrl = new URL(endSessionEndpoint)
+    if (idToken) {
+      logoutUrl.searchParams.append("id_token_hint", idToken)
+    }
+    logoutUrl.searchParams.append("post_logout_redirect_uri", postLogoutRedirectUri)
+
+    return logoutUrl.toString()
+  }
 }
