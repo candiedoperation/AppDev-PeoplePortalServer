@@ -17,6 +17,7 @@
 */
 
 import validator from 'validator';
+import { CustomValidationError } from './errors';
 
 /**
  * Normalizes an email address to a consistent format.
@@ -27,16 +28,16 @@ import validator from 'validator';
  * 
  * @param email - The email address to normalize
  * @returns The normalized email address
- * @throws Error if email is invalid or normalization fails
+ * @throws CustomValidationError if email is invalid or normalization fails
  */
 export function normalizeEmail(email: string): string {
     if (!email) {
-        throw new Error('Email is required');
+        throw new CustomValidationError(400, 'Email is required');
     }
 
     // Validate email format first
     if (!validator.isEmail(email)) {
-        throw new Error('Invalid email format');
+        throw new CustomValidationError(400, 'Invalid email format');
     }
 
     const normalized = validator.normalizeEmail(email, {
@@ -45,7 +46,7 @@ export function normalizeEmail(email: string): string {
     });
 
     if (!normalized) {
-        throw new Error('Email normalization failed');
+        throw new CustomValidationError(400, 'Email normalization failed');
     }
 
     return normalized;

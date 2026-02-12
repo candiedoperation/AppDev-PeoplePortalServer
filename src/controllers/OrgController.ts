@@ -39,7 +39,7 @@ import { TeamCreationRequest, TeamCreationRequestStatus, ITeamCreationRequest } 
 import { CustomValidationError, SharedResourcesError } from '../utils/errors';
 import { ExpressRequestBindleExtension } from '../types/express';
 import { validateS3FileSignature, FILE_SIGNATURES } from '../utils/s3-validation';
-import { signAvatarUrl } from '../utils/avatars';
+import { signAvatarUrl, invalidateAvatarCache } from '../utils/avatars';
 import MarkdownIt from "markdown-it";
 import zxcvbn from 'zxcvbn';
 import { normalizeEmail } from '../utils/email';
@@ -284,7 +284,24 @@ export class OrgController extends Controller {
         if (updateReq.major !== undefined) attributes.major = updateReq.major;
         if (updateReq.expectedGrad !== undefined) attributes.expectedGrad = updateReq.expectedGrad;
         if (updateReq.phoneNumber !== undefined) attributes.phoneNumber = updateReq.phoneNumber;
-        if (updateReq.avatar !== undefined) attributes.avatar = updateReq.avatar;
+        if (updateReq.avatar !== undefined) {
+            const avatarKey = updateReq.avatar;
+
+            /* 1. Basic Validation: Path Traversal and Expected Prefixes */
+            if (avatarKey.includes("..") || avatarKey.includes("\0")) {
+                throw new CustomValidationError(400, "Invalid avatar path.");
+            }
+
+            const allowedPrefixes = [`avatars/${personId}/`];
+            const isAllowedPrefix = allowedPrefixes.some(prefix => avatarKey.startsWith(prefix));
+
+            if (!isAllowedPrefix) {
+                throw new CustomValidationError(400, "Avatar key invalid");
+            }
+
+            attributes.avatar = avatarKey;
+            invalidateAvatarCache(personId);
+        }
 
         /* Update User in Authentik */
         const updatePayload: { attributes?: Partial<UserAttributeDefinition> } = {

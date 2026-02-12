@@ -59,3 +59,12 @@ export async function signAvatarUrl(userPk: string | number, avatarKey?: string)
         return "";
     }
 }
+
+/**
+ * Invalidates the cached avatar URL for a specific user.
+ * 
+ * @param userPk The PK of the user whose avatar cache to clear
+ */
+export function invalidateAvatarCache(userPk: string | number): void {
+    avatarUrlCache.delete(userPk.toString());
+}
