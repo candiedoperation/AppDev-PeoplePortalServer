@@ -42,6 +42,7 @@ export class AppleAccountClient implements SharedResourceClient {
     }
 
     handleOrgBindleSync(org: GetGroupInfoResponse, callback: (updatedResourceCount: number, status: string) => void): Promise<boolean> {
-        throw new Error("Method not implemented.")
+        // TODO: Implement Apple Account Client
+        return Promise.resolve(true);
     }
 }

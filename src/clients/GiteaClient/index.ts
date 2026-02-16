@@ -151,13 +151,13 @@ export class GiteaClient implements SharedResourceClient {
         for (const username of additions) {
             this.addTeamMember(teamInfoBrief.id, username)
                 .then(() => callback(1, "Git Permissions Updated for " + username))
-                .catch(() => callback(1, "Permission Update Failed for " + username))
+                .catch(() => callback(1, "Git Permission Update Failed for " + username))
         }
 
         for (const username of deletions) {
             this.removeTeamMember(teamInfoBrief.id, username)
                 .then(() => callback(1, "Git Permissions Updated for " + username))
-                .catch(() => callback(1, "Permission Update Failed for " + username))
+                .catch(() => callback(1, "Git Permission Update Failed for " + username))
         }
 
         /* Increased Processed Count for Existing Elements */
