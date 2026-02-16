@@ -43,7 +43,7 @@ export class SlackClient implements SharedResourceClient {
     }
 
     private readonly supportedBindles: BindlePermissionMap = {
-        "channels:universalaccess": {
+        "slack:universalaccess": {
             friendlyName: "Enable Universal Access",
             description: "Enabling this adds the members of this subteam to all of the project's slack channels",
         }
@@ -116,7 +116,7 @@ export class SlackClient implements SharedResourceClient {
         const universalAccessEmailSet = new Set<string>();
         for (const subteam of org.subteams) {
             const bindlePermissions = subteam.attributes.bindlePermissions;
-            if (bindlePermissions && bindlePermissions[SlackClient.TAG]?.["channels:universalaccess"]) {
+            if (bindlePermissions && bindlePermissions[SlackClient.TAG]?.["slack:universalaccess"]) {
                 log.info(`[SlackClient] Subteam ${subteam.name} has universal access enabled`);
                 for (const user of subteam.users) {
                     if (!universalAccessEmailSet.has(user.email)) {
