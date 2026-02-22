@@ -106,6 +106,11 @@ export const TEAM_TYPE_CONFIGS: Partial<Record<TeamType, TeamTypeConfig>> = {
             "corp:awsaccess": true,
             "corp:hiringaccess": true
           },
+
+          "SlackClient": {
+            "slack:universalaccess": true,
+          },
+
           "GiteaClient": {
             "repo:allowcreate": true,
             "repo:brprotect-approvals": true,
@@ -150,6 +155,10 @@ export const TEAM_TYPE_CONFIGS: Partial<Record<TeamType, TeamTypeConfig>> = {
             "corp:bindlesync": true,
             "corp:subteamaccess": true,
             "corp:membermgmt": true
+          },
+
+          "SlackClient": {
+            "slack:universalaccess": true,
           },
 
           "GiteaClient": {
