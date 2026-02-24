@@ -22,7 +22,7 @@ export interface GiteaAPITeamDefinition {
   description: string,
   organization: string | null,
   includes_all_repositories: boolean,
-  permission: "none",
+  permission: "none" | "read" | "write" | "admin" | "owner",
   can_create_org_repo: boolean,
   units: string[],
   units_map: object,
@@ -160,6 +160,38 @@ export interface GiteaHookRepositoryTrigger {
   repository: GiteaRepository,
   organization: GiteaUser,
   sender: GiteaUser,
+}
+
+export interface GiteaCommitUser {
+  name: string;
+  email: string;
+  username: string;
+}
+
+export interface GiteaCommit {
+  id: string;
+  message: string;
+  url: string;
+  author: GiteaCommitUser;
+  committer: GiteaCommitUser;
+  verification: any;
+  timestamp: string;
+  added: string[];
+  removed: string[];
+  modified: string[];
+}
+
+export interface GiteaHookCommitTrigger {
+  ref: string;
+  before: string;
+  after: string;
+  compare_url: string;
+  commits: GiteaCommit[];
+  total_commits: number;
+  head_commit: GiteaCommit;
+  repository: GiteaRepository;
+  pusher: GiteaUser;
+  sender: GiteaUser;
 }
 
 export interface GiteaBranchProtection {

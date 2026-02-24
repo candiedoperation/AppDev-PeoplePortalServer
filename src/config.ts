@@ -114,7 +114,7 @@ export const TEAM_TYPE_CONFIGS: Partial<Record<TeamType, TeamTypeConfig>> = {
           "GiteaClient": {
             "repo:allowcreate": true,
             "repo:brprotect-approvals": true,
-            "repo:brprotect-push": true,
+            "repo:brprotect-override": true,
             "repo:brprotect-merge": true
           },
         }
@@ -124,7 +124,7 @@ export const TEAM_TYPE_CONFIGS: Partial<Record<TeamType, TeamTypeConfig>> = {
         description: "UI/UX, PMs, SWEs, etc.",
         bindles: {
           "GiteaClient": {
-            "repo:brprotect-push": true,
+            "repo:brprotect-override": true,
             "repo:brprotect-merge": true
           },
         }
@@ -140,7 +140,7 @@ export const TEAM_TYPE_CONFIGS: Partial<Record<TeamType, TeamTypeConfig>> = {
         bindles: {
           "GiteaClient": {
             "repo:allowcreate": true,
-            "repo:brprotect-push": true,
+            "repo:brprotect-override": true,
             "repo:brprotect-merge": true,
             "repo:brprotect-approvals": true
           },
@@ -163,7 +163,7 @@ export const TEAM_TYPE_CONFIGS: Partial<Record<TeamType, TeamTypeConfig>> = {
 
           "GiteaClient": {
             "repo:allowcreate": true,
-            "repo:brprotect-push": true,
+            "repo:brprotect-override": true,
             "repo:brprotect-merge": true,
             "repo:brprotect-approvals": true
           },

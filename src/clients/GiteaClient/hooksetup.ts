@@ -11,6 +11,7 @@ export interface GiteaHookDefinition {
     type?: string,
     active?: boolean,
     events: string[],
+    branch_filter?: string,
     authorization_header?: string,
     config: GiteaHookConfiguration
 }
@@ -25,6 +26,16 @@ export class GiteaHookSetup {
                 content_type: 'json',
 
                 /* Fails if true instead of 'true'. Undocumented API: https://github.com/go-gitea/gitea/pull/33180 */
+                is_system_webhook: "true",
+            }
+        },
+
+        "people-portal-commithook": {
+            events: ["push"],
+            branch_filter: "main",
+            config: {
+                url: `${process.env.PEOPLEPORTAL_WEBHOOK_URL}/api/webhook/git/commitevent`,
+                content_type: 'json',
                 is_system_webhook: "true",
             }
         }
@@ -69,8 +80,7 @@ export class GiteaHookSetup {
                 data: {
                     type: "gitea",
                     active: true,
-                    events: hookInfo.events ?? [],
-                    config: hookInfo.config
+                    ...hookInfo
                 }
             }
 
