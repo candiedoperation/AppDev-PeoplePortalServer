@@ -136,6 +136,29 @@ export class GiteaClient implements SharedResourceClient {
         /* We'll put team owners in the Shared Owners Team so, People Portal has Supreme Access */
         const teamSharedResourceId = (orgId == team.name) ? GITEA_DEFAULT_ORG_NAME : team.name
 
+        /* Team Deletion Synchronization */
+        if (team.attributes?.flaggedForDeletion === true) {
+            try {
+                const teamInfoBrief = await this.getTeamInfo(orgId, teamSharedResourceId)
+                var DeleteTeamRequestConfig: any = {
+                    ...this.GiteaBaseConfig,
+                    method: 'delete',
+                    url: `/api/v1/teams/${teamInfoBrief.id}`,
+                };
+
+                await axios.request(DeleteTeamRequestConfig);
+                callback(1, "Git Team Deleted for " + teamSharedResourceId);
+            } catch (error: any) {
+                if (!(error instanceof GiteaClientResourceNotExists)) {
+                    callback(0, "Git Team Deletion Failed for " + teamSharedResourceId);
+                    console.error(`[GiteaClient] Failed to delete team ${teamSharedResourceId}:`, error.message);
+                }
+            }
+
+            /* Halt further sync for deleted team */
+            return true;
+        }
+
         /* Dynamically Calculate Capabilities */
         const bindles = team.attributes?.bindlePermissions?.[this.getResourceName()] || {};
         const canCreateRespositories = bindles["repo:allowcreate"] === true;
@@ -232,8 +255,8 @@ export class GiteaClient implements SharedResourceClient {
         const push_whitelist_teams = [GITEA_DEFAULT_ORG_NAME]
 
         /* Enumerate Permissions from Team Information */
-        for (const subteam of team.subteams) {
-            const bindlePermissions = subteam.attributes.bindlePermissions[this.getResourceName()]
+        for (const subteam of team.subteams ?? []) {
+            const bindlePermissions = subteam.attributes?.bindlePermissions?.[this.getResourceName()]
             if (!bindlePermissions)
                 continue;
 
