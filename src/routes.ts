@@ -511,6 +511,50 @@ const models: TsoaRoute.Models = {
         "additionalProperties": false,
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "GiteaCommitUser": {
+        "dataType": "refObject",
+        "properties": {
+            "name": {"dataType":"string","required":true},
+            "email": {"dataType":"string","required":true},
+            "username": {"dataType":"string","required":true},
+        },
+        "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "GiteaCommit": {
+        "dataType": "refObject",
+        "properties": {
+            "id": {"dataType":"string","required":true},
+            "message": {"dataType":"string","required":true},
+            "url": {"dataType":"string","required":true},
+            "author": {"ref":"GiteaCommitUser","required":true},
+            "committer": {"ref":"GiteaCommitUser","required":true},
+            "verification": {"dataType":"any","required":true},
+            "timestamp": {"dataType":"string","required":true},
+            "added": {"dataType":"array","array":{"dataType":"string"},"required":true},
+            "removed": {"dataType":"array","array":{"dataType":"string"},"required":true},
+            "modified": {"dataType":"array","array":{"dataType":"string"},"required":true},
+        },
+        "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "GiteaHookCommitTrigger": {
+        "dataType": "refObject",
+        "properties": {
+            "ref": {"dataType":"string","required":true},
+            "before": {"dataType":"string","required":true},
+            "after": {"dataType":"string","required":true},
+            "compare_url": {"dataType":"string","required":true},
+            "commits": {"dataType":"array","array":{"dataType":"refObject","ref":"GiteaCommit"},"required":true},
+            "total_commits": {"dataType":"double","required":true},
+            "head_commit": {"ref":"GiteaCommit","required":true},
+            "repository": {"ref":"GiteaRepository","required":true},
+            "pusher": {"ref":"GiteaUser","required":true},
+            "sender": {"ref":"GiteaUser","required":true},
+        },
+        "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
     "JsonPrimitive": {
         "dataType": "refAlias",
         "type": {"dataType":"union","subSchemas":[{"dataType":"string"},{"dataType":"double"},{"dataType":"boolean"},{"dataType":"enum","enums":[null]}],"validators":{}},
@@ -1695,6 +1739,36 @@ export function RegisterRoutes(app: Router) {
 
               await templateService.apiHandler({
                 methodName: 'processGitRepoEventHook',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsHooksController_processGitMainCommitEventHook: Record<string, TsoaRoute.ParameterSchema> = {
+                commitEvent: {"in":"body","name":"commitEvent","required":true,"ref":"GiteaHookCommitTrigger"},
+        };
+        app.post('/api/webhook/git/commitevent',
+            ...(fetchMiddlewares<RequestHandler>(HooksController)),
+            ...(fetchMiddlewares<RequestHandler>(HooksController.prototype.processGitMainCommitEventHook)),
+
+            async function HooksController_processGitMainCommitEventHook(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsHooksController_processGitMainCommitEventHook, request, response });
+
+                const controller = new HooksController();
+
+              await templateService.apiHandler({
+                methodName: 'processGitMainCommitEventHook',
                 controller,
                 response,
                 next,
