@@ -17,8 +17,7 @@
 */
 
 import { Route, Controller, Get, SuccessResponse, Post, Body, Tags } from "tsoa";
-import { BindlePermissionMap } from "./BindleController";
-import { GiteaHookRepositoryTrigger } from "../clients/GiteaClient/models";
+import { GiteaHookCommitTrigger, GiteaHookRepositoryTrigger } from "../clients/GiteaClient/models";
 import { GiteaClient } from "../clients/GiteaClient";
 import { AuthentikClient } from "../clients/AuthentikClient";
 
@@ -46,14 +45,37 @@ export class HooksController extends Controller {
     }
   }
 
-  private async handleRepoCreation(repoEvent: GiteaHookRepositoryTrigger) {
+  @Post("git/commitevent")
+  @Tags("Git Web Hooks")
+  @SuccessResponse(200)
+  async processGitMainCommitEventHook(@Body() commitEvent: GiteaHookCommitTrigger) {
+    if (
+      commitEvent.ref !== GiteaClient.GIT_REF_MAINBRANCH ||
+      commitEvent.before !== GiteaClient.GIT_NULL_COMMITID
+    ) {
+      /* Not Main Branch or First Commit */
+      return "OK";
+    }
+
     try {
-      /* Get Repo Team Information */
-      const teamPk = await this.authentikClient.getGroupPkFromName(repoEvent.organization.username)
+      const teamPk = await this.authentikClient.getGroupPkFromName(commitEvent.repository.owner.username)
       const teamInfo = await this.authentikClient.getGroupInfo(teamPk)
 
-      /* Apply Branch Protection Rules */
-      await this.giteaClient.handleBranchProtectionSync(teamInfo, [repoEvent.repository])
+      /* Apply Branch Protections now that main exists */
+      await this.giteaClient.handleBranchProtectionSync(teamInfo, [commitEvent.repository])
+    } catch (e: any) {
+      /* Potential Group Not Found Error! We're good, not mission critical. */
+      console.error(`Failed applying branch protection for ${commitEvent.repository.full_name}: ${e.message}`);
+    }
+
+    return "OK";
+  }
+
+  private async handleRepoCreation(repoEvent: GiteaHookRepositoryTrigger) {
+    try {
+      /* Get Repo Team Information (Make sure Team Exists, No Personal Repos!) & Provision Repo */
+      await this.authentikClient.getGroupPkFromName(repoEvent.organization.username)
+      await this.giteaClient.handleRepoProvisioning(repoEvent)
     } catch (e: any) {
       /* Processing Failed! Delete the Repository */
       await this.giteaClient.deleteRepository(repoEvent.repository.owner.username, repoEvent.repository.name)

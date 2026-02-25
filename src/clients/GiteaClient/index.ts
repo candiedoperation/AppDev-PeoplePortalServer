@@ -19,7 +19,7 @@
 import axios, { AxiosError } from "axios"
 import { SharedResourceClient } from ".."
 import { GetGroupInfoResponse } from "../AuthentikClient/models"
-import { GiteaAPITeamDefinition, GiteaAPIUserDefinition, GiteaBranchProtection, GiteaRepository, GiteaRepositoryBrief } from "./models";
+import { GiteaAPITeamDefinition, GiteaAPIUserDefinition, GiteaBranchProtection, GiteaHookRepositoryTrigger, GiteaRepository, GiteaRepositoryBrief } from "./models";
 import { computeStringArrStateDiff } from "../../utils/operations";
 import { BindlePermission, BindlePermissionMap } from "../../controllers/BindleController";
 import { GiteaHookSetup } from "./hooksetup";
@@ -50,6 +50,11 @@ export class GiteaClient implements SharedResourceClient {
     private static INITIALIZED = false
     private static readonly TAG = "GiteaClient"
     private GITEA_TOKEN = process.env.PEOPLEPORTAL_GITEA_TOKEN
+
+    public static readonly GIT_NULL_COMMITID = "0000000000000000000000000000000000000000"
+    public static readonly GIT_REF_MAINBRANCH = "refs/heads/main"
+    public static readonly GIT_NAME_MAINBRANCH = "main"
+
     public readonly GiteaBaseConfig = {
         baseURL: process.env.PEOPLEPORTAL_GITEA_ENDPOINT ?? "",
         maxBodyLength: Infinity,
@@ -70,15 +75,15 @@ export class GiteaClient implements SharedResourceClient {
             description: "Enabling this allows members in this subteam to approve and review PRs"
         },
 
-        "repo:brprotect-push": {
-            friendlyName: "Allow Git Push",
-            description: "Enabling this allows members in this subteam to push to the repository",
-        },
-
         "repo:brprotect-merge": {
             friendlyName: "Allow Git Merge",
             description: "Enabling this allows members in this subteam to merge Pull Requests"
-        }
+        },
+
+        "repo:brprotect-override": {
+            friendlyName: "Override Branch Protections",
+            description: "Dangerous: Allows members to bypass all Branch Protections thereby, significantly reducing code quality",
+        },
     }
 
     constructor() {
@@ -130,12 +135,45 @@ export class GiteaClient implements SharedResourceClient {
     private async handleTeamBindleSync(team: GetGroupInfoResponse, orgId: string, callback: (updatedResourceCount: number, status: string) => void): Promise<boolean> {
         /* We'll put team owners in the Shared Owners Team so, People Portal has Supreme Access */
         const teamSharedResourceId = (orgId == team.name) ? GITEA_DEFAULT_ORG_NAME : team.name
-        await this.createTeamIfNotExists({
+
+        /* Team Deletion Synchronization */
+        if (team.attributes?.flaggedForDeletion === true) {
+            try {
+                const teamInfoBrief = await this.getTeamInfo(orgId, teamSharedResourceId)
+                var DeleteTeamRequestConfig: any = {
+                    ...this.GiteaBaseConfig,
+                    method: 'delete',
+                    url: `/api/v1/teams/${teamInfoBrief.id}`,
+                };
+
+                await axios.request(DeleteTeamRequestConfig);
+                callback(1, "Git Team Deleted for " + teamSharedResourceId);
+            } catch (error: any) {
+                if (!(error instanceof GiteaClientResourceNotExists)) {
+                    callback(0, "Git Team Deletion Failed for " + teamSharedResourceId);
+                    console.error(`[GiteaClient] Failed to delete team ${teamSharedResourceId}:`, error.message);
+                }
+            }
+
+            /* Halt further sync for deleted team */
+            return true;
+        }
+
+        /* Dynamically Calculate Capabilities */
+        const bindles = team.attributes?.bindlePermissions?.[this.getResourceName()] || {};
+        const canCreateRespositories = bindles["repo:allowcreate"] === true;
+        const writeAccess = canCreateRespositories ||
+            bindles["repo:brprotect-approvals"] === true ||
+            bindles["repo:brprotect-override"] === true ||
+            bindles["repo:brprotect-merge"] === true;
+
+
+        await this.ensureTeamExists({
             teamSharedResourceId,
-            canCreateRespositories: true,
+            canCreateRespositories,
             description: `Permissions Group Replication for ${teamSharedResourceId}`,
             grpSharedResourceId: orgId,
-            writeAccess: true
+            writeAccess
         })
 
         /* Obtain Current Team Members */
@@ -173,6 +211,37 @@ export class GiteaClient implements SharedResourceClient {
         return true
     }
 
+    /**
+     * Provisions a newly created repository to comply with People Portal standards.
+     * If requests fail, we throw the errors as-is without catching. The callee is
+     * expected to delete the newly created repository considering standards mismatch.
+     * 
+     * @param repoEvent Gitea Repository Event
+     */
+    public async handleRepoProvisioning(repoEvent: GiteaHookRepositoryTrigger) {
+        /* 1. Remove the creator from the collaborators list so team permissions take over */
+        var DeleteCollabRequestConfig: any = {
+            ...this.GiteaBaseConfig,
+            method: 'delete',
+            url: `/api/v1/repos/${repoEvent.repository.owner.username}/${repoEvent.repository.name}/collaborators/${repoEvent.sender.username}`,
+        };
+
+        /* 2. Apply standard repository settings: Public Visibility and Main default branch */
+        var PatchRepoRequestConfig: any = {
+            ...this.GiteaBaseConfig,
+            method: 'patch',
+            url: `/api/v1/repos/${repoEvent.repository.owner.username}/${repoEvent.repository.name}`,
+            data: {
+                private: false,
+                default_branch: GiteaClient.GIT_NAME_MAINBRANCH,
+            }
+        };
+
+        /* Execute Both Requests */
+        await axios.request(DeleteCollabRequestConfig);
+        await axios.request(PatchRepoRequestConfig);
+    }
+
     public async handleBranchProtectionSync(
         team: GetGroupInfoResponse,
         repositories?: GiteaRepositoryBrief[],
@@ -186,8 +255,8 @@ export class GiteaClient implements SharedResourceClient {
         const push_whitelist_teams = [GITEA_DEFAULT_ORG_NAME]
 
         /* Enumerate Permissions from Team Information */
-        for (const subteam of team.subteams) {
-            const bindlePermissions = subteam.attributes.bindlePermissions[this.getResourceName()]
+        for (const subteam of team.subteams ?? []) {
+            const bindlePermissions = subteam.attributes?.bindlePermissions?.[this.getResourceName()]
             if (!bindlePermissions)
                 continue;
 
@@ -197,7 +266,7 @@ export class GiteaClient implements SharedResourceClient {
             if (bindlePermissions["repo:brprotect-merge"] === true)
                 merge_whitelist_teams.push(subteam.name)
 
-            if (bindlePermissions["repo:brprotect-push"] === true)
+            if (bindlePermissions["repo:brprotect-override"] === true)
                 push_whitelist_teams.push(subteam.name)
         }
 
@@ -213,11 +282,27 @@ export class GiteaClient implements SharedResourceClient {
         await this.applyBranchProtections(repositories, branchProt)
     }
 
+    /**
+     * Applies Branch Protection Rules to a List of Repositories. If the repository
+     * is empty we skip branch protections thereby allowing the first "main" merge.
+     * 
+     * On commit, if a main branch already exists, we apply the branch protections
+     * as requested in `branchProt`.
+     * 
+     * @param repositories List of Repositories
+     * @param branchProt Branch Protection Rules
+     */
     private async applyBranchProtections(
         repositories: GiteaRepositoryBrief[],
         branchProt: GiteaBranchProtection
     ) {
-        for (const repository of repositories) {
+        for (const repositorynt of repositories) {
+            const repository = repositorynt as GiteaRepository;
+
+            /* Bypass Branch Protection for Empty Repositories, They're Applied using Push Hooks */
+            if (repository.empty === true)
+                continue;
+
             var updateRequestConfig: any = {
                 ...this.GiteaBaseConfig,
                 method: 'patch',
@@ -287,9 +372,33 @@ export class GiteaClient implements SharedResourceClient {
         await axios.request(RequestConfig)
     }
 
-    private async createTeamIfNotExists(req: GiteaTeamCreateRequest): Promise<boolean> {
+    private async ensureTeamExists(req: GiteaTeamCreateRequest): Promise<boolean> {
         try {
-            await this.getTeamInfo(req.grpSharedResourceId, req.teamSharedResourceId);
+            const teamInfo = await this.getTeamInfo(req.grpSharedResourceId, req.teamSharedResourceId);
+            const expectedPermission = req.writeAccess ? "write" : "read";
+
+            /* Check for drift and apply updates if necessary */
+            if (teamInfo.description !== req.description ||
+                teamInfo.permission !== expectedPermission ||
+                teamInfo.can_create_org_repo !== req.canCreateRespositories) {
+
+                var UpdateRequestConfig: any = {
+                    ...this.GiteaBaseConfig,
+                    method: 'patch',
+                    url: `/api/v1/teams/${teamInfo.id}`,
+                    data: {
+                        name: req.teamSharedResourceId,
+                        description: req.description,
+                        permission: expectedPermission,
+                        can_create_org_repo: req.canCreateRespositories,
+                        units: ["repo.actions", "repo.code", "repo.issues", "repo.pulls", "repo.releases", "repo.projects"],
+                        includes_all_repositories: true
+                    }
+                }
+
+                await axios.request(UpdateRequestConfig);
+            }
+
             return true;
         } catch (error: any) {
             if (!(error instanceof GiteaClientResourceNotExists))
@@ -305,6 +414,7 @@ export class GiteaClient implements SharedResourceClient {
                 name: req.teamSharedResourceId,
                 description: req.description,
                 permission: req.writeAccess ? "write" : "read",
+                can_create_org_repo: req.canCreateRespositories,
                 units: ["repo.actions", "repo.code", "repo.issues", "repo.pulls", "repo.releases", "repo.projects"],
                 includes_all_repositories: true,
             }
