@@ -77,6 +77,27 @@ export function sanitizeUserFullName(fullName: string): string {
 }
 
 /**
+ * Validates that a full name contains both first and last names.
+ * @param fullName - The full name to validate
+ * @throws CustomValidationError if the name doesn't contain a last name
+ * @returns The validated full name
+ */
+export function validateFullName(fullName: string): string {
+  if (!fullName || typeof fullName !== 'string') {
+    throw new CustomValidationError(400, 'Full name is required');
+  }
+
+  const trimmed = fullName.trim();
+  const parts = trimmed.split(/\s+/).filter(part => part.length > 0);
+
+  if (parts.length < 2) {
+    throw new CustomValidationError(400, 'Please provide both first and last name');
+  }
+
+  return trimmed;
+}
+
+/**
  * Formats a bindle access error message listing team owners and missing bindles.
  */
 export function formatBindleAccessError(owners: string[], missingBindles: string[]): string {

@@ -23,10 +23,11 @@ import { UserInfoResponse } from 'openid-client';
 import { Applicant } from '../models/Applicant';
 import { Application } from '../models/Application';
 import jwt from "jsonwebtoken"
-import { generateSecureRandomString, capitalizeString } from '../utils/strings';
+import { generateSecureRandomString, capitalizeString, validateFullName } from '../utils/strings';
 import { AuthentikClient } from '../clients/AuthentikClient';
 import { EmailClient } from '../clients/EmailClient';
 import { signAvatarUrl } from '../utils/avatars';
+import { normalizeEmail } from '../utils/email';
 
 interface OtpInitRequest {
     email: string;
@@ -71,6 +72,7 @@ export class AuthController extends Controller {
 
         return {
             ...userInfo,
+            pk: req.session.authorizedUser.pk,
             avatar: avatarUrl
         }
     }
@@ -215,7 +217,10 @@ export class AuthController extends Controller {
     @Tags("Guest Authentication")
     @SuccessResponse(200)
     async otpInitRequest(@Body() body: OtpInitRequest, @Request() req: express.Request) {
-        const { email } = body;
+        const email = normalizeEmail(body.email);
+
+        // Validate and capitalize name (requires both first and last name)
+        validateFullName(body.name);
         const name = capitalizeString(body.name);
 
         if (!email || !name) {
@@ -265,7 +270,8 @@ export class AuthController extends Controller {
     @Tags("Guest Authentication")
     @SuccessResponse(200)
     async otpVerifyRequest(@Body() body: OtpVerifyRequest, @Request() req: express.Request) {
-        const { email, otp } = body;
+        const email = normalizeEmail(body.email);
+        const { otp } = body;
 
         // Get tempsession data
         const tempsession = req.session.tempsession || {};
@@ -409,9 +415,12 @@ export class AuthController extends Controller {
     @Tags("Core Authentication")
     @SuccessResponse(200)
     async handleLogout(@Request() req: express.Request) {
+        const idToken = req.session.idToken;
+        const logoutUrl = OpenIdClient.getLogoutUrl(idToken, process.env.PEOPLEPORTAL_BASE_URL!);
+
         return new Promise((resolve) => {
             req.session.destroy(() => {
-                resolve({ message: "Logged out successfully" });
+                resolve({ message: "Logged out successfully", logoutUrl });
             });
         });
     }
