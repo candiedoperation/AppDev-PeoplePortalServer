@@ -35,57 +35,60 @@ import { AuthentikClient } from "./clients/AuthentikClient";
 import { CustomValidationError, ResourceAccessError } from "./utils/errors";
 import { ENABLED_SHARED_RESOURCES } from "./config";
 import log from 'loglevel';
+import { Server } from 'http';
 
 log.setLevel("info")
 
 if (!process.env.PEOPLEPORTAL_TOKEN_SECRET)
   process.env.PEOPLEPORTAL_TOKEN_SECRET = generateSecureRandomString(16)
 
-const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(express.urlencoded({ extended: true }))
-app.use(express.json())
+export function createApp() {
+  const app = express();
 
-app.use(cors({
-  origin: 'http://localhost:5173',
-  credentials: true
-}));
+  app.use(express.urlencoded({ extended: true }))
+  app.use(express.json())
 
-app.set('trust proxy', true);
-app.use(
-  expressSession({
-    name: 'peopleportal_sid',
-    secret: process.env.PEOPLEPORTAL_TOKEN_SECRET,
-    resave: false,
-    saveUninitialized: true,
-    store: new expressSession.MemoryStore(), /* Use Redis for Horizontal Scaling */
-    proxy: true,
-  })
-);
+  app.use(cors({
+    origin: 'http://localhost:5173',
+    credentials: true
+  }));
 
-/* Register TSOA Routes */
-const ApiRouter = Router()
-ApiRouter.get("/api/docs/swagger.json", async (req, res) => {
-  const doc = await import("../dist/swagger.json");
-  res.json(doc.default || doc);
-});
+  app.set('trust proxy', true);
+  app.use(
+    expressSession({
+      name: 'peopleportal_sid',
+      secret: process.env.PEOPLEPORTAL_TOKEN_SECRET!,
+      resave: false,
+      saveUninitialized: true,
+      store: new expressSession.MemoryStore(), /* Use Redis for Horizontal Scaling */
+      proxy: true,
+    })
+  );
+
+  /* Register TSOA Routes */
+  const ApiRouter = Router()
+  ApiRouter.get("/api/docs/swagger.json", async (req, res) => {
+    const doc = await import("../dist/swagger.json");
+    res.json(doc.default || doc);
+  });
 
 /* Enable Documentation A */
-ApiRouter.use("/api/docs", apiReference({
-  spec: {
-    url: "/api/docs/swagger.json",
-  },
+  ApiRouter.use("/api/docs", apiReference({
+    spec: {
+      url: "/api/docs/swagger.json",
+    },
 
-  metaData: {
-    title: "People Portal Server API Reference",
-  },
+    metaData: {
+      title: "People Portal Server API Reference",
+    },
 
-  favicon: '/logo.svg',
-  showDeveloperTools: "never",
-  theme: "kepler",
-  hideClientButton: true,
-  customCss: `
+    favicon: '/logo.svg',
+    showDeveloperTools: "never",
+    theme: "kepler",
+    hideClientButton: true,
+    customCss: `
     a[href="https://www.scalar.com"] {
       display: none;
     }
@@ -97,65 +100,68 @@ ApiRouter.use("/api/docs", apiReference({
     }
   `,
 
-  authentication: {
-    /* Must Match Generated OpenAPI Spec from tsoa.json */
-    preferredSecurityScheme: 'OIDC Bindle Shim',
-  },
-}));
+    authentication: {
+      /* Must Match Generated OpenAPI Spec from tsoa.json */
+      preferredSecurityScheme: 'OIDC Bindle Shim',
+    },
+  }));
 
-/* Register & Setup Catch All Route for Public Dir */
-RegisterRoutes(ApiRouter);
-app.use(ApiRouter);
+  /* Register & Setup Catch All Route for Public Dir */
+  RegisterRoutes(ApiRouter);
+  app.use(ApiRouter);
 
-app.get(["/onboard", "/onboard/*splat"], (req, res) => {
-  res.sendFile(path.join(__dirname, "ui", "index.html"))
-})
+  app.get(["/onboard", "/onboard/*splat"], (req, res) => {
+    res.sendFile(path.join(__dirname, "ui", "index.html"))
+  })
 
-app.get(["/apply", "/apply/*splat"], (req, res) => {
-  res.sendFile(path.join(__dirname, "ui", "index.html"))
-})
+  app.get(["/apply", "/apply/*splat"], (req, res) => {
+    res.sendFile(path.join(__dirname, "ui", "index.html"))
+  })
 
-app.use(express.static(path.join(__dirname, "ui"), { index: false }))
+  app.use(express.static(path.join(__dirname, "ui"), { index: false }))
 
-app.get("*splat", NativeExpressOIDCAuthPort, (req, res) => {
-  res.sendFile(path.join(__dirname, "ui", "index.html"))
-})
+  app.get("*splat", NativeExpressOIDCAuthPort, (req, res) => {
+    res.sendFile(path.join(__dirname, "ui", "index.html"))
+  })
 
-app.use(function errorHandler(
-  err: unknown,
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Response | void {
-  if (res.headersSent) {
-    return next(err);
-  }
+  app.use(function errorHandler(
+    err: unknown,
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Response | void {
+    if (res.headersSent) {
+      return next(err);
+    }
 
-  if (err instanceof ValidateError) {
-    console.warn(`Caught Validation Error for ${req.path}:`, err.fields);
-    return res.status(422).json({
-      message: "Validation Failed",
-      details: err?.fields
-    });
-  }
+    if (err instanceof ValidateError) {
+      console.warn(`Caught Validation Error for ${req.path}:`, err.fields);
+      return res.status(422).json({
+        message: "Validation Failed",
+        details: err?.fields
+      });
+    }
 
-  if (err instanceof ResourceAccessError || err instanceof CustomValidationError) {
-    return res.status(err.status).json({
-      message: err.message,
-    });
-  }
+    if (err instanceof ResourceAccessError || err instanceof CustomValidationError) {
+      return res.status(err.status).json({
+        message: err.message,
+      });
+    }
 
-  if (err instanceof Error) {
-    console.error(err)
-    return res.status(500).json({
-      message: err.message ?? "Unknown Internal Server Error",
-    });
-  }
+    if (err instanceof Error) {
+      console.error(err)
+      return res.status(500).json({
+        message: err.message ?? "Unknown Internal Server Error",
+      });
+    }
 
-  next();
-});
+    next();
+  });
 
-app.listen(PORT, async () => {
+  return app;
+}
+
+async function initializeDependencies() {
   /* Validate Connections */
   await OpenIdClient.init()
   //await AuthentikClient.validateAuthentikConnection()
@@ -173,5 +179,23 @@ app.listen(PORT, async () => {
 
   /* Validate Database Connection */
   await mongoose.connect(process.env.PEOPLEPORTAL_MONGO_URL!)
-  console.log(`Server running at http://localhost:${PORT}`);
-});
+}
+
+export async function startServer(port: number = Number(PORT)): Promise<Server> {
+  await initializeDependencies()
+  const app = createApp()
+
+  return await new Promise((resolve) => {
+    const server = app.listen(port, () => {
+      console.log(`Server running at http://localhost:${port}`);
+      resolve(server)
+    });
+  })
+}
+
+if (require.main === module) {
+  startServer().catch((error) => {
+    console.error("Failed to start server", error)
+    process.exit(1)
+  })
+}
