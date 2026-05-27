@@ -86,6 +86,28 @@ export class SlackClient implements SharedResourceClient {
         return this.slackInviteUrl;
     }
 
+    /**
+     * Send a DM to a slack user via their email. Returns true if DM
+     * was successfully sent, and false otherwise.
+     */
+    async sendPrivateMessage(email: string, message: string): Promise<boolean> {
+        try {
+            const slackUser = await this.slackClient.users.lookupByEmail({ email: email });
+            if (slackUser.user?.id) {
+                const result = await this.slackClient.chat.postMessage({
+                    channel: slackUser.user.id,
+                    text: message
+                }); 
+                console.log("Message sent: ", result.ts);
+                return true;
+            }         
+        } catch (error) {
+            console.error(`Could not send slack message to user with email ${email}`, error);
+        }
+
+        return false;
+    }
+
     async handleOrgBindleSync(org: GetGroupInfoResponse, callback: (updatedResourceCount: number, status: string) => void): Promise<boolean> {
         log.info(`[SlackClient] handleOrgBindleSync started for org: ${org.name}`);
         log.info(`[SlackClient] Found ${org.subteams?.length ?? 0} subteams`);
