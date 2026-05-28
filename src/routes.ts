@@ -10,6 +10,8 @@ import { BindleController } from './controllers/BindleController';
 // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
 import { OrgController } from './controllers/OrgController';
 // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+import { MeetingsController } from './controllers/MeetingsController';
+// WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
 import { HooksController } from './controllers/HooksController';
 // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
 import { AuthController } from './controllers/AuthController';
@@ -385,6 +387,47 @@ const models: TsoaRoute.Models = {
         "additionalProperties": {"dataType":"string"},
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "APITeamMeetingResponse": {
+        "dataType": "refObject",
+        "properties": {
+            "_id": {"dataType":"string","required":true},
+            "teamPk": {"dataType":"string","required":true},
+            "name": {"dataType":"string","required":true},
+            "description": {"dataType":"string","required":true},
+            "day": {"dataType":"double","required":true},
+            "start": {"dataType":"double","required":true},
+            "end": {"dataType":"double","required":true},
+            "createdBy": {"dataType":"double","required":true},
+            "createdAt": {"dataType":"datetime","required":true},
+            "updatedAt": {"dataType":"datetime","required":true},
+        },
+        "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "APITeamMeetingCreateRequest": {
+        "dataType": "refObject",
+        "properties": {
+            "name": {"dataType":"string","required":true,"validators":{"minLength":{"value":1}}},
+            "description": {"dataType":"string"},
+            "day": {"dataType":"double","required":true,"validators":{"minimum":{"value":0},"maximum":{"value":4}}},
+            "start": {"dataType":"double","required":true},
+            "end": {"dataType":"double","required":true},
+        },
+        "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "APITeamMeetingUpdateRequest": {
+        "dataType": "refObject",
+        "properties": {
+            "name": {"dataType":"string","validators":{"minLength":{"value":1}}},
+            "description": {"dataType":"string"},
+            "day": {"dataType":"double","validators":{"minimum":{"value":0},"maximum":{"value":4}}},
+            "start": {"dataType":"double"},
+            "end": {"dataType":"double"},
+        },
+        "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
     "GiteaRepositoryPermissions": {
         "dataType": "refObject",
         "properties": {
@@ -642,7 +685,7 @@ const models: TsoaRoute.Models = {
         "type": {"dataType":"nestedObjectLiteral","nestedProperties":{},"validators":{}},
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-    "Required___id-mongoose.Types.ObjectId__": {
+    "Required___id-mongoose.FlattenMaps_unknown___": {
         "dataType": "refAlias",
         "type": {"dataType":"nestedObjectLiteral","nestedProperties":{},"validators":{}},
     },
@@ -700,11 +743,6 @@ const models: TsoaRoute.Models = {
             "notes": {"dataType":"string"},
         },
         "additionalProperties": false,
-    },
-    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-    "mongoose.Types.ObjectId": {
-        "dataType": "refAlias",
-        "type": {"dataType":"string","validators":{}},
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
     "ATSUpdateApplicationStageRequest": {
@@ -1724,6 +1762,135 @@ export function RegisterRoutes(app: Router) {
                 next,
                 validatedArgs,
                 successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsMeetingsController_getTeamMeetings: Record<string, TsoaRoute.ParameterSchema> = {
+                teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
+        };
+        app.get('/api/org/teams/:teamId/meetings',
+            authenticateMiddleware([{"oidc":[]}]),
+            ...(fetchMiddlewares<RequestHandler>(MeetingsController)),
+            ...(fetchMiddlewares<RequestHandler>(MeetingsController.prototype.getTeamMeetings)),
+
+            async function MeetingsController_getTeamMeetings(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsMeetingsController_getTeamMeetings, request, response });
+
+                const controller = new MeetingsController();
+
+              await templateService.apiHandler({
+                methodName: 'getTeamMeetings',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsMeetingsController_createTeamMeeting: Record<string, TsoaRoute.ParameterSchema> = {
+                req: {"in":"request","name":"req","required":true,"dataType":"object"},
+                teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
+                body: {"in":"body","name":"body","required":true,"ref":"APITeamMeetingCreateRequest"},
+        };
+        app.post('/api/org/teams/:teamId/meetings',
+            authenticateMiddleware([{"oidc":[]}]),
+            ...(fetchMiddlewares<RequestHandler>(MeetingsController)),
+            ...(fetchMiddlewares<RequestHandler>(MeetingsController.prototype.createTeamMeeting)),
+
+            async function MeetingsController_createTeamMeeting(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsMeetingsController_createTeamMeeting, request, response });
+
+                const controller = new MeetingsController();
+
+              await templateService.apiHandler({
+                methodName: 'createTeamMeeting',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 201,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsMeetingsController_updateTeamMeeting: Record<string, TsoaRoute.ParameterSchema> = {
+                teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
+                meetingId: {"in":"path","name":"meetingId","required":true,"dataType":"string"},
+                body: {"in":"body","name":"body","required":true,"ref":"APITeamMeetingUpdateRequest"},
+        };
+        app.patch('/api/org/teams/:teamId/meetings/:meetingId',
+            authenticateMiddleware([{"oidc":[]}]),
+            ...(fetchMiddlewares<RequestHandler>(MeetingsController)),
+            ...(fetchMiddlewares<RequestHandler>(MeetingsController.prototype.updateTeamMeeting)),
+
+            async function MeetingsController_updateTeamMeeting(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsMeetingsController_updateTeamMeeting, request, response });
+
+                const controller = new MeetingsController();
+
+              await templateService.apiHandler({
+                methodName: 'updateTeamMeeting',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsMeetingsController_deleteTeamMeeting: Record<string, TsoaRoute.ParameterSchema> = {
+                teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
+                meetingId: {"in":"path","name":"meetingId","required":true,"dataType":"string"},
+        };
+        app.delete('/api/org/teams/:teamId/meetings/:meetingId',
+            authenticateMiddleware([{"oidc":[]}]),
+            ...(fetchMiddlewares<RequestHandler>(MeetingsController)),
+            ...(fetchMiddlewares<RequestHandler>(MeetingsController.prototype.deleteTeamMeeting)),
+
+            async function MeetingsController_deleteTeamMeeting(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsMeetingsController_deleteTeamMeeting, request, response });
+
+                const controller = new MeetingsController();
+
+              await templateService.apiHandler({
+                methodName: 'deleteTeamMeeting',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 204,
               });
             } catch (err) {
                 return next(err);
