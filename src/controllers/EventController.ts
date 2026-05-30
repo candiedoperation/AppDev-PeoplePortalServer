@@ -16,24 +16,29 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-import { Route, Request, Controller, Get, SuccessResponse, Post, Body, Tags, Security, Path } from "tsoa";
+import { Route, Request, Controller, Get, SuccessResponse, Post, Body, Tags, Security, Path, Queries, Delete } from "tsoa";
 import { EmailClient } from "../clients/EmailClient";
 import { SlackClient } from "../clients/SlackClient";
 import { AuthentikClient } from "../clients/AuthentikClient";
 import { ENABLED_SHARED_RESOURCES } from "../config";
 import * as express from 'express';
 import { CustomValidationError } from "../utils/errors";
-import { Event } from "../models/Event";
-import { EmailSendRequest } from "../clients/EmailClient/models";
-import { resolve } from "path";
-import { eventNames } from "process";
-import { UserInformationBrief } from "../clients/AuthentikClient/models";
-import { UserInfo } from "os";
-import { stat } from "fs";
-import { BucketAlreadyOwnedByYou } from "@aws-sdk/client-s3";
+import { Event, IEvent } from "../models/Event";
 import { EventRsvp, IRsvp, RsvpStatus } from "../models/EventRsvp";
-import { Document, HydratedDocument } from "mongoose";
+import { HydratedDocument } from "mongoose";
+import { UserInformationBrief } from "../clients/AuthentikClient/models";
+import { agendaClient } from "../clients/AgendaClient";
 
+
+export interface GetEventListOptions {
+    before?: Date;
+    after?: Date;
+    public?: boolean;
+}
+export interface GetEventListResponse {
+    data: string[],
+    count: number,
+}
 
 export interface CreateEventRequest {
     title: string;
@@ -43,22 +48,25 @@ export interface CreateEventRequest {
     location: string;
     invitedGroupPks?: string[]; // Authentik groups to send invites to
     invitedUserPks?: number[];  // Additional individuals to invite
+    slack?: boolean; // Send an announcement on Slack. Also affects reminders.
+    discord?: boolean; // Send an announcement on Discord. Also affects reminders.
+}
+
+export interface CreateEventResponse {
+    eventId: string,
+    status: string,
 }
 
 export interface RsvpRequest {
     accept: boolean;
-    userInfo?: {
-        firstName: string,
-        lastName: string,
-        email: string,
-    };
     reason?: string;
 }
 
-const EMAIL_BATCH_SIZE = 5;
 
 @Route("/api/events/")
 export class EventController extends Controller {
+    public static readonly SLACK_EVENT_ANNOUNCEMENT_CHANNEL = "announcements";
+
     private readonly authentikClient;
     private readonly emailClient;
     private readonly slackClient;
@@ -72,15 +80,66 @@ export class EventController extends Controller {
 
 
     /**
-     * Create an event
+     * Get list of event Ids.
+     */
+    @Get("/")
+    @SuccessResponse(200)
+    async getListOfEvents(
+        @Queries() options?: GetEventListOptions
+    ): Promise<GetEventListResponse> {
+        const query = Event.distinct("_id", {
+            startTime: {
+                $gte: options?.after === undefined ? undefined : options.after,
+                $lte: options?.before === undefined ? undefined : options.before,
+            },
+            public: options?.public === undefined ? undefined : options.public
+        });
+        
+        const results = await query.exec();
+        const response = {
+            data: results.map((objId) => objId.toString()),
+            count: results.length,
+        }
+
+        return response;
+    }
+
+
+    /**
+     * Return
+     * 
+     * @param eventId Id of the event
+     * @returns Event data as json.
+     */
+    @Get("{eventId}")
+    @SuccessResponse(200)
+    @Security("oidc")
+    @Security("bindles", ["corp:eventmgmt"])
+    async getEvent(
+        @Path() eventId: string,
+    ) {
+        // Get event data
+        const event = await Event.findOne({ _id: eventId });
+        if (!event) {
+            throw new CustomValidationError(404, `No event with id ${eventId}`);
+        }
+
+        return event.toJSON();
+    }
+
+    /**
+     * 
+     * @param req Express Request Object
+     * @param body CreateEventRequest
+     * @returns Object with eventId and status.
      */
     @Post("createevent")
     @SuccessResponse(201, "Event Created")
-    @Security("bindles", [])
+    @Security("bindles", ["corp:eventmgmt"])
     async createEvent(
         @Request() req: express.Request,
         @Body() body: CreateEventRequest,
-    ) {
+    ): Promise<CreateEventResponse> {
         // Validations
         if (body.startTime > body.endTime) {
             throw new CustomValidationError(400, "End time can't be before start time.");
@@ -90,81 +149,152 @@ export class EventController extends Controller {
         }
 
         const authorizedUser = req.session.authorizedUser!;
-        const creatorInfo = await this.authentikClient.getUserInfoFromEmail(authorizedUser.email);
 
         const event = await Event.create({
             eventName: body.title,
             eventDescription: body.description,
-            creator: creatorInfo.pk,
+            creator: authorizedUser.pk,
             startTime: body.startTime,
             endTime: body.endTime,
-            location: body.location
+            location: body.location,
+            invitedGroupPks: body.invitedGroupPks,
+            invitedUserPks: body.invitedUserPks,
+            slack: body.slack,
+            discord: body.discord,
         });
-
-        // STORE IN MONGODB
 
         // EMAIL INVITEES
         const userInfo = await this.resolveUserInfo(body.invitedGroupPks, body.invitedUserPks);
-        const gCalendarLink = this.generateCalendarLinks(body);
+        const gCalendarLink = EventController.generateCalendarLinks(body);
+        const inviteLink = EventController.generateEventInviteLink(event);
 
-        // Send out emails in batches of size EMAIL_BATCH_SIZE.
-        for(let i = 0; i < userInfo.length; i += EMAIL_BATCH_SIZE) {
-            const batch = userInfo.slice(i, i+EMAIL_BATCH_SIZE);
-            await Promise.all(batch.map((uInfo: UserInformationBrief) => {
-                this.emailClient.send({
-                    to: uInfo.email,
-                    subject: `App Dev Event Invitation - ${body.title}`,
-                    templateName: "EventInvite",
-                    templateVars: {
-                        inviteeName: uInfo.name,
-                        eventName: body.title,
-                        eventDescription: body.description,
-                        startTime: body.startTime,
-                        endTime: body.endTime,
-                        eventLocation: body.location,
-                        googleCalendarLink: gCalendarLink,
-                    }
-                });
-            }));
-        }
+        // Send out emails to invitees with bcc.
+        const emails = userInfo.map(uInfo => uInfo.email);
+        await this.emailClient.send({
+            to: process.env.PEOPLEPORTAL_SMTP_USER!,
+            cc: [authorizedUser.email],
+            bcc: emails,
+            subject: `App Dev Event Invitation - ${body.title}`,
+            templateName: "EventInvite",
+            templateVars: {
+                eventName: body.title,
+                eventDescription: body.description,
+                startTime: body.startTime.toLocaleString(),
+                endTime: body.endTime.toLocaleString(),
+                eventLocation: body.location,
+                inviteLink: inviteLink,
+                googleCalendarLink: gCalendarLink,
+            },
+            replyTo: [authorizedUser.email],
+        })
 
-        // SLACK MESSAGE TO INVITEES
+        const message = `*Event Announcement*\n>${event.eventName}\nDescription: ${event.eventDescription}\nStart Time: ${event.startTime.toLocaleString()}\nEnd Time: ${event.endTime.toLocaleString()}\nLocation: ${event.location}\n\nRSVP here: ${inviteLink}\nAdd to google calendar: ${gCalendarLink}\n`;
 
-        for (const uInfo of userInfo) {
-            const userPresent = await this.slackClient.validateUserPresence(uInfo.email);
-            if (userPresent) {
-                this.slackClient.sendPrivateMessage(uInfo.email, 
-                    `You've been invited to the following App Dev event!`);
+        // SLACK MESSAGE
+        if (body.slack) {
+            const slackChannel = await this.slackClient.getChannelFromName(EventController.SLACK_EVENT_ANNOUNCEMENT_CHANNEL);
+            if (slackChannel) {
+                this.slackClient.sendMessageInChannel(slackChannel.id!, message);
             }
-            
         }
-        const x = await this.slackClient.getSupportedBindles();
-        console.log(x);
 
-        // DISCORD MESSAGE TO INVITEES
+        // DISCORD MESSAGE
+        if (body.discord) {
+            // TODO
+        }
+
+        // Schedule 2 Hour Reminder
+        agendaClient.scheduleJobOnce({
+            jobName: "sendEventReminders",
+            runAt: new Date(event.startTime.getTime() - 1000 * 60 * 60 * 2),
+            jobPayload: { eventId: event._id.toString() },
+            options: { timezone: "America/New_York" }
+        });
+
+        return {
+            eventId: event._id.toString(),
+            status: "Event Created Successfully"
+        }
     }
 
 
+    /**
+     * Cancels event. Deletes document from Events and all RSVPs.
+     * 
+     * @param req Express Request Object
+     * @param eventId Id of the event to cancel
+     * @param options { notify?: boolean }. If notify is true (default), will send notify invitees of event cancellation.
+     * @returns 
+     */
+    @Delete("cancel/{eventId}")
+    @SuccessResponse(200, "Event cancelled.")
+    @Security("bindles", ["corp:eventmgmt"])
+    async cancelEvent(
+        @Request() req: express.Request,
+        @Path() eventId: string,
+        @Queries() options?: { notify?: boolean }
+    ) {
+        // Find event
+        const event = await Event.findOne({ _id: eventId });
+        if (!event) {
+            throw new CustomValidationError(404, `No event with id ${eventId}`);
+        }
 
+        await agendaClient.cancelJob("sendEventReminders", { eventId: eventId });
+        // Delete all RSVPs and Event
+        const rsvp_deletion = await EventRsvp.deleteMany({ eventId: eventId }).exec();
+        await event.deleteOne();
+
+        if (options?.notify === false) {
+            return;
+        }
+
+        const invitees = await this.resolveUserInfo(event.invitedGroupPks, event.invitedUserPks);
+        this.emailClient.send({
+            to: process.env.PEOPLEPORTAL_SMTP_USER!,
+            cc: [req.session.authorizedUser!.email],
+            bcc: invitees.map(invitee => invitee.email),
+            subject: `App Dev Event Cancelled - ${event.eventName}`,
+            templateName: "EventCancellation",
+            templateVars: {
+                eventName: event.eventName,
+                eventDescription: event.eventDescription,
+                startTime: event.startTime,
+                endTime: event.endTime
+            },
+        });
+
+        // Send Slack Message
+        if (event.slack) {
+            const message = `*Event Announcement*\n${event.eventName} has been *cancelled.*`;
+            const slackChannel = await this.slackClient.getChannelFromName(EventController.SLACK_EVENT_ANNOUNCEMENT_CHANNEL);
+            let success = slackChannel !== null;
+            if (slackChannel) {
+                success = await this.slackClient.sendMessageInChannel(slackChannel.id!, message);
+            }
+
+            if (!success) {
+                console.error("Failed to send cancellation message in Slack for event:", event._id.toString());
+            }
+        }
+    }
+
+    
     /**
      * 
-     * Endpoint to create or update a user's RSVP to an event.
-     * If user has an account, will get user data through pk.
-     * For public events, if user does not have an account,
-     * will get the required information through form fields.
-     * 
-     * 
      * Endpoint to RSVP user to an event given its id.
-     * Will get user data through the session. However,
-     * for public events, if user does not have an account,
-     * will get the required information through form fields.
+     * Will get user email through either the session,
+     * or if the user is not yet an App Dev member, gets
+     * email through a tempsession.
      * 
-     * @param req 
-     * @param eventId 
-     * @param body 
+     * @param req Will be used to get session or tempsession
+     * @param eventId object id of the event to rsvp to (string)
+     * @param body Rsvp Request
      */
     @Post("rsvp/{eventId}")
-    @SuccessResponse(201, "Event Created")
+    @SuccessResponse(201, "Rsvp Created")
+    @Security("ats_otp")
+    @Security("oidc")
     async rsvpToEvent(
         @Request() req: express.Request,
         @Path() eventId: string,
@@ -176,27 +306,52 @@ export class EventController extends Controller {
             throw new CustomValidationError(404, `No event with id ${eventId}`);
         }
 
-        // Ensure either pk or user info is available.
-        const userPk = req.session.authorizedUser?.pk;
-        if (userPk === undefined && body.userInfo == undefined) {
-            throw new CustomValidationError(400,
-                "Either a valid session or userInfo must be present."
-            );
+        // Ensure email is available through session or tempsession
+        let email = req.session.authorizedUser?.email ?? req.session.tempsession?.user?.email;
+        if (email === undefined) {
+            throw new CustomValidationError(401, "User session not found.");
+        }
+
+        // Check if user is allowed to join event.
+        if (!event.public) {
+            // Check if user has an account.
+            const userPk = req.session.authorizedUser?.pk;
+            if (userPk === undefined) {
+                throw new CustomValidationError(401, "Valid account required for non-public events.");
+            }
+
+            let authorized = false;
+
+            // Check if user is in invited users
+            if (event.invitedUserPks && event.invitedUserPks.includes(userPk)) {
+                authorized = true;
+            } 
+
+            // Check if user is member of any invited groups.
+            if (!authorized && event.invitedGroupPks) {
+                for (const groupPk of event.invitedGroupPks) {
+                    const groupInfo = await this.authentikClient.getGroupInfo(groupPk);
+                    for (const uInfo of groupInfo.users) {
+                        if (uInfo.email === email) {
+                            authorized = true;
+                            break;
+                        }
+                    }
+                    if (authorized) break;
+                }
+            }
+
+            if (!authorized) {
+                throw new CustomValidationError(401, "Unauthorized to RSVP to event.");
+            }
         }
 
         // Check if RSVP already exists.
         let rsvp: HydratedDocument<IRsvp> | null;
-        if (userPk !== undefined) {
-            rsvp = await EventRsvp.findOne({ 
-                eventId: eventId,
-                userPk: userPk ,
-            });
-        } else {
-            rsvp = await EventRsvp.findOne({
-                eventId: eventId,
-                "userInfo.email": body.userInfo?.email,
-            });
-        }
+        rsvp = await EventRsvp.findOne({
+            eventId: eventId,
+            email: email,
+        });
 
         let status = body.accept ? RsvpStatus.ACCEPT : RsvpStatus.DECLINE;
         if (rsvp && rsvp.status == RsvpStatus.ACCEPT && !body.accept) {
@@ -215,23 +370,13 @@ export class EventController extends Controller {
             await EventRsvp.create({
                 eventId: eventId,
                 status: status,
-                userPk: userPk,
-                userInfo: body.userInfo,
+                email: email,
                 reason: body.reason,
             });
         }
 
-        // Get email
-        let email: string;
-        if (userPk !== undefined) {
-            const uInfo = await this.authentikClient.getUserInfo(Number(userPk));
-            email = uInfo.email;
-        } else {
-            email = body.userInfo!.email;
-        }
-
         // Get Google Calendar Link
-        const gCalendarLink = this.generateCalendarLinks({
+        const gCalendarLink = EventController.generateCalendarLinks({
             title: event.eventName,
             description: event.eventDescription,
             startTime: event.startTime,
@@ -241,15 +386,15 @@ export class EventController extends Controller {
 
         // Send confirmation email
         this.emailClient.send({
-            to: email,
+            to: email!,
             subject: "App Dev Event RSVP Confirmation",
             templateName: "RsvpConfirmation",
             templateVars: {
                 action: status,
                 eventName: event.eventName,
                 eventDescription: event.eventDescription,
-                startTime: event.startTime,
-                endTime: event.endTime,
+                startTime: event.startTime.toLocaleString(),
+                endTime: event.endTime.toLocaleString(),
                 eventLocation: event.location,
                 googleCalendarLink: gCalendarLink,
             }
@@ -257,6 +402,17 @@ export class EventController extends Controller {
 
     }
 
+    /**
+     * Generates a link accessible on the frontend allowing users
+     * to RSVP to events.
+     * 
+     * @param event Mongoose Event Document
+     * @returns Generated link : string
+     */
+    public static generateEventInviteLink(event: HydratedDocument<IEvent>) {
+        // TODO
+        return '';
+    }
 
     /**
      * Private helper method to get deduplicated list of user info from list
@@ -309,7 +465,7 @@ export class EventController extends Controller {
         return Array.from(resolvedUserInfo);
     }
 
-    private generateCalendarLinks(event: CreateEventRequest): string {
+    static generateCalendarLinks(event: CreateEventRequest): string {
         // Helper to format dates to Google/ICS standard: YYYYMMDDTHHMMSSZ
         const formatToUniversalTime = (date: Date) => {
             return date.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
@@ -326,30 +482,6 @@ export class EventController extends Controller {
         googleLink.searchParams.append("location", event.location);
         googleLink.searchParams.append("ctz", "America/New_York"); // Time zone
 
-        // // .ics raw string for other calendars.
-        // const icsData = [
-        //     "BEGIN:VCALENDAR",
-        //     "VERSION:2.0",
-        //     "PRODID:-//App Dev Club//PeoplePortal//EN",
-        //     "BEGIN:VEVENT",
-        //     `UID:${Date.now()}@.com`,
-        //     `DTSTAMP:${formatToUniversalTime(new Date())}`,
-        //     `DTSTART:${formatToUniversalTime(event.startTime)}`,
-        //     `DTEND:${formatToUniversalTime(event.endTime)}`,
-        //     `SUMMARY:${event.title}`,
-        //     `DESCRIPTION:${event.description.replace(/\n/g, '\\n')}`,
-        //     `LOCATION:${event.location}`,
-        //     "END:VEVENT",
-        //     "END:VCALENDAR"
-        // ].join('\r\n');
-
-        // // Convert the text into a downloadable base64 Data URI
-        // const icsDownloadLink = `data:text/calendar;charset=utf-8,${encodeURIComponent(icsData)}`;
-
         return googleLink.toString();
-        // return {
-        //     google: googleLink.toString(),
-        //     other: icsDownloadLink
-        // };
     }
 }

@@ -19,13 +19,17 @@
 import { Document, Schema, model } from "mongoose";
 
 export interface IEvent extends Document {
-  eventName: string;
-  eventDescription: string;
-  creator: string;
-  startTime: Date;
-  endTime: Date;
-  location: string;
-  public?: boolean;
+    eventName: string;
+    eventDescription: string;
+    creator: number;
+    startTime: Date;
+    endTime: Date;
+    location: string;
+    public?: boolean;
+    invitedGroupPks?: string[];
+    invitedUserPks?: number[];
+    slack?: boolean;
+    discord?: boolean;
 }
 
 const EventSchema = new Schema<IEvent>({
@@ -38,7 +42,7 @@ const EventSchema = new Schema<IEvent>({
         required: true
     },
     creator: {
-        type: String,
+        type: Number,
         required: true
     },
     startTime: {
@@ -56,7 +60,23 @@ const EventSchema = new Schema<IEvent>({
     public: {
         type: Boolean,
         required: false
-    }
+    },
+    invitedGroupPks: [{
+        type: String,
+        required: false
+    }],
+    invitedUserPks: [{
+        type: Number,
+        required: false
+    }],
+    slack: {
+        type: Boolean,
+        required: false
+    },
+    discord: {
+        type: Boolean,
+        required: false
+    },
 }, {timestamps: true});
 
 export const Event = model<IEvent>('Event', EventSchema);     

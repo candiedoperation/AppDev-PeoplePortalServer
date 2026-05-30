@@ -29,13 +29,8 @@ export enum RsvpStatus {
 export interface IRsvp extends Document {
   eventId: string; // Event id of corresponding event.
   status: RsvpStatus;
-  userPk?: string; // Pk id of corresponding user if in App Dev.
-  userInfo?: {           // Info of user. Should be used for
-    firstName: string,   // public events if user does not
-    lastName: string,    // have a PeoplePortal account.
-    email: string
-  };
-  reason?: string; // Optional reason for attendance declination.
+  email: string;
+  reason?: string; // Optional reason for accept or decline.
 }
 
 const rsvpSchema = new Schema<IRsvp>({
@@ -49,21 +44,9 @@ const rsvpSchema = new Schema<IRsvp>({
         enum: Object.values(RsvpStatus),
         required: true,
     },
-    userPk: {
+    email: {
         type: String,
-        required: false,
-    },
-    userInfo: {
-        type: {
-            firstName: { type: String, required: true },
-            lastName: { type: String, required: true },
-            email: { 
-                type: String,
-                required: true,
-                match: [/^[^\s@]+@[^\s@]+\.[^\s@]+$/, 'Please enter a valid email'],
-            },
-        },
-        required: false,
+        required: true,
     },
     reason: {
         type: String,
@@ -74,16 +57,5 @@ const rsvpSchema = new Schema<IRsvp>({
         },
     },
 }, {timestamps: true});
-
-
-// Ensure either userPk or userInfo is given.
-// rsvpSchema.pre("validate", function(this: HydratedDocument<IRsvp>, next: CallbackWithoutResultAndOptionalError) {
-//   if (!this.userPk && !this.userInfo) {
-//     this.invalidate("userPk", "You must provide either a userPk or a userInfo object.");
-//     this.invalidate('userInfo', "You must provide either a userPk or a userInfo object.");
-//   }
-//   next();
-// });
-
 
 export const EventRsvp = model<IRsvp>('RSVP', rsvpSchema);     

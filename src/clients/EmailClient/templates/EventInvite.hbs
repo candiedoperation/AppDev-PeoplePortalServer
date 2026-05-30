@@ -8,7 +8,7 @@
 {{> header}}
 
 <body style="font-family: Arial, sans-serif; color: #333;">
-    <p>Hey {{inviteeName}},<br>You've been invited to attend the <b>{{eventName}}</b> event on <b>{{startTime}}</b>. 
+    <p>You've been invited to attend the <b>{{eventName}}</b> event on <b>{{startTime}}</b>. 
     </p>
     <p>Below are the details for the event: </p>
     <ul>
@@ -22,9 +22,14 @@
     <p>Please let us know if you are able or unable to attend ASAP. We've generated a unique link for you to 
         RSVP for this event. Again, please RSVP ASAP in order for us to plan for your attendance.
     </p>
-    <p>RSVP here: <a href="#">Click me</a></p> <!-- TODO -->
+
+    <p>If you have any questions, you may respond directly to this email.</p>
+
+    <p><a href="{{inviteLink}}">RSVP Here</a></p>
     <a href="{{googleCalendarLink}}">Add to Google Calendar</a>
     <p>We hope to see you there!</p>
+
+
 </body>
 {{> footer}}
 

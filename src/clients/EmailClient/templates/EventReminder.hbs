@@ -3,14 +3,15 @@
 
 <head>
     <meta charset="UTF-8" />
-    <title>App Dev Event RSVP Confirmation</title>
+    <title>{{relativeTime}} Reminder for {{eventName}}</title>
 </head>
 {{> header}}
 
 <body style="font-family: Arial, sans-serif; color: #333;">
-    <p>We've received your RSVP for the {{eventName}} event.</p>
-    <p>You have chosen to <b>{{action}}</b> your attendance for the event.</p>
-    <p>You may update your RSVP up until the start of the event.</p>
+    <p>This is a reminder that the <b>{{eventName}}</b> event is at <b>{{startTime}}</b></p>
+    <p>You are receiving this message because you have accepted your invitation to this event.</p>
+    <p>If you need to update your RSVP, please do so <a href="{{inviteLink}}">here</a>.</p>
+    <p><b>Event Details: </b></p>
     <ul>
         <li><b>Event Name:</b> {{eventName}}</li>
         <li><b>Description:</b> {{eventDescription}}</li>
