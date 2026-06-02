@@ -8,8 +8,6 @@ import { HydratedDocument } from "mongoose";
 import { ENABLED_SHARED_RESOURCES } from "../../../config";
 import { SlackClient } from "../../SlackClient";
 import { DiscordClient } from "../../DiscordClient";
-import { relative } from "path";
-
 
 interface _JobData {
     jobName: string;
@@ -47,14 +45,7 @@ class JobHelperFunctions {
         }
 
         const inviteLink = EventController.generateEventInviteLink(event);
-        const gCalendarLink = EventController.generateCalendarLinks({
-            title: event.eventName,
-            description: event.eventDescription,
-            startTime: event.startTime,
-            endTime: event.endTime,
-            location: event.location,
-            public: event.public
-        });
+        const gCalendarLink = EventController.generateCalendarLinks(event);
 
         await emailClient.send({
             to: process.env.PEOPLEPORTAL_SMTP_USER!,
@@ -98,7 +89,7 @@ class JobHelperFunctions {
         if (relativeTime === "2 Hour") {
             relativeTime += "s";
         }
-        const message = `##Reminder\n` + 
+        const message = `## Reminder\n` + 
                         `**${event.eventName}** starts in ${relativeTime}.\n\n` + 
                         `RSVP here: ${inviteLink}`;
         

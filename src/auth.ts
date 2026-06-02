@@ -221,6 +221,16 @@ async function bindlesAuthVerify(request: express.Request, scopes?: string[]): P
         /* Default: Standard REST Path (teams/:teamId) */
         teamId = request.params.teamId;
         requiredBindles = scopes;
+    } else if (request.url.startsWith("/api/events")) {
+        /* Events: Used for events endpoints with no teamId */
+        try {
+            const authentikClient = new AuthentikClient();
+            teamId = await authentikClient.getGroupPkFromName("Events");
+        } catch (e) {
+            throw new ResourceAccessError(500, "Failed to fetch Events team.");
+        }
+
+        requiredBindles = scopes;
     } else {
         /* Fallback: Dynamic Locator Path */
         const locatorPath = scopes[0];

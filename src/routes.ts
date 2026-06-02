@@ -1944,6 +1944,7 @@ export function RegisterRoutes(app: Router) {
                 body: {"in":"body","name":"body","required":true,"ref":"CreateEventRequest"},
         };
         app.post('/api/events/createevent',
+            authenticateMiddleware([{"bindles":["corp:eventmgmt"]}]),
             ...(fetchMiddlewares<RequestHandler>(EventController)),
             ...(fetchMiddlewares<RequestHandler>(EventController.prototype.createEvent)),
 

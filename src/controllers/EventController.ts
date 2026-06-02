@@ -228,7 +228,7 @@ export class EventController extends Controller {
 
         // EMAIL INVITEES
         const userInfo = await this.resolveUserInfo(body.invitedGroupPks, body.invitedUserPks);
-        const gCalendarLink = EventController.generateCalendarLinks(body);
+        const gCalendarLink = EventController.generateCalendarLinks(event);
         const inviteLink = EventController.generateEventInviteLink(event);
 
         // Send out emails to invitees with bcc.
@@ -442,15 +442,28 @@ export class EventController extends Controller {
             return { status: "Success", message: "Successfully updated event.", issues: issues };
         }
 
+        const friendlyNames = {
+            "eventName": "Name",
+            "eventDescription": "Description",
+            "startTime": "Start Time",
+            "endTime": "End Time",
+            "location": "Location"
+        };
+
+        const order = ["Name", "Description", "Start Time", "End Time", "Location"];
+
         // Calculate diff
         const diff = Object.keys(docUpdates).map((key) => {
             const k = key as keyof typeof docUpdates;
             return {
-                name: k,
+                name: friendlyNames[k],
                 oldData: event[k],
                 newData: docUpdates[k]
             };
         });
+
+        // Sort for cleaner diff (prevents stuff like End Time showing before Start Time)
+        diff.sort((a, b) => order.indexOf(a.name) - order.indexOf(b.name));
 
         const users = await this.resolveUserInfo(event.invitedGroupPks, event.invitedUserPks);
         const emails = users.map(user => user.email);
@@ -459,14 +472,7 @@ export class EventController extends Controller {
         event.set(docUpdates);
         await event.save();
 
-        const gCalendarLink = EventController.generateCalendarLinks({
-            title: event.eventName,
-            description: event.eventDescription,
-            startTime: event.startTime,
-            endTime: event.endTime,
-            location: event.location,
-            public: event.public,
-        });
+        const gCalendarLink = EventController.generateCalendarLinks(event);
         const inviteLink = EventController.generateEventInviteLink(event);
 
         this.emailClient.send({
@@ -634,14 +640,7 @@ export class EventController extends Controller {
         }
 
         // Get Google Calendar Link
-        const gCalendarLink = EventController.generateCalendarLinks({
-            title: event.eventName,
-            description: event.eventDescription,
-            startTime: event.startTime,
-            endTime: event.endTime,
-            location: event.location,
-            public: event.public
-        });
+        const gCalendarLink = EventController.generateCalendarLinks(event);
 
         // Send confirmation email
         this.emailClient.send({
@@ -798,7 +797,7 @@ export class EventController extends Controller {
         return Array.from(resolvedUserInfo);
     }
 
-    static generateCalendarLinks(event: CreateEventRequest): string {
+    static generateCalendarLinks(event: HydratedDocument<IEvent>): string {
         // Helper to format dates to Google/ICS standard: YYYYMMDDTHHMMSSZ
         const formatToUniversalTime = (date: Date) => {
             return date.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
@@ -809,9 +808,9 @@ export class EventController extends Controller {
         // Link for google calendar.
         const googleLink = new URL("https://calendar.google.com/calendar/render");
         googleLink.searchParams.append("action", "TEMPLATE");
-        googleLink.searchParams.append("text", event.title);
+        googleLink.searchParams.append("text", event.eventName);
         googleLink.searchParams.append("dates", timeChunk);
-        googleLink.searchParams.append("details", event.description);
+        googleLink.searchParams.append("details", event.eventDescription);
         googleLink.searchParams.append("location", event.location);
         googleLink.searchParams.append("ctz", "America/New_York"); // Time zone
 

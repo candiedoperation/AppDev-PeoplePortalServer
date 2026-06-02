@@ -93,7 +93,23 @@ export const ENABLED_SERVICE_TEAMS: Record<string, ServiceTeamConfig> = {
         description: "The Previous Presidents and Club Executives"
       },
     ]
-  }
+  },
+  Events: {
+    friendlyName: "Event Management Team",
+    description: "Team of Members able to Create, Manage, and Delete Events",
+    subteams: [
+      {
+        uniqueName: "EventsTeamMembers",
+        friendlyName: "Events Team Members",
+        description: "Current members of the events team.",
+        bindles: {
+          "PeoplePortalClient": {
+            "corp:eventmgmt": true,
+          },
+        }
+      },
+    ]
+  },
 }
 
 /* Define Team Type Templates Here */
