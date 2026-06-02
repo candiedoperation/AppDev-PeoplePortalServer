@@ -228,7 +228,7 @@ export class EventController extends Controller {
 
         // EMAIL INVITEES
         const userInfo = await this.resolveUserInfo(body.invitedGroupPks, body.invitedUserPks);
-        const gCalendarLink = EventController.generateCalendarLinks(event);
+        const gCalendarLink = EventController.generateCalendarLink(event);
         const inviteLink = EventController.generateEventInviteLink(event);
 
         // Send out emails to invitees with bcc.
@@ -472,7 +472,7 @@ export class EventController extends Controller {
         event.set(docUpdates);
         await event.save();
 
-        const gCalendarLink = EventController.generateCalendarLinks(event);
+        const gCalendarLink = EventController.generateCalendarLink(event);
         const inviteLink = EventController.generateEventInviteLink(event);
 
         this.emailClient.send({
@@ -640,7 +640,7 @@ export class EventController extends Controller {
         }
 
         // Get Google Calendar Link
-        const gCalendarLink = EventController.generateCalendarLinks(event);
+        const gCalendarLink = EventController.generateCalendarLink(event);
 
         // Send confirmation email
         this.emailClient.send({
@@ -797,7 +797,7 @@ export class EventController extends Controller {
         return Array.from(resolvedUserInfo);
     }
 
-    static generateCalendarLinks(event: HydratedDocument<IEvent>): string {
+    static generateCalendarLink(event: HydratedDocument<IEvent>): string {
         // Helper to format dates to Google/ICS standard: YYYYMMDDTHHMMSSZ
         const formatToUniversalTime = (date: Date) => {
             return date.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';

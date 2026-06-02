@@ -19,7 +19,7 @@
 import mongoose from "mongoose";
 import { Agenda } from "agenda";
 import { MongoBackend } from "@agendajs/mongo-backend";
-import { DefinedJobs, JobPayload, JobSchedulingData, RecurringJobs } from "./Jobs";
+import { DefinedJobs, JobSchedulingData, RecurringJobs } from "./Jobs";
 
 
 

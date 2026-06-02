@@ -45,7 +45,7 @@ class JobHelperFunctions {
         }
 
         const inviteLink = EventController.generateEventInviteLink(event);
-        const gCalendarLink = EventController.generateCalendarLinks(event);
+        const gCalendarLink = EventController.generateCalendarLink(event);
 
         await emailClient.send({
             to: process.env.PEOPLEPORTAL_SMTP_USER!,
