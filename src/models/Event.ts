@@ -25,7 +25,7 @@ export interface IEvent extends Document {
     startTime: Date;
     endTime: Date;
     location: string;
-    public?: boolean;
+    public: boolean;
     invitedGroupPks?: string[];
     invitedUserPks?: number[];
     slack?: boolean;
@@ -59,7 +59,7 @@ const EventSchema = new Schema<IEvent>({
     },
     public: {
         type: Boolean,
-        required: false
+        required: true
     },
     invitedGroupPks: [{
         type: String,

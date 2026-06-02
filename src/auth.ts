@@ -24,6 +24,7 @@ import { AuthentikClient } from "./clients/AuthentikClient";
 import { ENABLED_SERVICE_TEAM_NAMES } from "./utils/services";
 import { ResourceAccessError } from "./utils/errors";
 import { formatBindleAccessError } from "./utils/strings";
+import { ConstraintViolationException } from "@aws-sdk/client-organizations";
 
 export async function NativeExpressOIDCAuthPort(
     req: express.Request,

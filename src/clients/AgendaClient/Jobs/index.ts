@@ -7,6 +7,8 @@ import { EventController } from "../../../controllers/EventController";
 import { HydratedDocument } from "mongoose";
 import { ENABLED_SHARED_RESOURCES } from "../../../config";
 import { SlackClient } from "../../SlackClient";
+import { DiscordClient } from "../../DiscordClient";
+import { relative } from "path";
 
 
 interface _JobData {
@@ -51,6 +53,7 @@ class JobHelperFunctions {
             startTime: event.startTime,
             endTime: event.endTime,
             location: event.location,
+            public: event.public
         });
 
         await emailClient.send({
@@ -82,9 +85,34 @@ class JobHelperFunctions {
             relativeTime += "s";
         }
         const inviteLink = EventController.generateEventInviteLink(event);
-        const message = `*Reminder*\n${event.eventName} starts in ${relativeTime}.\n\nRSVP here: ${inviteLink}`;
+        const message = `*Reminder*\n` + 
+                        `${event.eventName} starts in ${relativeTime}.\n\n` + 
+                        `RSVP here: ${inviteLink}`;
 
         return await slackClient.sendMessageInChannel(announcementsChannel.id!, message);
+    }
+
+    public static async sendEventReminderDiscord(event: HydratedDocument<IEvent>, relativeTime: string) {
+        const discordClient = ENABLED_SHARED_RESOURCES.discordClient as DiscordClient;
+        const inviteLink = EventController.generateEventInviteLink(event);
+        if (relativeTime === "2 Hour") {
+            relativeTime += "s";
+        }
+        const message = `##Reminder\n` + 
+                        `**${event.eventName}** starts in ${relativeTime}.\n\n` + 
+                        `RSVP here: ${inviteLink}`;
+        
+        try {
+            const announcementsChannel = await discordClient.getChannelFromName(EventController.DISCORD_EVENT_ANNOUNCEMENT_CHANNEL);
+            if (announcementsChannel === undefined) {
+                return false;
+            }
+            await discordClient.sendMessageInChannel(announcementsChannel, message);
+            return true;
+        } catch (error) {
+            return false;
+        }
+        
     }
 }
 
@@ -149,6 +177,13 @@ export const DefinedJobs: Record<string, {
                             console.error("Failed to send Slack reminders for event:", event._id);
                         }
                     }
+
+                    if (event.discord) {
+                        const success = await JobHelperFunctions.sendEventReminderDiscord(event, relTime);
+                        if (!success) {
+                            console.error("Failed to send Discord reminders for event:", event._id);
+                        }
+                    }
                 } catch (error) {
                     console.error(`Failed to send reminders for event ${event._id} due to error:`, error);
                 }
@@ -168,17 +203,25 @@ export const DefinedJobs: Record<string, {
             try {
                 const emailClient = new EmailClient();
                 await JobHelperFunctions.sendEventReminderEmail(event, emailClient, "2 Hour");
+                
                 if (event.slack) {
                     const success = await JobHelperFunctions.sendEventReminderSlack(event, "2 Hour");
                     if (!success) {
                         console.error("Failed to send Slack reminders for event:", event._id);
                     }
                 }
+
+                if (event.discord) {
+                    const success = await JobHelperFunctions.sendEventReminderDiscord(event, "2 Hour");
+                    if (!success) {
+                        console.error("Failed to send Discord reminders for event:", event._id);
+                    }
+                }
+
             } catch (error) {
                 console.error(`Failed to send reminders for event ${event._id} due to error:`, error);
                 job.fail(error?.toString() ?? event._id.toString());
             }       
-
         },
         options: {
             removeOnComplete: true, // Frees space by removing job from MongoDB on completion

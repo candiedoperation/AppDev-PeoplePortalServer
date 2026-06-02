@@ -24,6 +24,7 @@ import { AppleAccountClient } from "./clients/AppleAccountClient";
 import { PeoplePortalClient } from "./clients/PeoplePortalClient";
 import { EnabledBindlePermissions } from "./controllers/BindleController";
 import { TeamType } from "./clients/AuthentikClient/models";
+import { DiscordClient } from "./clients/DiscordClient";
 
 /**
  * This interface helps define the default configuration that needs to be applied
@@ -67,6 +68,7 @@ export const ENABLED_SHARED_RESOURCES: { [key: string]: SharedResourceClient } =
   // giteaClient: new GiteaClient(),
   peoplePortalClient: new PeoplePortalClient(),
   slackClient: new SlackClient(),
+  discordClient: new DiscordClient(),
 }
 
 /* Define Enabled Root Team Setting Resources Here */

@@ -16,7 +16,7 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-import { Route, Request, Controller, Get, SuccessResponse, Post, Body, Tags, Security, Path, Queries, Delete } from "tsoa";
+import { Route, Request, Controller, Get, SuccessResponse, Post, Body, Tags, Security, Path, Queries, Delete, Patch } from "tsoa";
 import { EmailClient } from "../clients/EmailClient";
 import { SlackClient } from "../clients/SlackClient";
 import { AuthentikClient } from "../clients/AuthentikClient";
@@ -25,9 +25,12 @@ import * as express from 'express';
 import { CustomValidationError } from "../utils/errors";
 import { Event, IEvent } from "../models/Event";
 import { EventRsvp, IRsvp, RsvpStatus } from "../models/EventRsvp";
-import { HydratedDocument } from "mongoose";
+import { Document, FlattenMaps, HydratedDocument, Types } from "mongoose";
 import { UserInformationBrief } from "../clients/AuthentikClient/models";
 import { agendaClient } from "../clients/AgendaClient";
+import { resolve } from "path";
+import { DiscordClient } from "../clients/DiscordClient";
+import { setUncaughtExceptionCaptureCallback } from "process";
 
 
 export interface GetEventListOptions {
@@ -46,15 +49,32 @@ export interface CreateEventRequest {
     startTime: Date;
     endTime: Date;
     location: string;
+    public: boolean;
     invitedGroupPks?: string[]; // Authentik groups to send invites to
     invitedUserPks?: number[];  // Additional individuals to invite
     slack?: boolean; // Send an announcement on Slack. Also affects reminders.
     discord?: boolean; // Send an announcement on Discord. Also affects reminders.
 }
 
+export interface BasicEventResponse {
+    status: string;
+    message?: string;
+    issues: string[];
+}
+
 export interface CreateEventResponse {
     eventId: string,
     status: string,
+    issues: string[],
+}
+
+export interface UpdateEventRequest {
+    notify: boolean; // Will send update announcements.
+    eventName?: string;
+    eventDescription?: string;
+    startTime?: Date;
+    endTime?: Date;
+    location?: string;
 }
 
 export interface RsvpRequest {
@@ -62,20 +82,24 @@ export interface RsvpRequest {
     reason?: string;
 }
 
+export type DocumentJSON<T> = FlattenMaps<T> & Required<{ _id: Types.ObjectId; }> & { __v: number };
 
 @Route("/api/events/")
 export class EventController extends Controller {
     public static readonly SLACK_EVENT_ANNOUNCEMENT_CHANNEL = "announcements";
+    public static readonly DISCORD_EVENT_ANNOUNCEMENT_CHANNEL = "announcements";
 
     private readonly authentikClient;
     private readonly emailClient;
     private readonly slackClient;
+    private readonly discordClient;
     
     constructor() {
         super()
         this.authentikClient = new AuthentikClient();
         this.emailClient = new EmailClient();
         this.slackClient = ENABLED_SHARED_RESOURCES.slackClient as SlackClient;
+        this.discordClient = ENABLED_SHARED_RESOURCES.discordClient as DiscordClient;
     }
 
 
@@ -84,17 +108,38 @@ export class EventController extends Controller {
      */
     @Get("/")
     @SuccessResponse(200)
+    @Security("oidc")
+    @Security("ats_otp")
+    @Tags("Event Management")
     async getListOfEvents(
+        @Request() req?: express.Request,
         @Queries() options?: GetEventListOptions
     ): Promise<GetEventListResponse> {
-        const query = Event.distinct("_id", {
-            startTime: {
-                $gte: options?.after === undefined ? undefined : options.after,
-                $lte: options?.before === undefined ? undefined : options.before,
-            },
-            public: options?.public === undefined ? undefined : options.public
-        });
-        
+        let filters: { [key: string]: any } = {};
+
+        if (options?.after !== undefined) {
+            filters.startTime = { $gte: options.after };
+        }
+        if (options?.before !== undefined) {
+            if (filters.startTime !== undefined) {
+                filters.startTime.$lte = options.before;
+            } else {
+                filters.startTime = { $lte: options.before };
+            }
+        }
+
+        let isPublic = options?.public;
+        // Checks if user has a temporary session
+        if (req?.session.tempsession?.jwt && req.session.tempsession.user) {
+            // Only show public events
+            isPublic = true;
+        }
+
+        if (isPublic !== undefined) {
+            filters.public = isPublic;
+        }
+
+        const query = Event.distinct("_id", filters);
         const results = await query.exec();
         const response = {
             data: results.map((objId) => objId.toString()),
@@ -106,25 +151,41 @@ export class EventController extends Controller {
 
 
     /**
-     * Return
+     * Return a single event's information.
      * 
+     * @param req express Request object
      * @param eventId Id of the event
      * @returns Event data as json.
      */
     @Get("{eventId}")
     @SuccessResponse(200)
     @Security("oidc")
+    @Security("ats_otp")
     @Security("bindles", ["corp:eventmgmt"])
+    @Tags("Event Management")
     async getEvent(
+        @Request() req: express.Request,
         @Path() eventId: string,
     ) {
         // Get event data
-        const event = await Event.findOne({ _id: eventId });
-        if (!event) {
-            throw new CustomValidationError(404, `No event with id ${eventId}`);
+        let query = Event.findOne({ _id: eventId });
+
+        // Checks if user has a temporary session
+        if (req?.session.tempsession?.jwt && req.session.tempsession.user) {
+            // Only show public events
+            query = query.where("public").equals(true);
         }
 
-        return event.toJSON();
+        try {
+            const event = await query.exec();
+            if (!event) {
+                throw new CustomValidationError(404, `No event with id ${eventId}`);
+            }
+            return event.toJSON();
+        } catch (error) {
+            console.error(`Failed to get event data for event ${eventId}:`, error);
+            throw new Error(`Failed to fetch event data`);
+        }
     }
 
     /**
@@ -136,6 +197,7 @@ export class EventController extends Controller {
     @Post("createevent")
     @SuccessResponse(201, "Event Created")
     @Security("bindles", ["corp:eventmgmt"])
+    @Tags("Event Management")
     async createEvent(
         @Request() req: express.Request,
         @Body() body: CreateEventRequest,
@@ -157,6 +219,7 @@ export class EventController extends Controller {
             startTime: body.startTime,
             endTime: body.endTime,
             location: body.location,
+            public: body.public,
             invitedGroupPks: body.invitedGroupPks,
             invitedUserPks: body.invitedUserPks,
             slack: body.slack,
@@ -186,21 +249,42 @@ export class EventController extends Controller {
                 googleCalendarLink: gCalendarLink,
             },
             replyTo: [authorizedUser.email],
-        })
+        });
 
-        const message = `*Event Announcement*\n>${event.eventName}\nDescription: ${event.eventDescription}\nStart Time: ${event.startTime.toLocaleString()}\nEnd Time: ${event.endTime.toLocaleString()}\nLocation: ${event.location}\n\nRSVP here: ${inviteLink}\nAdd to google calendar: ${gCalendarLink}\n`;
+        const issues: string[] = [];
 
         // SLACK MESSAGE
         if (body.slack) {
-            const slackChannel = await this.slackClient.getChannelFromName(EventController.SLACK_EVENT_ANNOUNCEMENT_CHANNEL);
-            if (slackChannel) {
-                this.slackClient.sendMessageInChannel(slackChannel.id!, message);
+            const message = `*Event Announcement*\n` +
+                            `>${event.eventName}\n` +
+                            `Description: ${event.eventDescription}\n` +
+                            `Start Time: ${event.startTime.toLocaleString()}\n` +
+                            `End Time: ${event.endTime.toLocaleString()}\n` +
+                            `Location: ${event.location}\n\n` +
+                            `RSVP here: ${inviteLink}\n` +
+                            `Add to google calendar: ${gCalendarLink}`;
+
+            const success = await this.sendSlackMessage(message);
+            if (!success) {
+                issues.push("Failed to send Slack announcement.");
             }
         }
 
         // DISCORD MESSAGE
         if (body.discord) {
-            // TODO
+            const message = `# Event Announcement\n` + 
+                            `## ${event.eventName}\n` + 
+                            `- Description: ${event.eventDescription}\n` +
+                            `- Start Time: ${event.startTime.toLocaleString()}\n` +
+                            `- End Time: ${event.endTime.toLocaleString()}\n` +
+                            `- Location: ${event.location}\n\n` +
+                            `RSVP here: ${inviteLink}\n` +
+                            `Add to google calendar: ${gCalendarLink}`;
+
+            const success = await this.sendDiscordMessage(message);
+            if (!success) {
+                issues.push("Failed to send Discord announcement.");
+            }
         }
 
         // Schedule 2 Hour Reminder
@@ -213,8 +297,9 @@ export class EventController extends Controller {
 
         return {
             eventId: event._id.toString(),
-            status: "Event Created Successfully"
-        }
+            status: "Event Created Successfully",
+            issues: issues,
+        };
     }
 
 
@@ -224,18 +309,27 @@ export class EventController extends Controller {
      * @param req Express Request Object
      * @param eventId Id of the event to cancel
      * @param options { notify?: boolean }. If notify is true (default), will send notify invitees of event cancellation.
-     * @returns 
+     * @returns BasicEventResponse
      */
-    @Delete("cancel/{eventId}")
+
+    @Delete("{eventId}/cancel")
     @SuccessResponse(200, "Event cancelled.")
     @Security("bindles", ["corp:eventmgmt"])
+    @Tags("Event Management")
     async cancelEvent(
         @Request() req: express.Request,
         @Path() eventId: string,
         @Queries() options?: { notify?: boolean }
     ) {
         // Find event
-        const event = await Event.findOne({ _id: eventId });
+        let event: HydratedDocument<IEvent> | null;
+        try {
+            event = await Event.findOne({ _id: eventId }).exec();
+        } catch (error) {
+            console.error(`Failed to get event data for event ${eventId}: `, error);
+            throw Error(`Failed to fetch event ${eventId}`);
+        }
+        
         if (!event) {
             throw new CustomValidationError(404, `No event with id ${eventId}`);
         }
@@ -249,8 +343,10 @@ export class EventController extends Controller {
             return;
         }
 
+        const issues: string[] = [];
+
         const invitees = await this.resolveUserInfo(event.invitedGroupPks, event.invitedUserPks);
-        this.emailClient.send({
+        await this.emailClient.send({
             to: process.env.PEOPLEPORTAL_SMTP_USER!,
             cc: [req.session.authorizedUser!.email],
             bcc: invitees.map(invitee => invitee.email),
@@ -266,19 +362,181 @@ export class EventController extends Controller {
 
         // Send Slack Message
         if (event.slack) {
-            const message = `*Event Announcement*\n${event.eventName} has been *cancelled.*`;
-            const slackChannel = await this.slackClient.getChannelFromName(EventController.SLACK_EVENT_ANNOUNCEMENT_CHANNEL);
-            let success = slackChannel !== null;
-            if (slackChannel) {
-                success = await this.slackClient.sendMessageInChannel(slackChannel.id!, message);
-            }
+            const message = `*Event Announcement*\n` + 
+                            `${event.eventName} has been *cancelled.*`;
 
+            const success = await this.sendSlackMessage(message);
             if (!success) {
-                console.error("Failed to send cancellation message in Slack for event:", event._id.toString());
+                issues.push("Failed to send Slack announcement.");
             }
         }
+
+        // Send Discord Message
+        if (event.discord) {
+            const message = `# Event Announcement\n` + 
+                            `**${event.eventName}** has been **cancelled**`;
+            
+            const success = await this.sendDiscordMessage(message);
+            if (!success) {
+                issues.push("Failed to send Discord announcement.");
+            }
+        }
+
+        return {
+            status: "Success",
+            message: "Successfully cancelled event",
+            issues: issues,
+        };
     }
 
+
+    /**
+     * Updates the information of an event. Sends update announcement if
+     * notify is set.
+     * 
+     * @param eventId id of the event
+     * @param body UpdateEventRequest
+     * @returns BasicEventResponse
+     */
+    @Patch("{eventId}/update")
+    @SuccessResponse(200, "Event successfully updated")
+    @Security("bindles", ["corp:eventmgmt"])
+    @Tags("Event Management")
+    async updateEvent(
+        @Path() eventId: string,
+        @Body() body: UpdateEventRequest
+    ) {
+        let event: HydratedDocument<IEvent> | null;
+        try {
+            event = await Event.findOne({ _id: eventId }).exec();
+        } catch (error) {
+            console.error(`Failed to get event data for event ${eventId}: `, error);
+            throw Error(`Failed to fetch event ${eventId}`);
+        }
+
+        if (!event) {
+            throw new CustomValidationError(404, `No event with id ${eventId}`);
+        }
+
+        const { notify, ...docUpdates } = body;
+
+        // Strip undefined values and values equal to existing values.
+        Object.keys(docUpdates).forEach((key) => {
+            const k = key as keyof typeof docUpdates;
+            if (docUpdates[k] === undefined || docUpdates[k] === event[k]) {
+                delete docUpdates[k];
+            }
+        });
+
+        const issues: string[] = [];
+
+        // Nothing to change.
+        if (Object.keys(docUpdates).length == 0) {
+            this.setStatus(204);
+            return { status: "Success", message: "No data changed.", issues: issues };
+        }
+
+        if (!body.notify) {
+            event.set(docUpdates);
+            await event.save();
+            return { status: "Success", message: "Successfully updated event.", issues: issues };
+        }
+
+        // Calculate diff
+        const diff = Object.keys(docUpdates).map((key) => {
+            const k = key as keyof typeof docUpdates;
+            return {
+                name: k,
+                oldData: event[k],
+                newData: docUpdates[k]
+            };
+        });
+
+        const users = await this.resolveUserInfo(event.invitedGroupPks, event.invitedUserPks);
+        const emails = users.map(user => user.email);
+        const oldName = event.eventName;
+
+        event.set(docUpdates);
+        await event.save();
+
+        const gCalendarLink = EventController.generateCalendarLinks({
+            title: event.eventName,
+            description: event.eventDescription,
+            startTime: event.startTime,
+            endTime: event.endTime,
+            location: event.location,
+            public: event.public,
+        });
+        const inviteLink = EventController.generateEventInviteLink(event);
+
+        this.emailClient.send({
+            to: process.env.PEOPLEPORTAL_SMTP_USER!,
+            bcc: emails,
+            subject: `Update for ${oldName}`,
+            templateName: "EventUpdate",
+            templateVars: {
+                eventName: oldName,
+                diff: diff,
+                googleCalendarLink: gCalendarLink,
+                inviteLink: inviteLink
+            }
+        });
+
+        if (event.slack) {
+            const message = `*Important Update*\n` + 
+                            `Changes have been made to ${event.eventName}.\n` + 
+                            `Please review the new information here: ${inviteLink}`;
+    
+            const success = await this.sendSlackMessage(message);
+            if (!success) {
+                issues.push("Failed to send Slack announcement.");
+            }
+        }
+
+        if (event.discord) {
+            const message = `## Update - ${event.eventName}\n` + 
+                            `Changes have been made to ${event.eventName}.\n` + 
+                            `Please review the new information here: ${inviteLink}`;
+            
+            const success = await this.sendDiscordMessage(message);
+            if (!success) {
+                issues.push("Failed to send Discord announcement.");
+            }
+            
+        }
+
+        return {
+            status: "Success",
+            message: "Successfully updated event",
+            issues: issues,
+        };
+    }
+
+
+    /**
+     * Returns rsvp data for a specific event.
+     * @param eventId 
+     * @returns { status: string, data: HydratedDocument<IRsvp>[] }
+     */
+    @Get("{eventId}/rsvps")
+    @SuccessResponse(200)
+    @Security("bindles", ["corp:eventmgmt"])
+    @Tags("Event RSVPs")
+    async getRsvps(
+        @Path() eventId: string
+    ) {
+        try {
+            const query = EventRsvp.find({ eventId: eventId });
+            const results = await query.exec();
+            return {
+                status: "success",
+                data: results.map(document => document.toJSON()),
+            };
+        } catch (error) {
+            console.error(`Failed to get RSVPs for event ${eventId}:`, error);
+            throw new Error(`Failed to fetch RSVPs`);
+        }
+    }
     
     /**
      * 
@@ -291,10 +549,11 @@ export class EventController extends Controller {
      * @param eventId object id of the event to rsvp to (string)
      * @param body Rsvp Request
      */
-    @Post("rsvp/{eventId}")
+    @Post("{eventId}/rsvp")
     @SuccessResponse(201, "Rsvp Created")
     @Security("ats_otp")
     @Security("oidc")
+    @Tags("Event RSVPs")
     async rsvpToEvent(
         @Request() req: express.Request,
         @Path() eventId: string,
@@ -307,7 +566,7 @@ export class EventController extends Controller {
         }
 
         // Ensure email is available through session or tempsession
-        let email = req.session.authorizedUser?.email ?? req.session.tempsession?.user?.email;
+        const email = req.session.authorizedUser?.email ?? req.session.tempsession?.user?.email;
         if (email === undefined) {
             throw new CustomValidationError(401, "User session not found.");
         }
@@ -360,12 +619,11 @@ export class EventController extends Controller {
 
         // Update existing rsvp or create new one.
         if (rsvp) {
-            await rsvp.updateOne({
-                $set: {
-                    status: status,
-                    reason: body.reason,
-                }
-            });
+            rsvp.status = status;
+            if (body.reason !== undefined) {
+                rsvp.reason = body.reason;
+            }
+            await rsvp.save();
         } else {
             await EventRsvp.create({
                 eventId: eventId,
@@ -382,6 +640,7 @@ export class EventController extends Controller {
             startTime: event.startTime,
             endTime: event.endTime,
             location: event.location,
+            public: event.public
         });
 
         // Send confirmation email
@@ -400,6 +659,80 @@ export class EventController extends Controller {
             }
         });
 
+    }
+
+
+    /**
+     * Checks if current user has RSVP'd to the given event.
+     * Returns rsvp data if user has RSVP'd, and null otherwise.
+     * 
+     * @param eventId id of the event.
+     * @param req express Request object
+     * @returns { status: string, rsvpData: DocumentJSON<IRsvp> | null }
+     */
+    @Get("{eventId}/rsvp")
+    @Security("oidc")
+    @Security("ats_otp")
+    @SuccessResponse(200)
+    @Tags("Event RSVPs")
+    async getRsvpForEvent(
+        @Path() eventId: string,
+        @Request() req: express.Request,
+    ): Promise<{ status: string, rsvpData: DocumentJSON<IRsvp> | null }> {
+        // Get event
+        const event = await Event.findOne({ _id: eventId }).exec();
+        if (!event) {
+            throw new CustomValidationError(404, `No event with id ${eventId}`);
+        }
+    
+        // Ensure email is available through session or tempsession
+        const email = req.session.authorizedUser?.email ?? req.session.tempsession?.user?.email;
+        if (email === undefined) {
+            throw new CustomValidationError(401, "User session not found.");
+        }
+
+        const rsvp = await EventRsvp.findOne({ eventId: eventId, email: email }).exec();
+        if (!rsvp) {
+            return {
+                status: "Success",
+                rsvpData: null,
+            };
+        }
+        
+        return {
+            status: "Success",
+            rsvpData: rsvp.toJSON(),
+        };
+    }
+
+    private async sendSlackMessage(message: string) : Promise<boolean> {
+        const slackChannel = await this.slackClient.getChannelFromName(EventController.SLACK_EVENT_ANNOUNCEMENT_CHANNEL);
+        if (slackChannel?.id !== undefined) {
+            const success = this.slackClient.sendMessageInChannel(slackChannel.id!, message);
+            if (!success) {
+                console.error("Failed to send slack message.");
+                return false;
+            }
+            return success;
+        } else {
+            console.error("Slack announcements channel not found.");
+            return false;
+        }
+    }
+
+    private async sendDiscordMessage(message: string) : Promise<boolean> {
+        try {
+            const discordChannel = await this.discordClient.getChannelFromName(EventController.DISCORD_EVENT_ANNOUNCEMENT_CHANNEL);
+            if (discordChannel !== undefined) {
+                this.discordClient.sendMessageInChannel(discordChannel, message);
+            } else {
+                throw new Error("Could not find announcements channel.")
+            }
+            return true;
+        } catch (error) {
+            console.error("Failed to send discord announcement:", error);
+            return false;
+        }
     }
 
     /**

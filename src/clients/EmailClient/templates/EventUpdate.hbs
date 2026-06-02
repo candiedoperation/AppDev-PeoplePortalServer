@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Update for {{eventName}}</title>
+</head>
+{{> header}}
+
+<body style="font-family: Arial, sans-serif; color: #333;">
+    <p>Information for the <b>{{eventName}}</b> event has been changed.</p>
+    <p>List of changes:</p>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="font-family: Arial, sans-serif; font-size: 13px; color: #333333; line-height: 1.4;">
+        {{#each diff}}
+            <tr>
+            <td colspan="2" style="padding-top: 12px; padding-bottom: 4px; font-weight: bold; font-size: 12px; text-transform: uppercase; color: #555555; border-bottom: 1px solid #e0e0e0;">
+                {{this.name}}
+            </td>
+            </tr>
+            
+            <tr>
+            <td valign="top" width="50%" style="padding: 6px 12px 12px 12px; background-color: #fff5f5; color: #a94442; word-break: break-word; border-right: 1px solid #f0f0f0;">
+                <span style="font-size: 11px; font-weight: bold; color: #c97d7d; display: block; margin-bottom: 2px;">WAS:</span>
+                {{this.oldData}}
+            </td>
+
+            <td valign="top" width="50%" style="padding: 6px 0 12px 12px; background-color: #f5fff5; color: #3c763d; word-break: break-word;">
+                <span style="font-size: 11px; font-weight: bold; color: #7dc97d; display: block; margin-bottom: 2px;">IS NOW:</span>
+                {{this.newData}}
+            </td>
+            </tr>
+        {{/each}}
+    </table>
+    <br><br>
+    <p>See all event details through <a href="{{inviteLink}}">this link</a>.</p>
+    <a href="{{googleCalendarLink}}">Add to Google Calendar</a>
+
+</body>
+{{> footer}}
+
+</html>

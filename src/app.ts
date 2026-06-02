@@ -176,5 +176,6 @@ app.listen(PORT, async () => {
   await mongoose.connect(process.env.PEOPLEPORTAL_MONGO_URL!)
   console.log(`Server running at http://localhost:${PORT}`);
 
+  // Agenda Client Singleton
   agendaClient.initialize();
 });
