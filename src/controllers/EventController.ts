@@ -210,7 +210,6 @@ export class EventController extends Controller {
             throw new CustomValidationError(400, "No title given.");
         }
 
-        console.log(`[EventController] - Discord Bot is ready: ${this.discordClient.isReady}`);
         const authorizedUser = req.session.authorizedUser!;
 
         const event = await Event.create({
