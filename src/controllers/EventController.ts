@@ -210,6 +210,7 @@ export class EventController extends Controller {
             throw new CustomValidationError(400, "No title given.");
         }
 
+        console.log(`[EventController] - Discord Bot is ready: ${this.discordClient.isReady}`);
         const authorizedUser = req.session.authorizedUser!;
 
         const event = await Event.create({
@@ -242,8 +243,8 @@ export class EventController extends Controller {
             templateVars: {
                 eventName: body.title,
                 eventDescription: body.description,
-                startTime: body.startTime.toLocaleString(),
-                endTime: body.endTime.toLocaleString(),
+                startTime: body.startTime.toLocaleString("en-US", { timeZone: "America/New_York" }),
+                endTime: body.endTime.toLocaleString("en-US", { timeZone: "America/New_York" }),
                 eventLocation: body.location,
                 inviteLink: inviteLink,
                 googleCalendarLink: gCalendarLink,
@@ -258,8 +259,8 @@ export class EventController extends Controller {
             const message = `*Event Announcement*\n` +
                             `>${event.eventName}\n` +
                             `Description: ${event.eventDescription}\n` +
-                            `Start Time: ${event.startTime.toLocaleString()}\n` +
-                            `End Time: ${event.endTime.toLocaleString()}\n` +
+                            `Start Time: ${event.startTime.toLocaleString("en-US", { timeZone: "America/New_York" })}\n` +
+                            `End Time: ${event.endTime.toLocaleString("en-US", { timeZone: "America/New_York" })}\n` +
                             `Location: ${event.location}\n\n` +
                             `RSVP here: ${inviteLink}\n` +
                             `Add to google calendar: ${gCalendarLink}`;
@@ -275,8 +276,8 @@ export class EventController extends Controller {
             const message = `# Event Announcement\n` + 
                             `## ${event.eventName}\n` + 
                             `- Description: ${event.eventDescription}\n` +
-                            `- Start Time: ${event.startTime.toLocaleString()}\n` +
-                            `- End Time: ${event.endTime.toLocaleString()}\n` +
+                            `- Start Time: ${event.startTime.toLocaleString("en-US", { timeZone: "America/New_York" })}\n` +
+                            `- End Time: ${event.endTime.toLocaleString("en-US", { timeZone: "America/New_York" })}\n` +
                             `- Location: ${event.location}\n\n` +
                             `RSVP here: ${inviteLink}\n` +
                             `Add to google calendar: ${gCalendarLink}`;
@@ -286,7 +287,7 @@ export class EventController extends Controller {
                 issues.push("Failed to send Discord announcement.");
             }
         }
-
+        
         // Schedule 2 Hour Reminder
         agendaClient.scheduleJobOnce({
             jobName: "sendEventReminders",
@@ -355,8 +356,8 @@ export class EventController extends Controller {
             templateVars: {
                 eventName: event.eventName,
                 eventDescription: event.eventDescription,
-                startTime: event.startTime,
-                endTime: event.endTime
+                startTime: event.startTime.toLocaleString("en-US", { timeZone: "America/New_York" }),
+                endTime: event.endTime.toLocaleString("en-US", { timeZone: "America/New_York" }),
             },
         });
 
@@ -455,6 +456,13 @@ export class EventController extends Controller {
         // Calculate diff
         const diff = Object.keys(docUpdates).map((key) => {
             const k = key as keyof typeof docUpdates;
+            if (k.includes("Time")) {
+                return {
+                    name: friendlyNames[k],
+                    oldData: event[k].toLocaleString("en-US", { timeZone: "America/New_York" }),
+                    newData: docUpdates[k]!.toLocaleString("en-US", { timeZone: "America/New_York" })
+                }
+            }
             return {
                 name: friendlyNames[k],
                 oldData: event[k],
@@ -651,8 +659,8 @@ export class EventController extends Controller {
                 action: status,
                 eventName: event.eventName,
                 eventDescription: event.eventDescription,
-                startTime: event.startTime.toLocaleString(),
-                endTime: event.endTime.toLocaleString(),
+                startTime: event.startTime.toLocaleString("en-US", { timeZone: "America/New_York" }),
+                endTime: event.endTime.toLocaleString("en-US", { timeZone: "America/New_York" }),
                 eventLocation: event.location,
                 googleCalendarLink: gCalendarLink,
             }
@@ -707,7 +715,7 @@ export class EventController extends Controller {
     private async sendSlackMessage(message: string) : Promise<boolean> {
         const slackChannel = await this.slackClient.getChannelFromName(EventController.SLACK_EVENT_ANNOUNCEMENT_CHANNEL);
         if (slackChannel?.id !== undefined) {
-            const success = this.slackClient.sendMessageInChannel(slackChannel.id!, message);
+            const success = await this.slackClient.sendMessageInChannel(slackChannel.id!, message);
             if (!success) {
                 console.error("Failed to send slack message.");
                 return false;
@@ -723,7 +731,7 @@ export class EventController extends Controller {
         try {
             const discordChannel = await this.discordClient.getChannelFromName(EventController.DISCORD_EVENT_ANNOUNCEMENT_CHANNEL);
             if (discordChannel !== undefined) {
-                this.discordClient.sendMessageInChannel(discordChannel, message);
+                await this.discordClient.sendMessageInChannel(discordChannel, message);
             } else {
                 throw new Error("Could not find announcements channel.")
             }

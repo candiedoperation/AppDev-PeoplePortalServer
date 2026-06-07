@@ -16,7 +16,7 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-import { Client, GatewayIntentBits, GuildBasedChannel } from 'discord.js'
+import { Client, Events, GatewayIntentBits, GuildBasedChannel } from 'discord.js'
 import { SharedResourceClient } from '..';
 import { BindlePermissionMap } from '../../controllers/BindleController';
 import { GetGroupInfoResponse } from '../AuthentikClient/models';
@@ -46,7 +46,7 @@ export class DiscordClient implements SharedResourceClient {
         this.isReady = false;
 
         this.discordClient = new Client({ intents: DiscordClient.INTENTS });
-        this.discordClient.on("clientReady", () => this.isReady = true);
+        this.discordClient.on(Events.ClientReady, () => this.isReady = true);
         this.discordClient.login(process.env.PEOPLEPORTAL_DISCORD_BOT_TOKEN);
     }
 
@@ -60,11 +60,18 @@ export class DiscordClient implements SharedResourceClient {
                 return resolve();
             }
 
-            const timeout = setTimeout(() => reject(new Error("Discord bot was not ready on time.")), 15000);
-            this.discordClient.once("clientReady", () => {
+            let timeout: NodeJS.Timeout;
+
+            const onReady = () => {
                 clearTimeout(timeout);
                 resolve();
-            });
+            }
+
+            timeout = setTimeout(() => {
+                this.discordClient.off(Events.ClientReady, onReady);
+                reject(new Error("Discord bot was not ready on time."));
+            }, 15000);
+            this.discordClient.once(Events.ClientReady, onReady);
         });
     }
 
@@ -82,8 +89,6 @@ export class DiscordClient implements SharedResourceClient {
     }
 
     async getChannelFromName(channelName: string) {
-        if (!this.isReady) await this.waitForReady();
-
         // Uses guild id in .env in case bot is in multiple servers.
         const guild = await this.discordClient.guilds.fetch(process.env.PEOPLEPORTAL_DISCORD_SERVER_ID!);
         return guild.channels.cache.find(ch => ch.name === channelName && ch.isTextBased());
