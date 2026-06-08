@@ -248,7 +248,6 @@ export class EventController extends Controller {
                 inviteLink: inviteLink,
                 googleCalendarLink: gCalendarLink,
             },
-            replyTo: [authorizedUser.email],
         });
 
         const issues: string[] = [];
