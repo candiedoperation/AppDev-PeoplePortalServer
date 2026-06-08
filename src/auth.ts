@@ -55,6 +55,9 @@ export async function expressAuthentication(
         else if (securityName == "bindles")
             return await bindlesAuthVerify(request, scopes);
 
+        else if (securityName == "events")
+            return await eventsAuthVerify(request, scopes);
+
         else if (securityName == "executive")
             return await executiveAuthVerify(request, scopes);
 
@@ -186,6 +189,84 @@ export async function executiveAuthVerify(
 }
 
 /**
+ * 
+ * 
+ * @param request Express Request Object
+ * @param scopes Array of Scopes
+ * @returns User Authorization Status (Boolean)
+ */
+export async function eventsAuthVerify(
+    request: express.Request,
+    scopes?: string[],
+    skipOidcCheck?: boolean
+): Promise<boolean> {
+    let allowExecOverride = true;
+    if (scopes && scopes[0] === "NoExecOverride") {
+        allowExecOverride = false;
+        scopes.shift();
+    }
+    
+
+    if (!skipOidcCheck) {
+        const isAuthenticated = await oidcAuthVerify(request, scopes);
+        if (!isAuthenticated)
+            return Promise.reject(new ResourceAccessError(401, "OIDC Authentication Failed!"));
+    }
+
+    if (!request.session.authorizedUser)
+        return Promise.reject(new ResourceAccessError(401, "Failed to Fetch OIDC User Information!"));
+
+    /* Fetch User Data */
+    const authorizedUser: AuthorizedUser = request.session.authorizedUser;
+
+    /* Superusers are implicitly Executives, Check Scope */
+    if (allowExecOverride && authorizedUser.is_superuser)
+        return Promise.resolve(true);
+
+    /* 2. Superuser Exclusive Scope Check */
+    if (allowExecOverride && scopes && scopes.includes("su:exclusive")) {
+        /* We already know they are NOT a superuser here */
+        return Promise.reject(new ResourceAccessError(403, "This action is restricted to Superusers only!"));
+    }
+
+    /* 3. Check for Executive Board Membership */
+    /* We fetch the Root Teams for the user */
+    const authentikClient = new AuthentikClient();
+    try {
+        const userTeams = await authentikClient.getRootTeamsForUsername(authorizedUser.username);
+
+        /* Check if any of the teams are EVENTS and NOT Flagged for Deletion */
+        const inEventsTeam = userTeams.teams.some(team =>
+            team.name === "Events" &&
+            !team.flaggedForDeletion
+        );
+
+        if (inEventsTeam)
+            return Promise.resolve(true);
+
+        /* If enabled, a user in exec can bypass permission. */
+        if (allowExecOverride) {
+            /* Check if any of the teams are EXECBOARD and NOT Flagged for Deletion */
+            const isExecutive = userTeams.teams.some(team =>
+                team.name === "ExecutiveBoard" &&
+                !team.flaggedForDeletion
+            );
+
+            if (isExecutive)
+                return Promise.resolve(true);
+        }
+        
+
+    } catch (e) {
+        /* Failed to Fetch Root Teams */
+        return Promise.reject(e);
+    }
+
+    /* Neither Conditions Work! */
+    return Promise.reject(new ResourceAccessError(403, "You must be an Executive Board Member or a Superuser to perform this action!"));
+}
+
+/**
  * Verifies if user has the required bindles. When req.params.teamId exists in the request
  * we automatically process Bindle Authorization for that team. Otherwise, a Dynamic Locator
  * is needed to be present as the first element in scopes to resolve the teamId.
@@ -220,16 +301,6 @@ async function bindlesAuthVerify(request: express.Request, scopes?: string[]): P
     if (request.params.teamId) {
         /* Default: Standard REST Path (teams/:teamId) */
         teamId = request.params.teamId;
-        requiredBindles = scopes;
-    } else if (request.url.startsWith("/api/events")) {
-        /* Events: Used for events endpoints with no teamId */
-        try {
-            const authentikClient = new AuthentikClient();
-            teamId = await authentikClient.getGroupPkFromName("Events");
-        } catch (e) {
-            throw new ResourceAccessError(500, "Failed to fetch Events team.");
-        }
-
         requiredBindles = scopes;
     } else {
         /* Fallback: Dynamic Locator Path */

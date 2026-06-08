@@ -1912,7 +1912,7 @@ export function RegisterRoutes(app: Router) {
                 eventId: {"in":"path","name":"eventId","required":true,"dataType":"string"},
         };
         app.get('/api/events/:eventId',
-            authenticateMiddleware([{"oidc":[]},{"ats_otp":[]},{"bindles":["corp:eventmgmt"]}]),
+            authenticateMiddleware([{"oidc":[]},{"ats_otp":[]},{"events":[]}]),
             ...(fetchMiddlewares<RequestHandler>(EventController)),
             ...(fetchMiddlewares<RequestHandler>(EventController.prototype.getEvent)),
 
@@ -1944,7 +1944,7 @@ export function RegisterRoutes(app: Router) {
                 body: {"in":"body","name":"body","required":true,"ref":"CreateEventRequest"},
         };
         app.post('/api/events/createevent',
-            authenticateMiddleware([{"bindles":["corp:eventmgmt"]}]),
+            authenticateMiddleware([{"events":[]}]),
             ...(fetchMiddlewares<RequestHandler>(EventController)),
             ...(fetchMiddlewares<RequestHandler>(EventController.prototype.createEvent)),
 
@@ -1977,7 +1977,7 @@ export function RegisterRoutes(app: Router) {
                 options: {"in":"queries","name":"options","dataType":"nestedObjectLiteral","nestedProperties":{"notify":{"dataType":"boolean"}}},
         };
         app.delete('/api/events/:eventId/cancel',
-            authenticateMiddleware([{"bindles":["corp:eventmgmt"]}]),
+            authenticateMiddleware([{"events":[]}]),
             ...(fetchMiddlewares<RequestHandler>(EventController)),
             ...(fetchMiddlewares<RequestHandler>(EventController.prototype.cancelEvent)),
 
@@ -2009,7 +2009,7 @@ export function RegisterRoutes(app: Router) {
                 body: {"in":"body","name":"body","required":true,"ref":"UpdateEventRequest"},
         };
         app.patch('/api/events/:eventId/update',
-            authenticateMiddleware([{"bindles":["corp:eventmgmt"]}]),
+            authenticateMiddleware([{"events":[]}]),
             ...(fetchMiddlewares<RequestHandler>(EventController)),
             ...(fetchMiddlewares<RequestHandler>(EventController.prototype.updateEvent)),
 
@@ -2040,7 +2040,7 @@ export function RegisterRoutes(app: Router) {
                 eventId: {"in":"path","name":"eventId","required":true,"dataType":"string"},
         };
         app.get('/api/events/:eventId/rsvps',
-            authenticateMiddleware([{"bindles":["corp:eventmgmt"]}]),
+            authenticateMiddleware([{"events":[]}]),
             ...(fetchMiddlewares<RequestHandler>(EventController)),
             ...(fetchMiddlewares<RequestHandler>(EventController.prototype.getRsvps)),
 

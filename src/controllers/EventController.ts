@@ -161,7 +161,7 @@ export class EventController extends Controller {
     @SuccessResponse(200)
     @Security("oidc")
     @Security("ats_otp")
-    @Security("bindles", ["corp:eventmgmt"])
+    @Security("events")
     @Tags("Event Management")
     async getEvent(
         @Request() req: express.Request,
@@ -196,7 +196,7 @@ export class EventController extends Controller {
      */
     @Post("createevent")
     @SuccessResponse(201, "Event Created")
-    @Security("bindles", ["corp:eventmgmt"])
+    @Security("events")
     @Tags("Event Management")
     async createEvent(
         @Request() req: express.Request,
@@ -314,7 +314,7 @@ export class EventController extends Controller {
 
     @Delete("{eventId}/cancel")
     @SuccessResponse(200, "Event cancelled.")
-    @Security("bindles", ["corp:eventmgmt"])
+    @Security("events")
     @Tags("Event Management")
     async cancelEvent(
         @Request() req: express.Request,
@@ -400,7 +400,7 @@ export class EventController extends Controller {
      */
     @Patch("{eventId}/update")
     @SuccessResponse(200, "Event successfully updated")
-    @Security("bindles", ["corp:eventmgmt"])
+    @Security("events")
     @Tags("Event Management")
     async updateEvent(
         @Path() eventId: string,
@@ -533,7 +533,7 @@ export class EventController extends Controller {
      */
     @Get("{eventId}/rsvps")
     @SuccessResponse(200)
-    @Security("bindles", ["corp:eventmgmt"])
+    @Security("events")
     @Tags("Event RSVPs")
     async getRsvps(
         @Path() eventId: string
