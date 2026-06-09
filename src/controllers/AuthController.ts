@@ -303,7 +303,7 @@ export class AuthController extends Controller {
             user: {
                 email: applicant.email,
                 name: applicant.fullName,
-                id: applicant._id as string
+                id: applicant._id.toString()
             }
         }
 
