@@ -588,7 +588,7 @@ const models: TsoaRoute.Models = {
         "additionalProperties": {"dataType":"union","subSchemas":[{"ref":"JsonValue"},{"dataType":"undefined"}]},
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-    "UserInfoResponse": {
+    "CorpUserInfoResponse": {
         "dataType": "refObject",
         "properties": {
             "sub": {"dataType":"string","required":true},
@@ -610,8 +610,10 @@ const models: TsoaRoute.Models = {
             "phone_number": {"dataType":"string"},
             "updated_at": {"dataType":"double"},
             "address": {"ref":"UserInfoAddress"},
+            "avatar": {"dataType":"string","required":true},
+            "isExecutive": {"dataType":"boolean","required":true},
         },
-        "additionalProperties": {"dataType":"union","subSchemas":[{"ref":"JsonValue"},{"dataType":"undefined"}]},
+        "additionalProperties": false,
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
     "OtpInitRequest": {
