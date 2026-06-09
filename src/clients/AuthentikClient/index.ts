@@ -39,7 +39,7 @@ export class AuthentikClient {
 
     /* Server Version Compatibility */
     private static readonly MIN_SERVER_VERSION = "2025.12.0" /* Breaking Changes from 2025.8+ */
-    private static readonly MAX_SERVER_VERSION = "2025.12.3"
+    private static readonly MAX_SERVER_VERSION = "2026.5.2"
 
     constructor() {
         if (!this.AxiosBaseConfig.baseURL)
