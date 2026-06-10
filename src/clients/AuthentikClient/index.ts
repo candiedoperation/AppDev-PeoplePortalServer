@@ -18,7 +18,7 @@
 
 import axios from "axios"
 import log from "loglevel"
-import { AddGroupMemberRequest, AuthentikClientError, AuthentikServerVersion, CreateTeamRequest, CreateUserRequest, GetGroupInfoRequestOptions, GetGroupInfoResponse as GetGroupInfoResponse, GetTeamsListOptions as GetGroupsListOptions, GetTeamsListResponse as GetGroupsListResponse, GetTeamsForUsernameResponse, GetUserListOptions, GetUserListResponse, RemoveGroupMemberRequest, TeamAttributeDefinition, TeamInformationBrief, UserAttributeDefinition, UserInformationBrief, AuthentikFilterCursor, ServiceSeasonType, AuthentikClientErrorType, TeamType, UserInformationDetail } from "./models"
+import { AddGroupMemberRequest, AuthentikClientError, AuthentikServerVersion, CreateTeamRequest, CreateUserRequest, GetGroupInfoRequestOptions, GetGroupInfoResponse as GetGroupInfoResponse, GetTeamsListOptions as GetGroupsListOptions, GetTeamsListResponse as GetGroupsListResponse, GetTeamsForUsernameResponse, GetUserListOptions, GetUserListResponse, RemoveGroupMemberRequest, TeamAttributeDefinition, TeamInformationBrief, UserAttributeDefinition, UserInformationBrief, AuthentikFilterCursor, ServiceSeasonType, AuthentikClientErrorType, TeamType, UserInformationDetail, TeamMembershipBrief, GetTeamMembershipsResponse } from "./models"
 import { sanitizeGroupName } from "../../utils/strings"
 import { EnabledRootSettings } from "../../controllers/OrgController"
 import { BindleController, EnabledBindlePermissions } from "../../controllers/BindleController"
@@ -281,6 +281,48 @@ export class AuthentikClient {
             return {
                 teams: Array.from(teamMap.values())
             };
+        } catch (e) {
+            log.error(AuthentikClient.TAG, "Get Group List for User Request Failed with Error: ", e)
+            throw new AuthentikClientError(AuthentikClientErrorType.GROUPLIST_REQUEST_FAILED)
+        }
+    }
+
+    public getTeamMembershipsForUsername = async (username: string): Promise<GetTeamMembershipsResponse> => {
+        var RequestConfig: any = {
+            ...this.AxiosBaseConfig,
+            method: 'get',
+            url: '/api/v3/core/groups/',
+            params: {
+                include_users: false,
+                is_superuser: false,
+                include_parents: true, /* For Subteams, We return the Parent Team */
+                include_children: false, /* We don't need subteams */
+                members_by_username: username, /* Fetch Groups with Username as Member */
+                page_size: 1000,
+            }
+        }
+
+        try {
+            const res = await axios.request(RequestConfig)
+            const map = new Map<string, TeamMembershipBrief>();
+
+            for (const group of res.data.results) {
+                /* Filter by People Portal Creation */
+                if (!group.attributes?.peoplePortalCreation)
+                    continue;
+
+                const parent = group.parents_obj?.[0] ?? null;
+                map.set(group.pk, {                 // key = the membership group pk (matches roles keys)
+                    name: group.name,
+                    pk: group.pk,
+                    parent: parent?.pk ?? null,
+                    ...group.attributes,            // friendlyName, teamType, etc. of the SUBTEAM
+                    parentName: parent?.name,
+                    parentFriendlyName: parent?.attributes?.friendlyName,
+                });
+            }
+
+            return { memberships: Array.from(map.values()) };
         } catch (e) {
             log.error(AuthentikClient.TAG, "Get Group List for User Request Failed with Error: ", e)
             throw new AuthentikClientError(AuthentikClientErrorType.GROUPLIST_REQUEST_FAILED)

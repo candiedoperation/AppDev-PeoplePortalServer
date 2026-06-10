@@ -109,6 +109,15 @@ export interface TeamInformationBrief extends TeamAttributeDefinition {
     pk: string,
 }
 
+export interface TeamMembershipBrief extends TeamInformationBrief {
+    parentName?: string,
+    parentFriendlyName?: string,
+}
+
+export interface GetTeamMembershipsResponse {
+    memberships: TeamMembershipBrief[]
+}
+
 export interface GetTeamsListResponse {
     teams: TeamInformationBrief[],
     nextCursor?: string

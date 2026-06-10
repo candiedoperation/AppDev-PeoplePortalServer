@@ -19,7 +19,7 @@
 import * as express from 'express'
 import path from 'path';
 import { Request, Body, Controller, Get, Patch, Path, Post, Queries, Route, SuccessResponse, Put, Security, Delete, Tags, Query } from "tsoa";
-import { AddGroupMemberRequest, GetGroupInfoResponse, GetTeamsListResponse, GetUserListOptions, GetUserListResponse, RemoveGroupMemberRequest, SeasonType, TeamType, UserInformationBrief, GetTeamsForUsernameResponse, AuthentikClientError, CreateUserRequest, ServiceSeasonType, AuthentikClientErrorType } from "../clients/AuthentikClient/models";
+import { AddGroupMemberRequest, GetGroupInfoResponse, GetTeamsListResponse, GetUserListOptions, GetUserListResponse, RemoveGroupMemberRequest, SeasonType, TeamType, UserInformationBrief, GetTeamsForUsernameResponse, AuthentikClientError, CreateUserRequest, ServiceSeasonType, AuthentikClientErrorType, GetTeamMembershipsResponse } from "../clients/AuthentikClient/models";
 import { AuthentikClient } from "../clients/AuthentikClient";
 import { Invite } from "../models/Invites";
 import { EmailClient } from "../clients/EmailClient";
@@ -264,6 +264,17 @@ export class OrgController extends Controller {
     @Security("oidc")
     async getUserRootTeams(@Request() req: express.Request, @Path() username: string): Promise<GetTeamsForUsernameResponse> {
         return await this.authentikClient.getRootTeamsForUsername(username)
+    }
+
+    /**
+     * Fetches all subteam and root memberships for the user with parents.
+     */
+    @Get("people/{username}/memberships")
+    @Tags("Team Management")
+    @SuccessResponse(200)
+    @Security("oidc")
+    async getUserTeamMemberships(@Path() username: string): Promise<GetTeamMembershipsResponse> {
+        return await this.authentikClient.getTeamMembershipsForUsername(username)
     }
 
     /**
