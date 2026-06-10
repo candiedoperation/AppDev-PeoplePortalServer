@@ -292,7 +292,7 @@ export class AuthController extends Controller {
 
         // Generate JWT
         const token = jwt.sign(
-            { email, name: applicant.fullName, id: applicant._id },
+            { email, name: applicant.fullName, id: String(applicant._id) },
             process.env.PEOPLEPORTAL_TOKEN_SECRET!,
             { expiresIn: "24h" }
         );
@@ -303,7 +303,7 @@ export class AuthController extends Controller {
             user: {
                 email: applicant.email,
                 name: applicant.fullName,
-                id: applicant._id.toString()
+                id: String(applicant._id)
             }
         }
 
