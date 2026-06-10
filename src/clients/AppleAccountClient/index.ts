@@ -45,4 +45,9 @@ export class AppleAccountClient implements SharedResourceClient {
         // TODO: Implement Apple Account Client
         return Promise.resolve(true);
     }
+
+    archiveTeam(org: GetGroupInfoResponse, callback: (updatedResourceCount: number, status: string) => void): Promise<boolean> {
+        // TODO: Implement Apple Account Client archival
+        return Promise.resolve(true);
+    }
 }

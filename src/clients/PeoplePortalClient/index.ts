@@ -83,4 +83,12 @@ export class PeoplePortalClient implements SharedResourceClient {
     handleOrgBindleSync(org: GetGroupInfoResponse, callback: (updatedResourceCount: number, status: string) => void): Promise<boolean> {
         return Promise.resolve(true);
     }
+
+    /**
+     * PeoplePortalClient only defines permission metadata and owns no external
+     * resource state, so there is nothing to archive.
+     */
+    archiveTeam(org: GetGroupInfoResponse, callback: (updatedResourceCount: number, status: string) => void): Promise<boolean> {
+        return Promise.resolve(true);
+    }
 }

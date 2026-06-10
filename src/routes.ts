@@ -166,6 +166,8 @@ const models: TsoaRoute.Models = {
             "seasonYear": {"dataType":"double","required":true},
             "peoplePortalCreation": {"dataType":"boolean"},
             "flaggedForDeletion": {"dataType":"boolean"},
+            "archivedAt": {"dataType":"string"},
+            "archivedBy": {"dataType":"string"},
             "description": {"dataType":"string","required":true},
             "rootTeamSettings": {"dataType":"nestedObjectLiteral","nestedProperties":{},"additionalProperties":{"ref":"EnabledRootSettings"},"required":true},
             "bindlePermissions": {"dataType":"nestedObjectLiteral","nestedProperties":{},"additionalProperties":{"ref":"EnabledBindlePermissions"},"required":true},
@@ -193,6 +195,8 @@ const models: TsoaRoute.Models = {
             "seasonYear": {"dataType":"double","required":true},
             "peoplePortalCreation": {"dataType":"boolean"},
             "flaggedForDeletion": {"dataType":"boolean"},
+            "archivedAt": {"dataType":"string"},
+            "archivedBy": {"dataType":"string"},
             "description": {"dataType":"string","required":true},
             "rootTeamSettings": {"dataType":"nestedObjectLiteral","nestedProperties":{},"additionalProperties":{"ref":"EnabledRootSettings"},"required":true},
             "bindlePermissions": {"dataType":"nestedObjectLiteral","nestedProperties":{},"additionalProperties":{"ref":"EnabledBindlePermissions"},"required":true},
@@ -244,6 +248,7 @@ const models: TsoaRoute.Models = {
             "search": {"dataType":"string"},
             "subgroupsOnly": {"dataType":"boolean"},
             "includeUsers": {"dataType":"boolean"},
+            "includeArchived": {"dataType":"boolean","default":false},
             "limit": {"dataType":"double","default":20},
             "cursor": {"dataType":"string"},
         },
@@ -348,6 +353,8 @@ const models: TsoaRoute.Models = {
             "seasonYear": {"dataType":"double","required":true},
             "peoplePortalCreation": {"dataType":"boolean"},
             "flaggedForDeletion": {"dataType":"boolean"},
+            "archivedAt": {"dataType":"string"},
+            "archivedBy": {"dataType":"string"},
             "description": {"dataType":"string","required":true},
             "rootTeamSettings": {"dataType":"nestedObjectLiteral","nestedProperties":{},"additionalProperties":{"ref":"EnabledRootSettings"},"required":true},
             "bindlePermissions": {"dataType":"nestedObjectLiteral","nestedProperties":{},"additionalProperties":{"ref":"EnabledBindlePermissions"},"required":true},
@@ -1781,6 +1788,38 @@ export function RegisterRoutes(app: Router) {
 
               await templateService.apiHandler({
                 methodName: 'deleteTeam',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsOrgController_archiveTeam: Record<string, TsoaRoute.ParameterSchema> = {
+                req: {"in":"request","name":"req","required":true,"dataType":"object"},
+                teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
+        };
+        app.post('/api/org/teams/:teamId/archive',
+            authenticateMiddleware([{"bindles":["corp:subteamaccess"]}]),
+            ...(fetchMiddlewares<RequestHandler>(OrgController)),
+            ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.archiveTeam)),
+
+            async function OrgController_archiveTeam(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsOrgController_archiveTeam, request, response });
+
+                const controller = new OrgController();
+
+              await templateService.apiHandler({
+                methodName: 'archiveTeam',
                 controller,
                 response,
                 next,

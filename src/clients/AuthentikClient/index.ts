@@ -260,6 +260,9 @@ export class AuthentikClient {
                     /* Safety Check */
                     if (!parentTeam) continue;
 
+                    /* Skip Archived Root Teams */
+                    if (parentTeam.attributes?.archivedAt) continue;
+
                     /* Add Parent to Map (Deduplicates) */
                     teamMap.set(parentTeam.pk, {
                         name: parentTeam.name,
@@ -268,6 +271,9 @@ export class AuthentikClient {
                         ...parentTeam.attributes
                     });
                 } else {
+                    /* Skip Archived Root Teams */
+                    if (group.attributes?.archivedAt) continue;
+
                     /* It's a Root Team */
                     teamMap.set(group.pk, {
                         name: group.name,
@@ -397,7 +403,8 @@ export class AuthentikClient {
 
                     /* Filter Logic */
                     const parentPk = entry.parent ?? entry.parents?.[0] ?? null;  /* 01-19-2026 (@atheesh): Filtering Patches to support Authentik v2025.12+ */
-                    const isMatch = entry.attributes.peoplePortalCreation && ((options.subgroupsOnly) ? parentPk : !parentPk);
+                    const notArchived = options.includeArchived || !entry.attributes.archivedAt;
+                    const isMatch = entry.attributes.peoplePortalCreation && notArchived && ((options.subgroupsOnly) ? parentPk : !parentPk);
 
                     if (isMatch) {
                         collectedTeams.push({
@@ -604,6 +611,24 @@ export class AuthentikClient {
         return await this.updateGroupAttributes(
             teamId,
             { flaggedForDeletion: true }
+        )
+    }
+
+    /**
+     * Marks a group as archived by stamping an `archivedAt` timestamp (and
+     * optionally the archiving executive). Internally calls updateGroupAttributes.
+     *
+     * @param teamId Target Team ID
+     * @param archivedBy Optional User PK of the executive performing the archive
+     * @returns True if update was successful
+     */
+    public archiveGroup = async (teamId: string, archivedBy?: string): Promise<boolean> => {
+        return await this.updateGroupAttributes(
+            teamId,
+            {
+                archivedAt: new Date().toISOString(),
+                ...(archivedBy !== undefined && { archivedBy })
+            }
         )
     }
 

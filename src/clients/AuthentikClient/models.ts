@@ -42,6 +42,10 @@ export interface TeamAttributeDefinition {
     seasonYear: number,
     peoplePortalCreation?: boolean,
     flaggedForDeletion?: boolean,
+    /* ISO timestamp set when the team is archived; absent means active */
+    archivedAt?: string,
+    /* User PK of the executive who archived the team */
+    archivedBy?: string,
     description: string,
     rootTeamSettings: {
         /* The key is the setting name (Ex. AwsAccount, AppleDevAccount, etc.) */
@@ -93,6 +97,8 @@ export interface GetUserListOptions {
 export interface GetTeamsListOptions {
     subgroupsOnly?: boolean,
     includeUsers?: boolean,
+    /* When false (default), teams flagged with `archivedAt` are excluded */
+    includeArchived?: boolean,
     search?: string,
     limit?: number,
     cursor?: string

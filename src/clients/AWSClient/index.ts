@@ -130,6 +130,18 @@ export class AWSClient implements RootTeamSettingClient {
         }
     }
 
+    /**
+     * Archives the team's AWS root setting resources. For the read-only/preserve
+     * policy we leave the provisioned account fully intact. This is the extension
+     * point for future account suspension (Ex. moving to a Suspended OU or
+     * detaching budgets) should that become a requirement.
+     *
+     * @param org Team Information
+     */
+    async archiveTeam(org: GetGroupInfoResponse): Promise<boolean> {
+        return true;
+    }
+
     public async generateConsoleLink(accountId: string, sessionName: string): Promise<string> {
         // Assume Admin Role
         const roleArn = `arn:aws:iam::${accountId}:role/${this.ADMIN_ROLE_NAME}`;

@@ -123,6 +123,8 @@ interface APIGetTeamsListOptions {
     search?: string,
     subgroupsOnly?: boolean,
     includeUsers?: boolean,
+    /** When false (default), archived teams are excluded from the results. @default false */
+    includeArchived?: boolean,
 
     /** @default 20 */
     limit?: number;
@@ -1526,6 +1528,78 @@ export class OrgController extends Controller {
             await this.authentikClient.removeAllTeamMembers(teamId);
 
         // sync bindles
+    }
+
+    /**
+     * Archives a root team. Archiving preserves all data but makes the team's
+     * Shared Resources read-only (Ex. Gitea repositories and Slack channels are
+     * archived). Each Shared Resource and Root Team Setting client is asked to
+     * archive its resources, and the team is stamped with an `archivedAt`
+     * timestamp so it surfaces as archived in the executive console.
+     *
+     * Only root teams may be archived, and the caller must pass the Executive
+     * Authorization Layer as a **Superuser** (`su:exclusive` scope).
+     *
+     * @param teamId Team ID
+     */
+    @Post("teams/{teamId}/archive")
+    @Tags("Team Management")
+    @SuccessResponse(200)
+    @Security("bindles", ["corp:subteamaccess"])
+    async archiveTeam(@Request() req: express.Request, @Path() teamId: string) {
+        const teamInfo = req.bindle!.teamInfo;
+
+        /* Archiving is a root-team, executive-only operation */
+        if (teamInfo.parentPk) {
+            throw new CustomValidationError(
+                400,
+                "Only root teams can be archived."
+            );
+        }
+
+        await executiveAuthVerify(
+            req, ["su:exclusive"],
+            true /* Skip OIDC Check as its done by Bindles Auth */
+        );
+
+        let errors: Map<string, Error> = new Map();
+        const recordError = (resourceName: string, e: unknown) => {
+            errors.set(resourceName, e instanceof Error ? e : new Error(
+                `Unknown Error: ${e ? e.toString() : ""}`
+            ));
+        };
+
+        /* 1. Archive Shared Resources (Gitea repos, Slack channels, etc.) */
+        for (const sharedResource of this.sharedResources) {
+            try {
+                await sharedResource.archiveTeam(teamInfo, () => { /* progress not streamed */ });
+            } catch (e) {
+                recordError(sharedResource.getResourceName(), e);
+            }
+        }
+
+        /* 2. Archive Root Team Setting Resources (AWS, etc.) */
+        for (const settingResource of Object.values(ENABLED_TEAMSETTING_RESOURCES)) {
+            try {
+                await settingResource.archiveTeam(teamInfo);
+            } catch (e) {
+                recordError(settingResource.getResourceName(), e);
+            }
+        }
+
+        if (errors.size > 0)
+            console.error("[OrgController] Archive completed with errors:", errors);
+
+        /* 3. Stamp the team as archived */
+        const actorEmail = req.session.authorizedUser?.email;
+        let archivedBy: string | undefined;
+        if (actorEmail) {
+            try {
+                archivedBy = (await this.authentikClient.getUserInfoFromEmail(actorEmail)).pk;
+            } catch { /* Audit attribution is best-effort */ }
+        }
+
+        await this.authentikClient.archiveGroup(teamId, archivedBy);
     }
 
     /* === HELPER ROUTINES === */

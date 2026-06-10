@@ -190,6 +190,62 @@ export class SlackClient implements SharedResourceClient {
         return true;
     }
 
+    /**
+     * Archives the team's Slack channels (one per subteam), making them
+     * read-only while preserving their message history. Channels are looked up
+     * by name and never created. Reports progress per channel.
+     *
+     * @param org Team Information
+     * @param callback Progress Reporting Callback
+     */
+    public async archiveTeam(org: GetGroupInfoResponse, callback: (updatedResourceCount: number, status: string) => void): Promise<boolean> {
+        for (const subteam of org.subteams ?? []) {
+            const channelName = subteam.name
+                .replace(/(?<!^)(?=[A-Z][a-z])/g, '-')
+                .replace(/(?<!^)(?=(FALL|SPRING|SUMMER|WINTER)\d{4})/g, '-')
+                .toLowerCase();
+
+            try {
+                const channelId = await this.findChannelByName(channelName);
+                if (!channelId) {
+                    /* Nothing to archive for this subteam */
+                    continue;
+                }
+
+                await this.executeWithRateLimitRetry(() => this.slackClient.conversations.archive({
+                    channel: channelId
+                }));
+                callback(1, "Slack Channel Archived: " + channelName);
+            } catch (error: any) {
+                if (error?.data?.error !== 'already_archived') {
+                    callback(0, "Slack Channel Archival Failed for " + channelName);
+                    console.error(`[SlackClient] Failed to archive channel ${channelName}:`, error.message);
+                }
+            }
+        }
+
+        return true;
+    }
+
+    private async findChannelByName(channelName: string): Promise<string | undefined> {
+        try {
+            let cursor: string | undefined;
+            do {
+                const options: any = { types: 'private_channel' };
+                if (cursor) options.cursor = cursor;
+
+                const listResult: any = await this.executeWithRateLimitRetry(() => this.slackClient.conversations.list(options));
+                const found = listResult.channels?.find((c: any) => c.name === channelName);
+                if (found) return found.id;
+
+                cursor = listResult.response_metadata?.next_cursor;
+            } while (cursor);
+        } catch (listError) {
+            console.error("Error listing channels to find existing one", listError);
+        }
+        return undefined;
+    }
+
     private async createOrGetChannel(channelName: string): Promise<string | undefined> {
         try {
             const result = await this.executeWithRateLimitRetry(() => this.slackClient.conversations.create({
