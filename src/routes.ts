@@ -667,6 +667,16 @@ const models: TsoaRoute.Models = {
         "properties": {
             "status": {"dataType":"string","required":true},
             "data": {"dataType":"array","array":{"dataType":"refAlias","ref":"DocumentJSON_IRsvp_"},"required":true},
+            "pagination": {"dataType":"nestedObjectLiteral","nestedProperties":{"totalPages":{"dataType":"double","required":true}},"required":true},
+        },
+        "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "GetRsvpsRequest": {
+        "dataType": "refObject",
+        "properties": {
+            "page": {"dataType":"double","required":true},
+            "pageSize": {"dataType":"double"},
         },
         "additionalProperties": false,
     },
@@ -1981,7 +1991,7 @@ export function RegisterRoutes(app: Router) {
                 req: {"in":"request","name":"req","required":true,"dataType":"object"},
                 body: {"in":"body","name":"body","required":true,"ref":"CreateEventRequest"},
         };
-        app.post('/api/events/createevent',
+        app.post('/api/events',
             authenticateMiddleware([{"events":[]}]),
             ...(fetchMiddlewares<RequestHandler>(EventController)),
             ...(fetchMiddlewares<RequestHandler>(EventController.prototype.createEvent)),
@@ -2014,7 +2024,7 @@ export function RegisterRoutes(app: Router) {
                 eventId: {"in":"path","name":"eventId","required":true,"dataType":"string"},
                 body: {"in":"body","name":"body","dataType":"nestedObjectLiteral","nestedProperties":{"notify":{"dataType":"boolean"}}},
         };
-        app.delete('/api/events/:eventId/cancel',
+        app.delete('/api/events/:eventId',
             authenticateMiddleware([{"events":[]}]),
             ...(fetchMiddlewares<RequestHandler>(EventController)),
             ...(fetchMiddlewares<RequestHandler>(EventController.prototype.cancelEvent)),
@@ -2046,7 +2056,7 @@ export function RegisterRoutes(app: Router) {
                 eventId: {"in":"path","name":"eventId","required":true,"dataType":"string"},
                 body: {"in":"body","name":"body","required":true,"ref":"UpdateEventRequest"},
         };
-        app.patch('/api/events/:eventId/update',
+        app.patch('/api/events/:eventId',
             authenticateMiddleware([{"events":[]}]),
             ...(fetchMiddlewares<RequestHandler>(EventController)),
             ...(fetchMiddlewares<RequestHandler>(EventController.prototype.updateEvent)),
@@ -2076,6 +2086,7 @@ export function RegisterRoutes(app: Router) {
         // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
         const argsEventController_getRsvps: Record<string, TsoaRoute.ParameterSchema> = {
                 eventId: {"in":"path","name":"eventId","required":true,"dataType":"string"},
+                queries: {"in":"queries","name":"queries","required":true,"ref":"GetRsvpsRequest"},
         };
         app.get('/api/events/:eventId/rsvps',
             authenticateMiddleware([{"events":[]}]),

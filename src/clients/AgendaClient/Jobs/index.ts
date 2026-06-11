@@ -3,7 +3,7 @@ import { EmailClient } from "../../EmailClient";
 import { EmailSendRequest } from "../../EmailClient/models";
 import { Event, IEvent } from "../../../models/Event";
 import { EventRsvp, RsvpStatus } from "../../../models/EventRsvp";
-import { EventController } from "../../../controllers/EventController";
+import { DocumentJSON, EventController } from "../../../controllers/EventController";
 import { HydratedDocument } from "mongoose";
 import { ENABLED_SHARED_RESOURCES } from "../../../config";
 import { SlackClient } from "../../SlackClient";
@@ -34,7 +34,7 @@ export interface RecurringJobSchedulingData extends _JobData {
 
 // Helper functions
 class JobHelperFunctions {
-    public static async sendEventReminderEmail(event: HydratedDocument<IEvent>, emailClient: EmailClient, relativeTime: string) {
+    public static async sendEventReminderEmail(event: HydratedDocument<IEvent> | DocumentJSON<IEvent>, emailClient: EmailClient, relativeTime: string) {
         const emails = await EventRsvp.distinct('email', {
             eventId: event._id,
             status: RsvpStatus.ACCEPT,
@@ -65,7 +65,7 @@ class JobHelperFunctions {
         });
     }
 
-    public static async sendEventReminderSlack(event: HydratedDocument<IEvent>, relativeTime: string) {
+    public static async sendEventReminderSlack(event: HydratedDocument<IEvent> | DocumentJSON<IEvent>, relativeTime: string) {
         const slackClient = ENABLED_SHARED_RESOURCES.slackClient as SlackClient;
         const announcementsChannel = await slackClient.getChannelFromName(EventController.SLACK_EVENT_ANNOUNCEMENT_CHANNEL);
         if (announcementsChannel === null) {
@@ -83,7 +83,7 @@ class JobHelperFunctions {
         return await slackClient.sendMessageInChannel(announcementsChannel.id!, message);
     }
 
-    public static async sendEventReminderDiscord(event: HydratedDocument<IEvent>, relativeTime: string) {
+    public static async sendEventReminderDiscord(event: HydratedDocument<IEvent> | DocumentJSON<IEvent>, relativeTime: string) {
         const discordClient = ENABLED_SHARED_RESOURCES.discordClient as DiscordClient;
         const inviteLink = EventController.generateEventInviteLink(event);
         if (relativeTime === "2 Hour") {
@@ -147,14 +147,14 @@ export const DefinedJobs: Record<string, {
                     $gte: tomorrow8AM,
                     $lt: new Date(tomorrow8AM.getTime() + oneDay),
                 },
-            }).exec();
+            }).lean().exec();
 
             const nextWeekEvents = await Event.find({
                 startTime: {
                     $gte: nextWeek8AM,
                     $lt: new Date(nextWeek8AM.getTime() + oneDay),
                 },
-            }).exec();
+            }).lean().exec();
 
             const totalEvents = [...tomorrowEvents, ...nextWeekEvents];
             for(const event of totalEvents) {
@@ -188,7 +188,7 @@ export const DefinedJobs: Record<string, {
 
     sendEventReminders: {
         workerFunction: async (job: Job<SendEventRemindersPayload>) => {
-            const event = await Event.findOne({ _id: job.attrs.data.eventId }).exec();
+            const event = await Event.findOne({ _id: job.attrs.data.eventId }).lean().exec();
             if (event == null) {
                 console.error(`[sendEventReminders Job] - Event ${job.attrs.data.eventId} not found.`);
                 return;

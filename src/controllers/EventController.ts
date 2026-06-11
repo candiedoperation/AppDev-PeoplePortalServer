@@ -77,9 +77,16 @@ export interface UpdateEventRequest {
     location?: string;
 }
 
+export interface GetRsvpsRequest {
+    page: number;
+    pageSize?: number;
+}
 export interface GetRsvpResponse {
     status: string;
-    data: DocumentJSON<IRsvp>[]; 
+    data: DocumentJSON<IRsvp>[];
+    pagination: {
+        totalPages: number;
+    };
 }
 
 export interface RsvpRequest {
@@ -151,7 +158,7 @@ export class EventController extends Controller {
                     scopes = ["public", "internal"];
                 }
             } catch (error) {
-                throw new Error("Failed to get team membership."); 
+                throw new ResourceAccessError(500, "Failed to get team membership."); 
             }
         }
 
@@ -167,7 +174,7 @@ export class EventController extends Controller {
             filters.scope = { $in: scopes };
         }
 
-        const query = Event.distinct("_id", filters).sort({ startTime: 'asc' });
+        const query = Event.distinct("_id", filters).sort({ startTime: 'asc' }).lean();
         const results = await query.exec();
         const response = {
             data: results.map((objId) => objId.toString()),
@@ -216,11 +223,11 @@ export class EventController extends Controller {
 
 
         try {
-            const event = await query.exec();
+            const event = await query.lean().exec();
             if (!event) {
                 throw new CustomValidationError(404, `No event with id ${eventId}`);
             }
-            return { status: "Success", data: event.toJSON() }
+            return { status: "Success", data: event }
         } catch (error) {
             console.error(`Failed to get event data for event ${eventId}:`, error);
             throw new ResourceAccessError(500, "Failed to fetch event data");
@@ -233,7 +240,7 @@ export class EventController extends Controller {
      * @param body CreateEventRequest
      * @returns Object with eventId and status.
      */
-    @Post("createevent")
+    @Post("/")
     @SuccessResponse(201, "Event Created")
     @Security("events")
     @Tags("Event Management")
@@ -333,12 +340,18 @@ export class EventController extends Controller {
         }
         
         // Schedule 2 Hour Reminder
-        agendaClient.scheduleJobOnce({
-            jobName: "sendEventReminders",
-            runAt: new Date(event.startTime.getTime() - 1000 * 60 * 60 * 2),
-            jobPayload: { eventId: event._id.toString() },
-            options: { timezone: "America/New_York" }
-        });
+        try {
+            await agendaClient.scheduleJobOnce({
+                jobName: "sendEventReminders",
+                runAt: new Date(event.startTime.getTime() - 1000 * 60 * 60 * 2),
+                jobPayload: { eventId: event._id.toString() },
+                options: { timezone: "America/New_York" }
+            });
+        } catch (error) {
+            issues.push("Failed to schedule 2 hour reminder.");
+            console.error(`Failed to schedule 2 hour reminder for event ${event._id}:`, error);
+        }
+        
 
         return {
             eventId: event._id.toString(),
@@ -357,7 +370,7 @@ export class EventController extends Controller {
      * @returns BasicEventResponse
      */
 
-    @Delete("{eventId}/cancel")
+    @Delete("{eventId}")
     @SuccessResponse(200, "Event cancelled.")
     @Security("events")
     @Tags("Event Management")
@@ -459,7 +472,7 @@ export class EventController extends Controller {
      * @param body UpdateEventRequest
      * @returns BasicEventResponse
      */
-    @Patch("{eventId}/update")
+    @Patch("{eventId}")
     @SuccessResponse(200, "Event successfully updated")
     @Security("events")
     @Tags("Event Management")
@@ -471,7 +484,7 @@ export class EventController extends Controller {
         try {
             event = await Event.findOne({ _id: eventId }).exec();
         } catch (error) {
-            throw Error(`Failed to fetch event ${eventId}`);
+            throw new ResourceAccessError(500, `Failed to fetch event ${eventId}`);
         }
 
         if (!event) {
@@ -483,10 +496,18 @@ export class EventController extends Controller {
         // Strip undefined values and values equal to existing values.
         Object.keys(docUpdates).forEach((key) => {
             const k = key as keyof typeof docUpdates;
-            if (docUpdates[k] === undefined || docUpdates[k] === event[k]) {
+            let isEqual = event[k] === docUpdates[k];
+            if (k.includes("Time")) {
+                isEqual = (event[k] as Date).getTime() === (docUpdates[k] as Date).getTime();
+            }
+            if (docUpdates[k] === undefined || isEqual) {
                 delete docUpdates[k];
             }
         });
+
+        if ((docUpdates.startTime ?? event.startTime) > (docUpdates.endTime ?? event.endTime)) {
+            throw new CustomValidationError(400, "startTime must be before endTime");
+        }
 
         const issues: string[] = [];
 
@@ -495,11 +516,54 @@ export class EventController extends Controller {
             return { status: "Success", message: "No data changed.", issues: issues };
         }
 
+        const friendlyNames = {
+            "eventName": "Name",
+            "eventDescription": "Description",
+            "startTime": "Start Time",
+            "endTime": "End Time",
+            "location": "Location"
+        };
+
+        // Calculate diff
+        const diff = Object.keys(docUpdates).map((key) => {
+            const k = key as keyof typeof docUpdates;
+            if (k.includes("Time")) {
+                return {
+                    name: friendlyNames[k],
+                    oldData: event[k].toLocaleString("en-US", { timeZone: "America/New_York" }),
+                    newData: docUpdates[k]!.toLocaleString("en-US", { timeZone: "America/New_York" })
+                }
+            }
+            return {
+                name: friendlyNames[k],
+                oldData: event[k],
+                newData: docUpdates[k]
+            };
+        });
+
+        const oldName = event.eventName;
+
         try {
             event.set(docUpdates);
             await event.save();
         } catch (error) {
             throw new ResourceAccessError(500, "Failed to update event.")
+        }
+
+        if (docUpdates.startTime !== undefined) {
+            // Re-schedule 2hr notification job.
+            try {
+                await agendaClient.cancelJob("sendEventReminders", { eventId: eventId });
+                await agendaClient.scheduleJobOnce({
+                    jobName: "sendEventReminders",
+                    runAt: new Date(docUpdates.startTime.getTime() - 1000 * 60 * 60 * 2),
+                    jobPayload: { eventId: event._id.toString() },
+                    options: { timezone: "America/New_York" }
+                });
+            } catch (error) {
+                issues.push("Failed to replace notification job.");
+                console.error("Failed to re-schedule notification:", error);
+            }
         }
 
         if (!body.notify) {
@@ -543,32 +607,7 @@ export class EventController extends Controller {
             };
         }
 
-        const friendlyNames = {
-            "eventName": "Name",
-            "eventDescription": "Description",
-            "startTime": "Start Time",
-            "endTime": "End Time",
-            "location": "Location"
-        };
-
         const order = ["Name", "Description", "Start Time", "End Time", "Location"];
-
-        // Calculate diff
-        const diff = Object.keys(docUpdates).map((key) => {
-            const k = key as keyof typeof docUpdates;
-            if (k.includes("Time")) {
-                return {
-                    name: friendlyNames[k],
-                    oldData: event[k].toLocaleString("en-US", { timeZone: "America/New_York" }),
-                    newData: docUpdates[k]!.toLocaleString("en-US", { timeZone: "America/New_York" })
-                }
-            }
-            return {
-                name: friendlyNames[k],
-                oldData: event[k],
-                newData: docUpdates[k]
-            };
-        });
 
         // Sort for cleaner diff (prevents stuff like End Time showing before Start Time)
         diff.sort((a, b) => order.indexOf(a.name) - order.indexOf(b.name));
@@ -580,7 +619,7 @@ export class EventController extends Controller {
             }
 
             const emails = users.map(user => user.email);
-            const oldName = event.eventName;
+            
 
             this.emailClient.send({
                 to: process.env.PEOPLEPORTAL_SMTP_USER!,
@@ -617,14 +656,37 @@ export class EventController extends Controller {
     @Security("events")
     @Tags("Event RSVPs")
     async getRsvps(
-        @Path() eventId: string
+        @Path() eventId: string,
+        @Queries() queries: GetRsvpsRequest
     ): Promise<GetRsvpResponse> {
+
+        if (queries.page < 1) {
+            throw new CustomValidationError(400, "page must be positive.");
+        }
+        if (queries.pageSize !== undefined && queries.pageSize < 1) {
+            throw new CustomValidationError(400, "pageSize must be positive.");
+        }
+
+        const pageSize = queries.pageSize ?? 25;
+        const skip = (queries.page - 1) * pageSize;
+
         try {
-            const query = EventRsvp.find({ eventId: eventId });
-            const results = await query.exec();
+            const query = EventRsvp.find({ eventId: eventId })
+                .sort({ updatedAt: -1 })
+                .skip(skip)
+                .limit(pageSize)
+                .lean();
+
+            const [results, totalDocs] = await Promise.all([
+                query.exec(),
+                EventRsvp.countDocuments({ eventId: eventId }).lean()
+            ]);
             return {
                 status: "success",
-                data: results.map(document => document.toJSON()),
+                data: results,
+                pagination: {
+                    totalPages: Math.ceil(totalDocs / pageSize)
+                }
             };
         } catch (error) {
             console.error(`Failed to get RSVPs for event ${eventId}:`, error);
@@ -778,7 +840,7 @@ export class EventController extends Controller {
         @Request() req: express.Request,
     ): Promise<GetEventRsvpResponse> {
         // Get event
-        const event = await Event.findOne({ _id: eventId }).exec();
+        const event = await Event.findOne({ _id: eventId }).lean().exec();
         if (!event) {
             throw new CustomValidationError(404, `No event with id ${eventId}`);
         }
@@ -789,7 +851,7 @@ export class EventController extends Controller {
             throw new CustomValidationError(401, "User session not found.");
         }
 
-        const rsvp = await EventRsvp.findOne({ eventId: eventId, email: email }).exec();
+        const rsvp = await EventRsvp.findOne({ eventId: eventId, email: email }).lean().exec();
         if (!rsvp) {
             return {
                 status: "Success",
@@ -799,7 +861,7 @@ export class EventController extends Controller {
         
         return {
             status: "Success",
-            rsvp: rsvp.toJSON(),
+            rsvp: rsvp,
         };
     }
 
@@ -840,7 +902,7 @@ export class EventController extends Controller {
      * @param event Mongoose Event Document
      * @returns Generated link : string
      */
-    public static generateEventInviteLink(event: HydratedDocument<IEvent>) {
+    public static generateEventInviteLink(event: HydratedDocument<IEvent> | DocumentJSON<IEvent>) {
         // TODO
         return '';
     }
@@ -869,7 +931,7 @@ export class EventController extends Controller {
     }    
     
 
-    static generateCalendarLink(event: HydratedDocument<IEvent>): string {
+    static generateCalendarLink(event: HydratedDocument<IEvent> | DocumentJSON<IEvent>): string {
         // Helper to format dates to Google/ICS standard: YYYYMMDDTHHMMSSZ
         const formatToUniversalTime = (date: Date) => {
             return date.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';

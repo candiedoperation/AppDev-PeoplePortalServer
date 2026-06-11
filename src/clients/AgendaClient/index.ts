@@ -69,8 +69,8 @@ export class AgendaClient {
     }
 
     // Schedule a job to be run one time.
-    public scheduleJobOnce(jobData: JobSchedulingData) {
-        this.agenda!.schedule(
+    public async scheduleJobOnce(jobData: JobSchedulingData) {
+        await this.agenda!.schedule(
           jobData.runAt,
           jobData.jobName,
           jobData.jobPayload,

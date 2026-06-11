@@ -177,5 +177,5 @@ app.listen(PORT, async () => {
   console.log(`Server running at http://localhost:${PORT}`);
 
   // Agenda Client Singleton
-  agendaClient.initialize();
+  await agendaClient.initialize();
 });
