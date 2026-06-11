@@ -158,27 +158,30 @@ export const DefinedJobs: Record<string, {
 
             const totalEvents = [...tomorrowEvents, ...nextWeekEvents];
             for(const event of totalEvents) {
-                try {
-                    const relTime = event.startTime < nextWeek8AM ? "1 Day" : "1 Week";
-                    await JobHelperFunctions.sendEventReminderEmail(event, emailClient, relTime);
+                const relTime = event.startTime < nextWeek8AM ? "1 Day" : "1 Week";
 
-                    if (event.slack) {
-                        const success = await JobHelperFunctions.sendEventReminderSlack(event, relTime);
-                        if (!success) {
-                            console.error("Failed to send Slack reminders for event:", event._id);
-                        }
+                if (event.marketingChannels.includes("email")) {
+                    try {
+                        await JobHelperFunctions.sendEventReminderEmail(event, emailClient, relTime);
+                    } catch (error) {
+                        console.error(`Failed to send email reminders for event ${event._id}:`, error);
                     }
-
-                    if (event.discord) {
-                        const success = await JobHelperFunctions.sendEventReminderDiscord(event, relTime);
-                        if (!success) {
-                            console.error("Failed to send Discord reminders for event:", event._id);
-                        }
-                    }
-                } catch (error) {
-                    console.error(`Failed to send reminders for event ${event._id} due to error:`, error);
                 }
                 
+
+                if (event.marketingChannels.includes("slack")) {
+                    const success = await JobHelperFunctions.sendEventReminderSlack(event, relTime);
+                    if (!success) {
+                        console.error("Failed to send Slack reminders for event:", event._id);
+                    }
+                }
+
+                if (event.marketingChannels.includes("discord")) {
+                    const success = await JobHelperFunctions.sendEventReminderDiscord(event, relTime);
+                    if (!success) {
+                        console.error("Failed to send Discord reminders for event:", event._id);
+                    }
+                }                
             };
         },
     },
@@ -192,17 +195,19 @@ export const DefinedJobs: Record<string, {
             }
 
             try {
-                const emailClient = new EmailClient();
-                await JobHelperFunctions.sendEventReminderEmail(event, emailClient, "2 Hour");
+                if (event.marketingChannels.includes("email")) {
+                    const emailClient = new EmailClient();
+                    await JobHelperFunctions.sendEventReminderEmail(event, emailClient, "2 Hour");
+                }
                 
-                if (event.slack) {
+                if (event.marketingChannels.includes("slack")) {
                     const success = await JobHelperFunctions.sendEventReminderSlack(event, "2 Hour");
                     if (!success) {
                         console.error("Failed to send Slack reminders for event:", event._id);
                     }
                 }
 
-                if (event.discord) {
+                if (event.marketingChannels.includes("discord")) {
                     const success = await JobHelperFunctions.sendEventReminderDiscord(event, "2 Hour");
                     if (!success) {
                         console.error("Failed to send Discord reminders for event:", event._id);

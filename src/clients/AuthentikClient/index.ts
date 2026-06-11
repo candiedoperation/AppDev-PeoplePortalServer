@@ -186,6 +186,38 @@ export class AuthentikClient {
         }
     }
 
+    public getFullUserList = async (): Promise<{ users: UserInformationBrief[], failedPages: number[] }> => {
+        const allUsers: UserInformationBrief[] = [];
+        const failedPages: number[] = [];
+
+        const firstPage = await this.getUserList({ page: 1 });
+
+        if (firstPage.pagination.total_pages <= 1) {
+            return { users: firstPage.users, failedPages: [] };
+        }
+
+        allUsers.push(...firstPage.users);
+        const totalPages = firstPage.pagination.total_pages;
+        const remainingPages = Array.from({ length: totalPages - 1 }, (_, i) => i + 2);
+
+
+        const results = await Promise.allSettled(
+            remainingPages.map(p => this.getUserList({ page: p }))
+        );
+
+        for (const [idx, result] of results.entries()) {
+            const page = remainingPages[idx]!;
+            if (result.status === "fulfilled") {
+                allUsers.push(...result.value.users);
+            } else {
+                log.error(AuthentikClient.TAG, `Failed to fetch page ${page}:`, result.reason);
+                failedPages.push(page);
+            }
+        }
+
+        return { users: allUsers, failedPages };
+    }
+
     public getUserList = async (options: GetUserListOptions): Promise<GetUserListResponse> => {
         var RequestConfig: any = {
             ...this.AxiosBaseConfig,

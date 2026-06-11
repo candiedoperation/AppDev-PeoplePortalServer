@@ -571,7 +571,7 @@ const models: TsoaRoute.Models = {
         "properties": {
             "before": {"dataType":"datetime"},
             "after": {"dataType":"datetime"},
-            "public": {"dataType":"boolean"},
+            "scopes": {"dataType":"array","array":{"dataType":"string"}},
         },
         "additionalProperties": false,
     },
@@ -581,9 +581,28 @@ const models: TsoaRoute.Models = {
         "type": {"dataType":"nestedObjectLiteral","nestedProperties":{},"validators":{}},
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "mongoose.Types.ObjectId": {
+        "dataType": "refAlias",
+        "type": {"dataType":"string","validators":{}},
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
     "Required___id-mongoose.Types.ObjectId__": {
         "dataType": "refAlias",
-        "type": {"dataType":"nestedObjectLiteral","nestedProperties":{},"validators":{}},
+        "type": {"dataType":"nestedObjectLiteral","nestedProperties":{"_id":{"ref":"mongoose.Types.ObjectId","required":true}},"validators":{}},
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "DocumentJSON_IEvent_": {
+        "dataType": "refAlias",
+        "type": {"dataType":"intersection","subSchemas":[{"ref":"mongoose.FlattenMaps_IEvent_"},{"ref":"Required___id-mongoose.Types.ObjectId__"},{"dataType":"nestedObjectLiteral","nestedProperties":{"__v":{"dataType":"double","required":true}}}],"validators":{}},
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "GetEventResponse": {
+        "dataType": "refObject",
+        "properties": {
+            "status": {"dataType":"string","required":true},
+            "data": {"ref":"DocumentJSON_IEvent_","required":true},
+        },
+        "additionalProperties": false,
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
     "CreateEventResponse": {
@@ -604,11 +623,18 @@ const models: TsoaRoute.Models = {
             "startTime": {"dataType":"datetime","required":true},
             "endTime": {"dataType":"datetime","required":true},
             "location": {"dataType":"string","required":true},
-            "public": {"dataType":"boolean","required":true},
-            "invitedGroupPks": {"dataType":"array","array":{"dataType":"string"}},
-            "invitedUserPks": {"dataType":"array","array":{"dataType":"double"}},
-            "slack": {"dataType":"boolean"},
-            "discord": {"dataType":"boolean"},
+            "scope": {"dataType":"string","required":true},
+            "marketingChannels": {"dataType":"array","array":{"dataType":"string"},"required":true},
+        },
+        "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "BasicEventResponse": {
+        "dataType": "refObject",
+        "properties": {
+            "status": {"dataType":"string","required":true},
+            "message": {"dataType":"string"},
+            "issues": {"dataType":"array","array":{"dataType":"string"},"required":true},
         },
         "additionalProperties": false,
     },
@@ -631,18 +657,35 @@ const models: TsoaRoute.Models = {
         "type": {"dataType":"nestedObjectLiteral","nestedProperties":{},"validators":{}},
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-    "RsvpRequest": {
+    "DocumentJSON_IRsvp_": {
+        "dataType": "refAlias",
+        "type": {"dataType":"intersection","subSchemas":[{"ref":"mongoose.FlattenMaps_IRsvp_"},{"ref":"Required___id-mongoose.Types.ObjectId__"},{"dataType":"nestedObjectLiteral","nestedProperties":{"__v":{"dataType":"double","required":true}}}],"validators":{}},
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "GetRsvpResponse": {
         "dataType": "refObject",
         "properties": {
-            "accept": {"dataType":"boolean","required":true},
-            "reason": {"dataType":"string"},
+            "status": {"dataType":"string","required":true},
+            "data": {"dataType":"array","array":{"dataType":"refAlias","ref":"DocumentJSON_IRsvp_"},"required":true},
         },
         "additionalProperties": false,
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-    "DocumentJSON_IRsvp_": {
-        "dataType": "refAlias",
-        "type": {"dataType":"intersection","subSchemas":[{"ref":"mongoose.FlattenMaps_IRsvp_"},{"ref":"Required___id-mongoose.Types.ObjectId__"},{"dataType":"nestedObjectLiteral","nestedProperties":{"__v":{"dataType":"double","required":true}}}],"validators":{}},
+    "RsvpRequest": {
+        "dataType": "refObject",
+        "properties": {
+            "accept": {"dataType":"boolean","required":true},
+        },
+        "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "GetEventRsvpResponse": {
+        "dataType": "refObject",
+        "properties": {
+            "status": {"dataType":"string","required":true},
+            "rsvp": {"dataType":"union","subSchemas":[{"ref":"DocumentJSON_IRsvp_"},{"dataType":"enum","enums":[null]}],"required":true},
+        },
+        "additionalProperties": false,
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
     "JsonPrimitive": {
@@ -785,11 +828,6 @@ const models: TsoaRoute.Models = {
             "notes": {"dataType":"string"},
         },
         "additionalProperties": false,
-    },
-    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-    "mongoose.Types.ObjectId": {
-        "dataType": "refAlias",
-        "type": {"dataType":"string","validators":{}},
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
     "ATSUpdateApplicationStageRequest": {
@@ -1876,7 +1914,7 @@ export function RegisterRoutes(app: Router) {
         });
         // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
         const argsEventController_getListOfEvents: Record<string, TsoaRoute.ParameterSchema> = {
-                req: {"in":"request","name":"req","dataType":"object"},
+                req: {"in":"request","name":"req","required":true,"dataType":"object"},
                 options: {"in":"queries","name":"options","ref":"GetEventListOptions"},
         };
         app.get('/api/events',
@@ -1912,7 +1950,7 @@ export function RegisterRoutes(app: Router) {
                 eventId: {"in":"path","name":"eventId","required":true,"dataType":"string"},
         };
         app.get('/api/events/:eventId',
-            authenticateMiddleware([{"oidc":[]},{"ats_otp":[]},{"events":[]}]),
+            authenticateMiddleware([{"oidc":[]},{"ats_otp":[]}]),
             ...(fetchMiddlewares<RequestHandler>(EventController)),
             ...(fetchMiddlewares<RequestHandler>(EventController.prototype.getEvent)),
 
@@ -1974,7 +2012,7 @@ export function RegisterRoutes(app: Router) {
         const argsEventController_cancelEvent: Record<string, TsoaRoute.ParameterSchema> = {
                 req: {"in":"request","name":"req","required":true,"dataType":"object"},
                 eventId: {"in":"path","name":"eventId","required":true,"dataType":"string"},
-                options: {"in":"queries","name":"options","dataType":"nestedObjectLiteral","nestedProperties":{"notify":{"dataType":"boolean"}}},
+                body: {"in":"body","name":"body","dataType":"nestedObjectLiteral","nestedProperties":{"notify":{"dataType":"boolean"}}},
         };
         app.delete('/api/events/:eventId/cancel',
             authenticateMiddleware([{"events":[]}]),

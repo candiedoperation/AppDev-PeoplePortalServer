@@ -18,8 +18,6 @@
 
 import { Document, Schema, model } from "mongoose";
 
-export const MAX_RSVP_REASON_CHARS = 200;
-
 export enum RsvpStatus {
     ACCEPT = 'Accept',
     DECLINE = 'Decline',
@@ -30,7 +28,6 @@ export interface IRsvp extends Document {
   eventId: string; // Event id of corresponding event.
   status: RsvpStatus;
   email: string;
-  reason?: string; // Optional reason for accept or decline.
 }
 
 const rsvpSchema = new Schema<IRsvp>({
@@ -47,14 +44,6 @@ const rsvpSchema = new Schema<IRsvp>({
     email: {
         type: String,
         required: true,
-    },
-    reason: {
-        type: String,
-        required: false,
-        validate: {
-            validator: (r: string) => r.length < MAX_RSVP_REASON_CHARS,
-            message: `Reason must be less than ${MAX_RSVP_REASON_CHARS} characters.`,
-        },
     },
 }, {timestamps: true});
 

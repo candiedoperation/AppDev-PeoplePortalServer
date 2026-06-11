@@ -18,6 +18,9 @@
 
 import { Document, Schema, model } from "mongoose";
 
+export const SupportedMarketingChannels = ["email", "slack", "discord"];
+export const SupportedScopes = ["public", "exec", "internal"];
+
 export interface IEvent extends Document {
     eventName: string;
     eventDescription: string;
@@ -26,10 +29,8 @@ export interface IEvent extends Document {
     endTime: Date;
     location: string;
     public: boolean;
-    invitedGroupPks?: string[];
-    invitedUserPks?: number[];
-    slack?: boolean;
-    discord?: boolean;
+    scope: string;
+    marketingChannels: string[];
 }
 
 const EventSchema = new Schema<IEvent>({
@@ -57,25 +58,23 @@ const EventSchema = new Schema<IEvent>({
         type: String,
         required: true
     },
-    public: {
-        type: Boolean,
-        required: true
-    },
-    invitedGroupPks: [{
+    scope: {               // "public" | "exec" | "internal"
         type: String,
-        required: false
-    }],
-    invitedUserPks: [{
-        type: Number,
-        required: false
-    }],
-    slack: {
-        type: Boolean,
-        required: false
+        required: true,
+        validate: {
+            validator: scope => SupportedScopes.includes(scope),
+            message: `scope must be one of ${SupportedScopes}`
+        }
     },
-    discord: {
-        type: Boolean,
-        required: false
+    marketingChannels: {
+        type: [String],
+        required: true,
+        validate: {
+            validator: function(channels: string[]) {
+                return channels && channels.every(channel => SupportedMarketingChannels.includes(channel));
+            },
+            message: `marketingChannels must be a string[] with only values from ${SupportedMarketingChannels}`
+        }
     },
 }, {timestamps: true});
 

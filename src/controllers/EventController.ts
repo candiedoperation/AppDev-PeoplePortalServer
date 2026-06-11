@@ -22,25 +22,29 @@ import { SlackClient } from "../clients/SlackClient";
 import { AuthentikClient } from "../clients/AuthentikClient";
 import { ENABLED_SHARED_RESOURCES } from "../config";
 import * as express from 'express';
-import { CustomValidationError } from "../utils/errors";
+import { CustomValidationError, ResourceAccessError } from "../utils/errors";
 import { Event, IEvent } from "../models/Event";
 import { EventRsvp, IRsvp, RsvpStatus } from "../models/EventRsvp";
-import { Document, FlattenMaps, HydratedDocument, Types } from "mongoose";
-import { UserInformationBrief } from "../clients/AuthentikClient/models";
+import { FlattenMaps, HydratedDocument, Types } from "mongoose";
 import { agendaClient } from "../clients/AgendaClient";
-import { resolve } from "path";
 import { DiscordClient } from "../clients/DiscordClient";
-import { setUncaughtExceptionCaptureCallback } from "process";
 
+
+export type DocumentJSON<T> = FlattenMaps<T> & Required<{ _id: Types.ObjectId; }> & { __v: number };
 
 export interface GetEventListOptions {
     before?: Date;
     after?: Date;
-    public?: boolean;
+    scopes?: string[];
 }
 export interface GetEventListResponse {
     data: string[],
     count: number,
+}
+
+export interface GetEventResponse {
+    status: string;
+    data: DocumentJSON<IEvent>
 }
 
 export interface CreateEventRequest {
@@ -49,23 +53,19 @@ export interface CreateEventRequest {
     startTime: Date;
     endTime: Date;
     location: string;
-    public: boolean;
-    invitedGroupPks?: string[]; // Authentik groups to send invites to
-    invitedUserPks?: number[];  // Additional individuals to invite
-    slack?: boolean; // Send an announcement on Slack. Also affects reminders.
-    discord?: boolean; // Send an announcement on Discord. Also affects reminders.
+    scope: string;
+    marketingChannels: string[];
+}
+export interface CreateEventResponse {
+    eventId: string,
+    status: string,
+    issues: string[],
 }
 
 export interface BasicEventResponse {
     status: string;
     message?: string;
     issues: string[];
-}
-
-export interface CreateEventResponse {
-    eventId: string,
-    status: string,
-    issues: string[],
 }
 
 export interface UpdateEventRequest {
@@ -77,12 +77,20 @@ export interface UpdateEventRequest {
     location?: string;
 }
 
-export interface RsvpRequest {
-    accept: boolean;
-    reason?: string;
+export interface GetRsvpResponse {
+    status: string;
+    data: DocumentJSON<IRsvp>[]; 
 }
 
-export type DocumentJSON<T> = FlattenMaps<T> & Required<{ _id: Types.ObjectId; }> & { __v: number };
+export interface RsvpRequest {
+    accept: boolean;
+}
+
+export interface GetEventRsvpResponse {
+    status: string;
+    rsvp: DocumentJSON<IRsvp> | null;
+}
+
 
 @Route("/api/events/")
 export class EventController extends Controller {
@@ -112,7 +120,7 @@ export class EventController extends Controller {
     @Security("ats_otp")
     @Tags("Event Management")
     async getListOfEvents(
-        @Request() req?: express.Request,
+        @Request() req: express.Request,
         @Queries() options?: GetEventListOptions
     ): Promise<GetEventListResponse> {
         let filters: { [key: string]: any } = {};
@@ -128,18 +136,38 @@ export class EventController extends Controller {
             }
         }
 
-        let isPublic = options?.public;
-        // Checks if user has a temporary session
-        if (req?.session.tempsession?.jwt && req.session.tempsession.user) {
+        let scopes: string[] = [];
+
+        // Checks if user is not an authorized user (is using otp)
+        if (!req.session.authorizedUser || !req.session.authorizedUser.pk) {
             // Only show public events
-            isPublic = true;
+            scopes = ["public"];
+        } else if (!req.session.authorizedUser?.is_superuser) {
+            try {
+                const userTeams = await this.authentikClient.getRootTeamsForUsername(req.session.authorizedUser!.username);
+                if (!userTeams.teams.some(team =>
+                    team.name === "ExecutiveBoard" && !team.flaggedForDeletion
+                )) {
+                    scopes = ["public", "internal"];
+                }
+            } catch (error) {
+                throw new Error("Failed to get team membership."); 
+            }
         }
 
-        if (isPublic !== undefined) {
-            filters.public = isPublic;
+        if (options?.scopes !== undefined) {
+            if (scopes.length > 0) {
+                scopes = scopes.filter(scope => options.scopes?.includes(scope));
+            } else {
+                scopes = options?.scopes;
+            }
         }
 
-        const query = Event.distinct("_id", filters);
+        if (scopes.length > 0) {
+            filters.scope = { $in: scopes };
+        }
+
+        const query = Event.distinct("_id", filters).sort({ startTime: 'asc' });
         const results = await query.exec();
         const response = {
             data: results.map((objId) => objId.toString()),
@@ -161,30 +189,41 @@ export class EventController extends Controller {
     @SuccessResponse(200)
     @Security("oidc")
     @Security("ats_otp")
-    @Security("events")
     @Tags("Event Management")
     async getEvent(
         @Request() req: express.Request,
         @Path() eventId: string,
-    ) {
+    ): Promise<GetEventResponse> {
         // Get event data
         let query = Event.findOne({ _id: eventId });
 
-        // Checks if user has a temporary session
-        if (req?.session.tempsession?.jwt && req.session.tempsession.user) {
+        // Checks if user is not an authorized user (is using otp)
+        if (!req.session.authorizedUser || !req.session.authorizedUser.pk) {
             // Only show public events
-            query = query.where("public").equals(true);
+            query = query.where("scope").equals("public");
+        } else if (!req.session.authorizedUser?.is_superuser) {
+            try {
+                const userTeams = await this.authentikClient.getRootTeamsForUsername(req.session.authorizedUser!.username);
+                if (!userTeams.teams.some(team =>
+                    team.name === "ExecutiveBoard" && !team.flaggedForDeletion
+                )) {
+                    query = query.where("scope").ne("exec");
+                }
+            } catch (error) {
+                throw new ResourceAccessError(500, "Failed to get team membership."); 
+            }
         }
+
 
         try {
             const event = await query.exec();
             if (!event) {
                 throw new CustomValidationError(404, `No event with id ${eventId}`);
             }
-            return event.toJSON();
+            return { status: "Success", data: event.toJSON() }
         } catch (error) {
             console.error(`Failed to get event data for event ${eventId}:`, error);
-            throw new Error(`Failed to fetch event data`);
+            throw new ResourceAccessError(500, "Failed to fetch event data");
         }
     }
 
@@ -219,41 +258,48 @@ export class EventController extends Controller {
             startTime: body.startTime,
             endTime: body.endTime,
             location: body.location,
-            public: body.public,
-            invitedGroupPks: body.invitedGroupPks,
-            invitedUserPks: body.invitedUserPks,
-            slack: body.slack,
-            discord: body.discord,
+            scope: body.scope,
+            marketingChannels: body.marketingChannels,
         });
 
-        // EMAIL INVITEES
-        const userInfo = await this.resolveUserInfo(body.invitedGroupPks, body.invitedUserPks);
         const gCalendarLink = EventController.generateCalendarLink(event);
         const inviteLink = EventController.generateEventInviteLink(event);
-
-        // Send out emails to invitees with bcc.
-        const emails = userInfo.map(uInfo => uInfo.email);
-        await this.emailClient.send({
-            to: process.env.PEOPLEPORTAL_SMTP_USER!,
-            cc: [authorizedUser.email],
-            bcc: emails,
-            subject: `App Dev Event Invitation - ${body.title}`,
-            templateName: "EventInvite",
-            templateVars: {
-                eventName: body.title,
-                eventDescription: body.description,
-                startTime: body.startTime.toLocaleString("en-US", { timeZone: "America/New_York" }),
-                endTime: body.endTime.toLocaleString("en-US", { timeZone: "America/New_York" }),
-                eventLocation: body.location,
-                inviteLink: inviteLink,
-                googleCalendarLink: gCalendarLink,
-            },
-        });
-
         const issues: string[] = [];
 
+        // EMAIL INVITEES
+        if (body.marketingChannels.includes("email")) {
+            try {
+                const userInfo = await this.resolveUserInfoFromScope(body.scope);
+                if (!userInfo) {
+                    throw new Error("Failed to fetch recipients.");
+                }
+
+                // Send out emails to invitees with bcc.
+                const emails = userInfo.map(uInfo => uInfo.email);
+                await this.emailClient.send({
+                    to: process.env.PEOPLEPORTAL_SMTP_USER!,
+                    cc: [authorizedUser.email],
+                    bcc: emails,
+                    subject: `App Dev Event Invitation - ${body.title}`,
+                    templateName: "EventInvite",
+                    templateVars: {
+                        eventName: body.title,
+                        eventDescription: body.description,
+                        startTime: body.startTime.toLocaleString("en-US", { timeZone: "America/New_York" }),
+                        endTime: body.endTime.toLocaleString("en-US", { timeZone: "America/New_York" }),
+                        eventLocation: body.location,
+                        inviteLink: inviteLink,
+                        googleCalendarLink: gCalendarLink,
+                    },
+                });
+            } catch (error) {
+                console.error("Failed to send email to event invitees:", error);
+                issues.push("Failed to send email.")
+            }
+        }
+
         // SLACK MESSAGE
-        if (body.slack) {
+        if (body.marketingChannels.includes("slack")) {
             const message = `*Event Announcement*\n` +
                             `>${event.eventName}\n` +
                             `Description: ${event.eventDescription}\n` +
@@ -270,7 +316,7 @@ export class EventController extends Controller {
         }
 
         // DISCORD MESSAGE
-        if (body.discord) {
+        if (body.marketingChannels.includes("discord")) {
             const message = `# Event Announcement\n` + 
                             `## ${event.eventName}\n` + 
                             `- Description: ${event.eventDescription}\n` +
@@ -307,7 +353,7 @@ export class EventController extends Controller {
      * 
      * @param req Express Request Object
      * @param eventId Id of the event to cancel
-     * @param options { notify?: boolean }. If notify is true (default), will send notify invitees of event cancellation.
+     * @param body { notify?: boolean }. If notify is true (default), will send notify invitees of event cancellation.
      * @returns BasicEventResponse
      */
 
@@ -318,15 +364,15 @@ export class EventController extends Controller {
     async cancelEvent(
         @Request() req: express.Request,
         @Path() eventId: string,
-        @Queries() options?: { notify?: boolean }
-    ) {
+        @Body() body?: { notify?: boolean }
+    ): Promise<BasicEventResponse> {
         // Find event
         let event: HydratedDocument<IEvent> | null;
         try {
             event = await Event.findOne({ _id: eventId }).exec();
         } catch (error) {
             console.error(`Failed to get event data for event ${eventId}: `, error);
-            throw Error(`Failed to fetch event ${eventId}`);
+            throw new ResourceAccessError(500, `Failed to fetch event ${eventId}`);
         }
         
         if (!event) {
@@ -338,29 +384,45 @@ export class EventController extends Controller {
         const rsvp_deletion = await EventRsvp.deleteMany({ eventId: eventId }).exec();
         await event.deleteOne();
 
-        if (options?.notify === false) {
-            return;
-        }
-
         const issues: string[] = [];
 
-        const invitees = await this.resolveUserInfo(event.invitedGroupPks, event.invitedUserPks);
-        await this.emailClient.send({
-            to: process.env.PEOPLEPORTAL_SMTP_USER!,
-            cc: [req.session.authorizedUser!.email],
-            bcc: invitees.map(invitee => invitee.email),
-            subject: `App Dev Event Cancelled - ${event.eventName}`,
-            templateName: "EventCancellation",
-            templateVars: {
-                eventName: event.eventName,
-                eventDescription: event.eventDescription,
-                startTime: event.startTime.toLocaleString("en-US", { timeZone: "America/New_York" }),
-                endTime: event.endTime.toLocaleString("en-US", { timeZone: "America/New_York" }),
-            },
-        });
+        if (body?.notify === false) {
+            return {
+                status: "Success",
+                message: "Successfully cancelled event",
+                issues: issues,
+            };
+        }
+
+    
+        if (event.marketingChannels.includes("email")) {
+            try {
+                const invitees = await this.resolveUserInfoFromScope(event.scope);
+                if (invitees === undefined) {
+                    throw new Error("Failed to fetch invitees.");
+                }
+
+                await this.emailClient.send({
+                    to: process.env.PEOPLEPORTAL_SMTP_USER!,
+                    cc: [req.session.authorizedUser!.email],
+                    bcc: invitees.map(invitee => invitee.email),
+                    subject: `App Dev Event Cancelled - ${event.eventName}`,
+                    templateName: "EventCancellation",
+                    templateVars: {
+                        eventName: event.eventName,
+                        eventDescription: event.eventDescription,
+                        startTime: event.startTime.toLocaleString("en-US", { timeZone: "America/New_York" }),
+                        endTime: event.endTime.toLocaleString("en-US", { timeZone: "America/New_York" }),
+                    },
+                });
+            } catch (error) {
+                console.error(`Failed to get email recipients:`, error);
+                issues.push("Failed to send emails.");
+            }   
+        }
 
         // Send Slack Message
-        if (event.slack) {
+        if (event.marketingChannels.includes("slack")) {
             const message = `*Event Announcement*\n` + 
                             `${event.eventName} has been *cancelled.*`;
 
@@ -371,7 +433,7 @@ export class EventController extends Controller {
         }
 
         // Send Discord Message
-        if (event.discord) {
+        if (event.marketingChannels.includes("discord")) {
             const message = `# Event Announcement\n` + 
                             `**${event.eventName}** has been **cancelled**`;
             
@@ -404,12 +466,11 @@ export class EventController extends Controller {
     async updateEvent(
         @Path() eventId: string,
         @Body() body: UpdateEventRequest
-    ) {
+    ): Promise<BasicEventResponse> {
         let event: HydratedDocument<IEvent> | null;
         try {
             event = await Event.findOne({ _id: eventId }).exec();
         } catch (error) {
-            console.error(`Failed to get event data for event ${eventId}: `, error);
             throw Error(`Failed to fetch event ${eventId}`);
         }
 
@@ -431,14 +492,55 @@ export class EventController extends Controller {
 
         // Nothing to change.
         if (Object.keys(docUpdates).length == 0) {
-            this.setStatus(204);
             return { status: "Success", message: "No data changed.", issues: issues };
         }
 
-        if (!body.notify) {
+        try {
             event.set(docUpdates);
             await event.save();
-            return { status: "Success", message: "Successfully updated event.", issues: issues };
+        } catch (error) {
+            throw new ResourceAccessError(500, "Failed to update event.")
+        }
+
+        if (!body.notify) {
+            return {
+                status: "Success",
+                message: "Successfully updated event.",
+                issues: issues
+            };
+        }
+
+        const gCalendarLink = EventController.generateCalendarLink(event);
+        const inviteLink = EventController.generateEventInviteLink(event);
+
+        if (event.marketingChannels.includes("slack")) {
+            const message = `*Important Update*\n` + 
+                            `Changes have been made to ${event.eventName}.\n` + 
+                            `Please review the new information here: ${inviteLink}`;
+    
+            const success = await this.sendSlackMessage(message);
+            if (!success) {
+                issues.push("Failed to send Slack announcement.");
+            }
+        }
+
+        if (event.marketingChannels.includes("discord")) {
+            const message = `## Update - ${event.eventName}\n` + 
+                            `Changes have been made to ${event.eventName}.\n` + 
+                            `Please review the new information here: ${inviteLink}`;
+            
+            const success = await this.sendDiscordMessage(message);
+            if (!success) {
+                issues.push("Failed to send Discord announcement.");
+            }
+        }
+
+        if (!event.marketingChannels.includes("email")) {
+            return {
+                status: "Success",
+                message: "Successfully updated event",
+                issues: issues,
+            };
         }
 
         const friendlyNames = {
@@ -471,50 +573,30 @@ export class EventController extends Controller {
         // Sort for cleaner diff (prevents stuff like End Time showing before Start Time)
         diff.sort((a, b) => order.indexOf(a.name) - order.indexOf(b.name));
 
-        const users = await this.resolveUserInfo(event.invitedGroupPks, event.invitedUserPks);
-        const emails = users.map(user => user.email);
-        const oldName = event.eventName;
-
-        event.set(docUpdates);
-        await event.save();
-
-        const gCalendarLink = EventController.generateCalendarLink(event);
-        const inviteLink = EventController.generateEventInviteLink(event);
-
-        this.emailClient.send({
-            to: process.env.PEOPLEPORTAL_SMTP_USER!,
-            bcc: emails,
-            subject: `Update for ${oldName}`,
-            templateName: "EventUpdate",
-            templateVars: {
-                eventName: oldName,
-                diff: diff,
-                googleCalendarLink: gCalendarLink,
-                inviteLink: inviteLink
+        try {
+            const users = await this.resolveUserInfoFromScope(event.scope);
+            if (users === undefined) {
+                throw new Error("Failed to get recipients.");
             }
-        });
 
-        if (event.slack) {
-            const message = `*Important Update*\n` + 
-                            `Changes have been made to ${event.eventName}.\n` + 
-                            `Please review the new information here: ${inviteLink}`;
-    
-            const success = await this.sendSlackMessage(message);
-            if (!success) {
-                issues.push("Failed to send Slack announcement.");
-            }
-        }
+            const emails = users.map(user => user.email);
+            const oldName = event.eventName;
 
-        if (event.discord) {
-            const message = `## Update - ${event.eventName}\n` + 
-                            `Changes have been made to ${event.eventName}.\n` + 
-                            `Please review the new information here: ${inviteLink}`;
-            
-            const success = await this.sendDiscordMessage(message);
-            if (!success) {
-                issues.push("Failed to send Discord announcement.");
-            }
-            
+            this.emailClient.send({
+                to: process.env.PEOPLEPORTAL_SMTP_USER!,
+                bcc: emails,
+                subject: `Update for ${oldName}`,
+                templateName: "EventUpdate",
+                templateVars: {
+                    eventName: oldName,
+                    diff: diff,
+                    googleCalendarLink: gCalendarLink,
+                    inviteLink: inviteLink
+                }
+            });
+        } catch (error) {
+            console.error("Failed to send email:", error);
+            issues.push("Failed to send emails.");
         }
 
         return {
@@ -536,7 +618,7 @@ export class EventController extends Controller {
     @Tags("Event RSVPs")
     async getRsvps(
         @Path() eventId: string
-    ) {
+    ): Promise<GetRsvpResponse> {
         try {
             const query = EventRsvp.find({ eventId: eventId });
             const results = await query.exec();
@@ -546,7 +628,7 @@ export class EventController extends Controller {
             };
         } catch (error) {
             console.error(`Failed to get RSVPs for event ${eventId}:`, error);
-            throw new Error(`Failed to fetch RSVPs`);
+            throw new ResourceAccessError(500, "Failed to fetch RSVPs");
         }
     }
     
@@ -570,7 +652,7 @@ export class EventController extends Controller {
         @Request() req: express.Request,
         @Path() eventId: string,
         @Body() body: RsvpRequest,
-    ) {
+    ): Promise<BasicEventResponse> {
         // Check if event exists
         const event = await Event.findOne({ _id: eventId });
         if (!event) {
@@ -584,36 +666,38 @@ export class EventController extends Controller {
         }
 
         // Check if user is allowed to join event.
-        if (!event.public) {
+        if (event.scope !== "public") {
             // Check if user has an account.
             const userPk = req.session.authorizedUser?.pk;
             if (userPk === undefined) {
-                throw new CustomValidationError(401, "Valid account required for non-public events.");
+                throw new CustomValidationError(401, "User session not found.");
             }
 
             let authorized = false;
 
             // Check if user is in invited users
-            if (event.invitedUserPks && event.invitedUserPks.includes(userPk)) {
+            if (event.scope === "internal") {
                 authorized = true;
-            } 
-
-            // Check if user is member of any invited groups.
-            if (!authorized && event.invitedGroupPks) {
-                for (const groupPk of event.invitedGroupPks) {
-                    const groupInfo = await this.authentikClient.getGroupInfo(groupPk);
-                    for (const uInfo of groupInfo.users) {
-                        if (uInfo.email === email) {
-                            authorized = true;
-                            break;
-                        }
+            }
+            else if (event.scope === "exec") {
+                if (req.session.authorizedUser?.is_superuser) {
+                    authorized = true;
+                } else {
+                    try {
+                        const userTeams = await this.authentikClient.getRootTeamsForUsername(req.session.authorizedUser!.username);
+                        authorized = userTeams.teams.some(team =>
+                            team.name === "ExecutiveBoard" &&
+                            !team.flaggedForDeletion
+                        );
+                    } catch (error) {
+                        throw new ResourceAccessError(500, "Failed to get team membership."); 
                     }
-                    if (authorized) break;
                 }
             }
+            
 
             if (!authorized) {
-                throw new CustomValidationError(401, "Unauthorized to RSVP to event.");
+                throw new CustomValidationError(403, "Unauthorized to RSVP to event.");
             }
         }
 
@@ -632,37 +716,46 @@ export class EventController extends Controller {
         // Update existing rsvp or create new one.
         if (rsvp) {
             rsvp.status = status;
-            if (body.reason !== undefined) {
-                rsvp.reason = body.reason;
-            }
             await rsvp.save();
         } else {
             await EventRsvp.create({
                 eventId: eventId,
                 status: status,
                 email: email,
-                reason: body.reason,
             });
         }
 
+        const issues: string[] = [];
         // Get Google Calendar Link
         const gCalendarLink = EventController.generateCalendarLink(event);
 
-        // Send confirmation email
-        this.emailClient.send({
-            to: email!,
-            subject: "App Dev Event RSVP Confirmation",
-            templateName: "RsvpConfirmation",
-            templateVars: {
-                action: status,
-                eventName: event.eventName,
-                eventDescription: event.eventDescription,
-                startTime: event.startTime.toLocaleString("en-US", { timeZone: "America/New_York" }),
-                endTime: event.endTime.toLocaleString("en-US", { timeZone: "America/New_York" }),
-                eventLocation: event.location,
-                googleCalendarLink: gCalendarLink,
-            }
-        });
+        try {
+            // Send confirmation email
+            this.emailClient.send({
+                to: email!,
+                subject: "App Dev Event RSVP Confirmation",
+                templateName: "RsvpConfirmation",
+                templateVars: {
+                    action: status,
+                    eventName: event.eventName,
+                    eventDescription: event.eventDescription,
+                    startTime: event.startTime.toLocaleString("en-US", { timeZone: "America/New_York" }),
+                    endTime: event.endTime.toLocaleString("en-US", { timeZone: "America/New_York" }),
+                    eventLocation: event.location,
+                    googleCalendarLink: gCalendarLink,
+                }
+            });
+        } catch (error) {
+            console.error("Failed to send confirmation email for RSVP.");
+            issues.push("Failed to send confirmation email.");
+        }
+        
+
+        return { 
+            status: "Success",
+            message: "Successfully RSVP'd to event.",
+            issues: issues
+        };
 
     }
 
@@ -683,7 +776,7 @@ export class EventController extends Controller {
     async getRsvpForEvent(
         @Path() eventId: string,
         @Request() req: express.Request,
-    ): Promise<{ status: string, rsvpData: DocumentJSON<IRsvp> | null }> {
+    ): Promise<GetEventRsvpResponse> {
         // Get event
         const event = await Event.findOne({ _id: eventId }).exec();
         if (!event) {
@@ -700,13 +793,13 @@ export class EventController extends Controller {
         if (!rsvp) {
             return {
                 status: "Success",
-                rsvpData: null,
+                rsvp: null,
             };
         }
         
         return {
             status: "Success",
-            rsvpData: rsvp.toJSON(),
+            rsvp: rsvp.toJSON(),
         };
     }
 
@@ -752,56 +845,29 @@ export class EventController extends Controller {
         return '';
     }
 
+
     /**
-     * Private helper method to get deduplicated list of user info from list
-     * of Authentik groups and/or list of individual user Ids.
-     * Warning: If one group fails to resolve, will skip it and continue
-     * instead of throwing an error.
+     * Private helper method to get deduplicated list of user info from
+     * event scope.
      * 
-     * @param groupPks (optional) List of group Ids in Authentik
-     * @param userPks (optional) List of user Ids in Authentik
-     * @returns Deduplicated array of user info for all groups + individuals.
+     * @param scope scope of event.
+     * @returns Deduplicated array of user info for all invitees.
      */
-    private async resolveUserInfo(groupPks?: string[], userPks?: number[]): Promise<Array<UserInformationBrief>> {
-        const resolvedPks = new Set<number>();
-        const resolvedUserInfo = new Set<UserInformationBrief>();
-        if (groupPks) {
-            await Promise.all(
-                groupPks.map(async (groupId: string) => {
-                    try {
-                        const groupInfo = await this.authentikClient.getGroupInfo(groupId);
-                        if (groupInfo.users) {
-                            for (const user of groupInfo.users) {
-                                resolvedPks.add(Number(user.pk));
-                                resolvedUserInfo.add(user);
-                            }
-                        }
-                    } catch (error) {
-                        console.error(`Failed to get information from group ${groupId}`, error);
-                    }
-                        
-                })
-            );
+    private async resolveUserInfoFromScope(scope: string) {
+        if (scope === "public" || scope === "internal") {
+            // Return all internal members
+            const allUsers = await this.authentikClient.getFullUserList();
+            return allUsers.users;
+        } 
+        else if (scope === "exec") {
+            // Return all execs
+            const execGroupId = await this.authentikClient.getGroupPkFromName("ExecutiveBoardMembers");
+            const groupInfo = await this.authentikClient.getGroupInfo(execGroupId);
+            
+            return groupInfo.users;
         }
-        if (!userPks) {
-            return Array.from(resolvedUserInfo);
-        }
-
-        await Promise.all(
-            userPks.map(async (userId: number) => {
-                try {
-                    if (!resolvedPks.has(userId)) {
-                        const userInfo = await this.authentikClient.getUserInfo(userId);
-                        resolvedUserInfo.add(userInfo);
-                    }
-                } catch (error) {
-                    console.error(`Failed to get information from userId ${userId}`, error);
-                }
-            })
-        );
-
-        return Array.from(resolvedUserInfo);
-    }
+    }    
+    
 
     static generateCalendarLink(event: HydratedDocument<IEvent>): string {
         // Helper to format dates to Google/ICS standard: YYYYMMDDTHHMMSSZ
