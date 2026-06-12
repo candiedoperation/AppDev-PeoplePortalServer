@@ -1,4 +1,5 @@
 import { Job, JobDefinition } from "agenda";
+import { DateTime } from "luxon";
 import { EmailClient } from "../../EmailClient";
 import { EmailSendRequest } from "../../EmailClient/models";
 import { Event, IEvent } from "../../../models/Event";
@@ -131,13 +132,12 @@ export const DefinedJobs: Record<string, {
         workerFunction: async (job: Job<JobPayload>) => {
             const emailClient = new EmailClient();
             
-            const now = new Date();
-            const today8AM = new Date(
-                now.getFullYear(),
-                now.getMonth(),
-                now.getDate(),
-                8,
-            );
+
+            const ny8AM = DateTime.now().setZone("America/New_York").set({
+                hour: 8, minute: 0, second: 0, millisecond: 0
+            })
+
+            const today8AM = ny8AM.toUTC().toJSDate();
             const oneDay = 1000 * 60 * 60 * 24; // Day in Milliseconds
             const tomorrow8AM = new Date(today8AM.getTime() + oneDay);
             const nextWeek8AM = new Date(today8AM.getTime() + oneDay * 7);
