@@ -19,7 +19,7 @@
 import * as express from 'express'
 import path from 'path';
 import { Request, Body, Controller, Get, Patch, Path, Post, Queries, Route, SuccessResponse, Put, Security, Delete, Tags, Query } from "tsoa";
-import { AddGroupMemberRequest, GetGroupInfoResponse, GetTeamsListResponse, GetUserListOptions, GetUserListResponse, RemoveGroupMemberRequest, SeasonType, TeamType, UserInformationBrief, GetTeamsForUsernameResponse, AuthentikClientError, CreateUserRequest, ServiceSeasonType, AuthentikClientErrorType } from "../clients/AuthentikClient/models";
+import { AddGroupMemberRequest, GetGroupInfoResponse, GetTeamsListResponse, GetUserListOptions, GetUserListResponse, RemoveGroupMemberRequest, SeasonType, TeamType, UserInformationBrief, GetTeamsForUsernameResponse, AuthentikClientError, CreateUserRequest, ServiceSeasonType, AuthentikClientErrorType, TeamInformationDetail, GetTeamsListDetailResponse, UserInformationPartial } from "../clients/AuthentikClient/models";
 import { AuthentikClient } from "../clients/AuthentikClient";
 import { Invite } from "../models/Invites";
 import { EmailClient } from "../clients/EmailClient";
@@ -36,7 +36,7 @@ import { BindleController, EnabledBindlePermissions } from '../controllers/Bindl
 import { AuthorizedUser } from '../clients/OpenIdClient';
 import { executiveAuthVerify } from '../auth';
 import { TeamCreationRequest, TeamCreationRequestStatus, ITeamCreationRequest } from '../models/TeamCreationRequest';
-import { CustomValidationError, SharedResourcesError } from '../utils/errors';
+import { CustomValidationError, ResourceAccessError, SharedResourcesError } from '../utils/errors';
 import { ExpressRequestBindleExtension } from '../types/express';
 import { validateS3FileSignature, FILE_SIGNATURES } from '../utils/s3-validation';
 import { signAvatarUrl } from '../utils/avatars';
@@ -296,13 +296,174 @@ export class OrgController extends Controller {
         return await this.authentikClient.getGroupsList(options)
     }
 
+    // @Get("orgchart")
+    // @Tags("Team Management")
+    // @SuccessResponse(200)
+    // @Security("oidc")
+    // async getOrgChart(@Queries() options?: APIGetOrgChartOptions): Promise<APIGetOrgChartResponse> {
+    //     const shouldExpandAll = options?.expandAll ?? true;
+
+    //     // 1. Fetch Root Team (Exec Board)
+    //     let execTeam: any;
+    //     try {
+    //         const pk = await this.authentikClient.getGroupPkFromName("ExecutiveBoardMembers");
+    //         execTeam = await this.authentikClient.getGroupInfo(pk, { includeUsers: true });
+    //     } catch {
+    //         return { root: { id: "error", name: "Exec Board Not Found", type: "ROOT_MEMBER" } };
+    //     }
+
+    //     const execUsers = execTeam.users || [];
+    //     const execTeamName = execTeam.attributes?.friendlyName || execTeam.name;
+
+    //     if (execUsers.length === 0) {
+    //         return { root: { id: "error", name: "Exec Board Not Found", type: "ROOT_MEMBER" } };
+    //     }
+
+    //     // 2. Identify President (Primary Root)
+    //     let presidentIndex = execUsers.findIndex((u: any) => {
+    //         const role = u.attributes?.roles?.[execTeam.pk];
+    //         return role && role.toLowerCase().includes("president");
+    //     });
+    //     if (presidentIndex === -1) presidentIndex = 0;
+
+    //     // 3. Create President Node
+    //     const presidentUser = execUsers[presidentIndex];
+    //     const rootNode: OrgChartNode = {
+    //         id: execTeam.pk,
+    //         name: presidentUser.name,
+    //         type: "ROOT_MEMBER",
+    //         attributes: {
+    //             role: presidentUser.attributes?.roles?.[execTeam.pk] || "President",
+    //             email: presidentUser.email,
+    //             teamContext: [execTeamName],
+    //             realUserPk: presidentUser.pk,
+    //             avatar: await signAvatarUrl(presidentUser.pk, presidentUser.attributes.avatar)
+    //         },
+    //         siblings: [],
+    //         children: []
+    //     };
+
+    //     // 4. Add Other Execs as Siblings
+    //     // We use Promise.all to map async operations
+    //     await Promise.all(execUsers.map(async (u: any, idx: number) => {
+    //         if (idx === presidentIndex) return;
+    //         rootNode.siblings!.push({
+    //             id: u.pk.toString(), // Siblings are just people
+    //             name: u.name,
+    //             type: "ROOT_MEMBER",
+    //             attributes: {
+    //                 role: u.attributes?.roles?.[execTeam.pk] || "Executive",
+    //                 email: u.email,
+    //                 teamContext: [execTeamName],
+    //                 avatar: await signAvatarUrl(u.pk, u.attributes.avatar)
+    //             },
+    //             children: []
+    //         });
+    //     }));
+
+    //     // 5. Initialize Divisions
+    //     const divisions: Record<string, OrgChartNode> = {
+    //         [TeamType.PROJECT]: { id: "div_project", name: "Projects", type: "DIVISION", children: [], hasChildren: true },
+    //         [TeamType.BOOTCAMP]: { id: "div_bootcamp", name: "Bootcamp", type: "DIVISION", children: [], hasChildren: true },
+    //         [TeamType.CORPORATE]: { id: "div_corporate", name: "Corporate", type: "DIVISION", children: [], hasChildren: true },
+    //     };
+
+    //     // 6. Pre-populate Divisions with Team Owners (Level 3)
+    //     // We do this REGARDLESS of expandAll to ensure they are visible.
+    //     // We check for "Roots" of each type.
+    //     const allTeamsRes = await this.authentikClient.getGroupsList({ limit: 500, includeUsers: false }); // Light fetch for filtering
+    //     const allTeams = allTeamsRes.teams;
+
+    //     for (const type of Object.keys(divisions)) {
+    //         const divRoots = allTeams.filter(t =>
+    //             !t.flaggedForDeletion &&
+    //             t.teamType === type &&
+    //             !t.parent // Only "Root" teams of this type
+    //         );
+
+    //         for (const team of divRoots) {
+    //             // Fetch detailed info to get OWNERS
+    //             try {
+    //                 const detailedTeam = await this.authentikClient.getGroupInfo(team.pk, { includeUsers: true });
+    //                 const owners = detailedTeam.users || [];
+    //                 const teamName = detailedTeam.attributes?.friendlyName || detailedTeam.name;
+
+    //                 if (owners.length > 0) {
+    //                     const primaryOwner = owners[0]!;
+
+    //                     // Check if this team has subteams (to set hasChildren for the Owner)
+    //                     // Use the direct list from detailed info as source of truth
+    //                     const hasSubteams = (detailedTeam.subteamPkList && detailedTeam.subteamPkList.length > 0) || false;
+
+    //                     const ownerNode: OrgChartNode = {
+    //                         id: team.pk, // USES TEAM PK so expansion fetches Team Members
+    //                         name: primaryOwner.name,
+    //                         type: "PERSON",
+    //                         attributes: {
+    //                             role: primaryOwner.attributes?.roles?.[team.pk] || "Owner",
+    //                             email: primaryOwner.email,
+    //                             teamContext: [teamName],
+    //                             realUserPk: primaryOwner.pk,
+    //                             avatar: await signAvatarUrl(primaryOwner.pk, primaryOwner.attributes.avatar)
+    //                         },
+    //                         siblings: [],
+    //                         children: [],
+    //                         hasChildren: hasSubteams // Lazy load indicator
+    //                     };
+
+    //                     // Add sibling owners
+    //                     await Promise.all(owners.slice(1).map(async (o: any) => {
+    //                         ownerNode.siblings!.push({
+    //                             id: o.pk.toString(),
+    //                             name: o.name,
+    //                             type: "PERSON",
+    //                             attributes: {
+    //                                 role: o.attributes?.roles?.[team.pk] || "Co-Owner",
+    //                                 email: o.email,
+    //                                 avatar: await signAvatarUrl(o.pk, o.attributes.avatar)
+    //                             }
+    //                         });
+    //                     }));
+
+    //                     // If expandAll is true, populate children (Subteams)
+    //                     if (shouldExpandAll && hasSubteams) {
+    //                         // This part would duplicate the "getOrgChartNode" logic. 
+    //                         // For simplicity/robustness, we can leave it empty and let frontend lazy-load,
+    //                         // OR implemented the recursive fetching here.
+    //                         // Given "simplify", let's rely on the lazy load unless user REALLY wants full dump.
+    //                         // User script: "we just populate them prehand...?"
+    //                         // Let's populate if requested.
+    //                         const subMembers = await this.getAllSubteamMembers(team.pk, teamName, allTeams);
+    //                         ownerNode.children = subMembers;
+    //                     }
+
+    //                     if (divisions[type]) {
+    //                         divisions[type].children!.push(ownerNode);
+    //                     }
+    //                 }
+    //             } catch (e) {
+    //                 // console.error(`Failed to process team ${team.name}`, e);
+    //             }
+    //         }
+    //     }
+
+    //     // Attach populated divisions to Root
+    //     // Only attach if they have children (Teams)
+    //     const activeDivisions = Object.values(divisions).filter(d => d.children && d.children.length > 0);
+    //     rootNode.children = activeDivisions;
+    //     rootNode.hasChildren = activeDivisions.length > 0;
+
+    //     return { root: rootNode };
+    // }
+
+
     @Get("orgchart")
     @Tags("Team Management")
     @SuccessResponse(200)
     @Security("oidc")
     async getOrgChart(@Queries() options?: APIGetOrgChartOptions): Promise<APIGetOrgChartResponse> {
         const shouldExpandAll = options?.expandAll ?? true;
-
+        
         // 1. Fetch Root Team (Exec Board)
         let execTeam: any;
         try {
@@ -316,7 +477,7 @@ export class OrgController extends Controller {
         const execTeamName = execTeam.attributes?.friendlyName || execTeam.name;
 
         if (execUsers.length === 0) {
-            return { root: { id: "error", name: "Exec Board Not Found", type: "ROOT_MEMBER" } };
+            return { root: { id: "error", name: "Exec Board Not Found2", type: "ROOT_MEMBER" } };
         }
 
         // 2. Identify President (Primary Root)
@@ -327,7 +488,7 @@ export class OrgController extends Controller {
         if (presidentIndex === -1) presidentIndex = 0;
 
         // 3. Create President Node
-        const presidentUser = execUsers[presidentIndex];
+        const presidentUser = execUsers[presidentIndex]!;
         const rootNode: OrgChartNode = {
             id: execTeam.pk,
             name: presidentUser.name,
@@ -360,7 +521,7 @@ export class OrgController extends Controller {
                 children: []
             });
         }));
-
+        
         // 5. Initialize Divisions
         const divisions: Record<string, OrgChartNode> = {
             [TeamType.PROJECT]: { id: "div_project", name: "Projects", type: "DIVISION", children: [], hasChildren: true },
@@ -368,25 +529,32 @@ export class OrgController extends Controller {
             [TeamType.CORPORATE]: { id: "div_corporate", name: "Corporate", type: "DIVISION", children: [], hasChildren: true },
         };
 
+        let allTeamsRes: GetTeamsListDetailResponse;
+        try {
+            allTeamsRes = await this.authentikClient.getGroupsListDetail({ limit: 500, includeUsers: true });
+        } catch (e) {
+            return { root: { id: "error", name: "Could not fetch groups list.", type: "ROOT_MEMBER" } };
+        }
+        
+        const allTeams = allTeamsRes.teams;
+
         // 6. Pre-populate Divisions with Team Owners (Level 3)
         // We do this REGARDLESS of expandAll to ensure they are visible.
         // We check for "Roots" of each type.
-        const allTeamsRes = await this.authentikClient.getGroupsList({ limit: 500, includeUsers: false }); // Light fetch for filtering
-        const allTeams = allTeamsRes.teams;
-
-        for (const type of Object.keys(divisions)) {
+        for (const type of Object.keys(divisions)) 
+        {
             const divRoots = allTeams.filter(t =>
                 !t.flaggedForDeletion &&
                 t.teamType === type &&
                 !t.parent // Only "Root" teams of this type
             );
 
-            for (const team of divRoots) {
+            // for (const detailedTeam of divRoots) 
+            const nodes = await Promise.all(divRoots.map(async (detailedTeam) => {
                 // Fetch detailed info to get OWNERS
                 try {
-                    const detailedTeam = await this.authentikClient.getGroupInfo(team.pk, { includeUsers: true });
                     const owners = detailedTeam.users || [];
-                    const teamName = detailedTeam.attributes?.friendlyName || detailedTeam.name;
+                    const teamName = detailedTeam.friendlyName || detailedTeam.name;
 
                     if (owners.length > 0) {
                         const primaryOwner = owners[0]!;
@@ -396,11 +564,11 @@ export class OrgController extends Controller {
                         const hasSubteams = (detailedTeam.subteamPkList && detailedTeam.subteamPkList.length > 0) || false;
 
                         const ownerNode: OrgChartNode = {
-                            id: team.pk, // USES TEAM PK so expansion fetches Team Members
+                            id: detailedTeam.pk, // USES TEAM PK so expansion fetches Team Members
                             name: primaryOwner.name,
                             type: "PERSON",
                             attributes: {
-                                role: primaryOwner.attributes?.roles?.[team.pk] || "Owner",
+                                role: primaryOwner.attributes?.roles?.[detailedTeam.pk] || "Owner",
                                 email: primaryOwner.email,
                                 teamContext: [teamName],
                                 realUserPk: primaryOwner.pk,
@@ -412,18 +580,16 @@ export class OrgController extends Controller {
                         };
 
                         // Add sibling owners
-                        await Promise.all(owners.slice(1).map(async (o: any) => {
-                            ownerNode.siblings!.push({
-                                id: o.pk.toString(),
-                                name: o.name,
-                                type: "PERSON",
-                                attributes: {
-                                    role: o.attributes?.roles?.[team.pk] || "Co-Owner",
-                                    email: o.email,
-                                    avatar: await signAvatarUrl(o.pk, o.attributes.avatar)
-                                }
-                            });
-                        }));
+                        ownerNode.siblings = await Promise.all(owners.slice(1).map(async (o: any) => ({
+                            id: o.pk.toString(),
+                            name: o.name,
+                            type: "PERSON",
+                            attributes: {
+                                role: o.attributes?.roles?.[detailedTeam.pk] || "Co-Owner",
+                                email: o.email,
+                                avatar: await signAvatarUrl(o.pk, o.attributes.avatar)
+                            }
+                        })));
 
                         // If expandAll is true, populate children (Subteams)
                         if (shouldExpandAll && hasSubteams) {
@@ -433,19 +599,25 @@ export class OrgController extends Controller {
                             // Given "simplify", let's rely on the lazy load unless user REALLY wants full dump.
                             // User script: "we just populate them prehand...?"
                             // Let's populate if requested.
-                            const subMembers = await this.getAllSubteamMembers(team.pk, teamName, allTeams);
+                            const subMembers = await this.getAllSubteamMembers(detailedTeam.pk, teamName, allTeams);
                             ownerNode.children = subMembers;
                         }
 
-                        if (divisions[type]) {
-                            divisions[type].children!.push(ownerNode);
-                        }
+                        return ownerNode;
                     }
                 } catch (e) {
                     // console.error(`Failed to process team ${team.name}`, e);
                 }
+            }));
+
+            if (divisions[type]) {
+                divisions[type].children = nodes.filter((node) => node !== undefined);
             }
+            
+
         }
+
+
 
         // Attach populated divisions to Root
         // Only attach if they have children (Teams)
@@ -495,14 +667,18 @@ export class OrgController extends Controller {
 
         // 2. Fetch all context to check structure (optional optimization: cache this?)
         // We need this to check for deeper nesting if we support recursion.
-        const allTeamsRes = await this.authentikClient.getGroupsList({ limit: 1000, includeUsers: false });
+
+        /* For now, allTeamsContext is unused in getAllSubteamMembers, so we don't need to make this call. */
+        // const allTeamsRes = await this.authentikClient.getGroupsList({ limit: 1000, includeUsers: false });
 
         // 3. Get Members (Subteams + Direct Members if any not owners?) 
         // Logic: "subteam members... added as reporting under"
         // Authentik structure: Root Team has "Owners" (Users) and "Subteams" (Groups). Users in Subteams are the members.
 
         const rootTeamName = teamInfo.attributes?.friendlyName || teamInfo.name;
-        const subMembers = await this.getAllSubteamMembers(safeTeamId, rootTeamName, allTeamsRes.teams);
+
+        // const subMembers = await this.getAllSubteamMembers(safeTeamId, rootTeamName, allTeamsRes.teams);
+        const subMembers = await this.getAllSubteamMembers(safeTeamId, rootTeamName, []); // Removed unnecessary allTeamsRes (unused)
 
         // Re-construct the Parent Node (Team Owner) to return with children
         // The frontend merges this result.

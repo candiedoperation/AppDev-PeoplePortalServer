@@ -18,7 +18,7 @@
 
 import axios from "axios"
 import log from "loglevel"
-import { AddGroupMemberRequest, AuthentikClientError, AuthentikServerVersion, CreateTeamRequest, CreateUserRequest, GetGroupInfoRequestOptions, GetGroupInfoResponse as GetGroupInfoResponse, GetTeamsListOptions as GetGroupsListOptions, GetTeamsListResponse as GetGroupsListResponse, GetTeamsForUsernameResponse, GetUserListOptions, GetUserListResponse, RemoveGroupMemberRequest, TeamAttributeDefinition, TeamInformationBrief, UserAttributeDefinition, UserInformationBrief, AuthentikFilterCursor, ServiceSeasonType, AuthentikClientErrorType, TeamType, UserInformationDetail } from "./models"
+import { AddGroupMemberRequest, AuthentikClientError, AuthentikServerVersion, CreateTeamRequest, CreateUserRequest, GetGroupInfoRequestOptions, GetGroupInfoResponse as GetGroupInfoResponse, GetTeamsListOptions as GetGroupsListOptions, GetTeamsListResponse as GetGroupsListResponse, GetTeamsForUsernameResponse, GetUserListOptions, GetUserListResponse, RemoveGroupMemberRequest, TeamAttributeDefinition, TeamInformationBrief, UserAttributeDefinition, UserInformationBrief, AuthentikFilterCursor, ServiceSeasonType, AuthentikClientErrorType, TeamType, UserInformationDetail, UserInformationPartial, TeamInformationDetail, GetTeamsListDetailResponse } from "./models"
 import { sanitizeGroupName } from "../../utils/strings"
 import { EnabledRootSettings } from "../../controllers/OrgController"
 import { BindleController, EnabledBindlePermissions } from "../../controllers/BindleController"
@@ -362,6 +362,171 @@ export class AuthentikClient {
                             name: entry.name,
                             pk: entry.pk,
                             parent: parentPk,
+                            ...entry.attributes
+                        });
+                    }
+
+                    /* Advance Cursor Index */
+                    currentCursor.authentikIndex = i + 1;
+
+                    /* If limit reached, break loop */
+                    if (collectedTeams.length >= limit) {
+                        break;
+                    }
+                }
+
+                /* Check if we need to advance to next page */
+                if (collectedTeams.length < limit) {
+                    if (currentCursor.authentikPage < totalPages) {
+                        currentCursor.authentikPage++;
+                        currentCursor.authentikIndex = 0; /* Reset index for new page */
+                    } else {
+                        hasMorePages = false; /* EOF */
+                    }
+                }
+            }
+
+            /* Construct Next Cursor */
+            let nextCursor: string | undefined = undefined;
+            if (hasMorePages) {
+                nextCursor = Buffer.from(JSON.stringify(currentCursor)).toString('base64');
+            }
+
+            return {
+                teams: collectedTeams,
+                ...(nextCursor && { nextCursor })
+            };
+
+        } catch (e) {
+            log.error(AuthentikClient.TAG, "Get Teams List Request Failed with Error: ", e)
+            throw new AuthentikClientError(AuthentikClientErrorType.GROUPLIST_REQUEST_FAILED)
+        }
+    }
+
+    /**
+     * Fetches list of groups from Authentik and filters for People Portal Creations,
+     * filters out subteams and returns only root level groups. Method provides infinite
+     * scrolling support via Base64 encoded cursor pagination. Returns detailed team
+     * information rather than brief team information, allowing for avoidance of redundant
+     * API calls.
+     * 
+     * @param options Get Groups Options
+     * @returns List of Groups
+     */
+    public getGroupsListDetail = async (options: GetGroupsListOptions): Promise<GetTeamsListDetailResponse> => {
+        /* Default Limits */
+        const limit = options.limit ?? 20;
+
+        /* Initial Cursor State */
+        let currentCursor: AuthentikFilterCursor = {
+            authentikPage: 1,
+            authentikIndex: 0,
+            searchHash: Buffer.from(options.search ?? "").toString('base64')
+        };
+
+        /* Decode Cursor if provided */
+        if (options.cursor) {
+            try {
+                const decoded = JSON.parse(Buffer.from(options.cursor, 'base64').toString('ascii'));
+
+                /* Check Search Hash Consistency */
+                const currentSearchHash = Buffer.from(options.search ?? "").toString('base64');
+                if (decoded.searchHash === currentSearchHash) {
+                    currentCursor = decoded;
+                }
+            } catch (e) {
+                log.warn(AuthentikClient.TAG, "Invalid Cursor Provided, resetting to start.");
+            }
+        }
+
+        const collectedTeams: TeamInformationDetail[] = [];
+        let hasMorePages = true;
+
+        try {
+            while (collectedTeams.length < limit && hasMorePages) {
+                var RequestConfig: any = {
+                    ...this.AxiosBaseConfig,
+                    method: 'get',
+                    url: '/api/v3/core/groups/',
+                    params: {
+                        include_users: true,
+                        include_children: true,
+                        is_superuser: false,
+                        page: currentCursor.authentikPage,
+                        page_size: 100, /* Fetch larger chunks internally */
+                        ordering: 'name', /* Standard Order for Streaming */
+                    }
+                }
+
+                if (options.includeUsers)
+                    RequestConfig.params.include_users = options.includeUsers
+
+                if (options.search)
+                    RequestConfig.params.search = options.search
+
+                const res = await axios.request(RequestConfig);
+                const results = res.data.results;
+                const totalPages = Math.ceil(res.data.pagination.count / 100);
+
+                /* Iterate current page starting from cursor index */
+                for (let i = currentCursor.authentikIndex; i < results.length; i++) {
+                    const entry = results[i];
+
+                    /* Filter Logic */
+                    const parentPk = entry.parent ?? entry.parents?.[0] ?? null;  /* 01-19-2026 (@atheesh): Filtering Patches to support Authentik v2025.12+ */
+                    const isMatch = entry.attributes.peoplePortalCreation && ((options.subgroupsOnly) ? parentPk : !parentPk);
+
+                    let parent_obj: TeamInformationBrief | undefined = undefined;
+                    if (parentPk !== null && entry.parent_obj != null) {
+                        console.log(entry.parents_obj);
+                        for (const parent of entry.parents_obj) {
+                            if (parent.pk === parentPk) {
+                                parent_obj = parent;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    let users: UserInformationPartial[] = [];
+                    if (entry.users_obj != null) {
+                        users = entry.users_obj.map((user_obj: { 
+                            pk: number, username: string, name: string, is_active: boolean, 
+                            last_login: Date, email: string, attributes: UserAttributeDefinition, uid: string 
+                        }) => {
+                            return {
+                                pk: user_obj.pk,
+                                username: user_obj.username,
+                                name: user_obj.name,
+                                email: user_obj.email,
+                                active: user_obj.is_active,
+                                attributes: user_obj.attributes,
+                            };
+                        });
+                    }
+                    
+                    let subteams: TeamInformationBrief[] = [];
+                    if (entry.children_obj != null) {
+                        subteams = entry.children_obj.map((subteam: {
+                            pk: string, name: string, is_superuser: boolean, attributes: TeamAttributeDefinition, group_uuid: string,
+                        }) => {
+                            return {
+                                pk: subteam.pk,
+                                name: subteam.name,
+                                parent: entry.pk,
+                                ...subteam.attributes
+                            };
+                        });
+                    }
+
+                    if (isMatch) {
+                        collectedTeams.push({
+                            pk: entry.pk,
+                            name: entry.name,
+                            users: users,
+                            parentPk: parentPk,
+                            parentInfo: parent_obj,
+                            subteamPkList: entry.children,
+                            subteams: subteams,
                             ...entry.attributes
                         });
                     }
