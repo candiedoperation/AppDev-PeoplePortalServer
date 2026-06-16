@@ -109,6 +109,7 @@ export class EmailClient {
         console.log(`From: ${request.from ?? process.env.PEOPLEPORTAL_SMTP_USER}`);
         console.log(`To: ${request.to}`);
         console.log(`cc: ${request.cc ?? 'None'}`);
+        console.log(`bcc: ${request.bcc ?? `None`}`);
         console.log(`Subject: ${request.subject}`);
         console.log(`Body Preview:\n${resolvedBody}`);
     }

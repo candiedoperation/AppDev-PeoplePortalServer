@@ -1362,7 +1362,6 @@ export class OrgController extends Controller {
 
             if (execEmails.length < 1)
                 throw new CustomValidationError(500, "No Executive Board Members found. Please contact an Administrator.");
-
             /* Submit Request */
             const teamCreationRequest = await TeamCreationRequest.create({
                 requestorPk: authorizedUser.pk,
