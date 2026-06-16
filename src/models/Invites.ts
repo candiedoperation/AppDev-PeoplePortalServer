@@ -31,7 +31,10 @@ export interface IInvite extends Document {
 const inviteSchema = new Schema<IInvite>({
   inviteName: {
     type: String,
-    required: true
+    required: true,
+    minlength: [2, 'Name must be at least 2 characters'],
+    maxlength: [60, 'Name must be at most 60 characters'],
+    match: [/^[A-Za-z .'-]+$/, "Invalid name. Use only letters, spaces, apostrophes, periods, and hyphens."]
   },
   inviteEmail: {
     type: String,
