@@ -103,11 +103,6 @@ export function validatePersonName(name: string): string {
     );
   }
 
-  // Ensure at least one letter exists
-  if (!/[A-Za-z]/.test(trimmed)) {
-    throw new CustomValidationError(400, 'Invalid name. Must contain at least one letter.');
-  }
-
   // Enforce presence of first and last name (at least two name parts with letters)
   // Example valid: "Jane Doe", "Mary-Kate O'Neil", "J. Smith"
   const parts = trimmed.split(/\s+/).filter(p => p.length > 0);
