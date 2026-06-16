@@ -31,7 +31,7 @@ import { s3Client, BUCKET_NAME } from '../clients/AWSClient/S3Client';
 import { GetObjectCommand, PutObjectCommand, CopyObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { createPresignedPost } from "@aws-sdk/s3-presigned-post";
-import { sanitizeUserFullName, validateTeamName, capitalizeString } from '../utils/strings';
+import { sanitizeUserFullName, validateTeamName, capitalizeString, validatePersonName } from '../utils/strings';
 import { BindleController, EnabledBindlePermissions } from '../controllers/BindleController';
 import { AuthorizedUser } from '../clients/OpenIdClient';
 import { executiveAuthVerify } from '../auth';
@@ -626,8 +626,9 @@ export class OrgController extends Controller {
         @Request() req: express.Request | ExpressRequestAuthUserShim & ExpressRequestBindleShim,
         @Body() inviteReq: APITeamInviteCreateRequest
     ) {
-        /* Sanitize Request */
-        inviteReq.inviteeName = capitalizeString(inviteReq.inviteeName);
+        /* Validate & Normalize Name */
+        const cleanedName = validatePersonName(inviteReq.inviteeName);
+        inviteReq.inviteeName = capitalizeString(cleanedName);
 
         /* Check if Email is in Supported Domain */
         if (!inviteReq.inviteeEmail.endsWith("@terpmail.umd.edu")) {

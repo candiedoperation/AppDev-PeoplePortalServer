@@ -77,6 +77,44 @@ export function sanitizeUserFullName(fullName: string): string {
 }
 
 /**
+ * Validates a human full name coming from the frontend.
+ * - Trims whitespace
+ * - Enforces length between 2 and 60 characters
+ * - Allows letters, spaces, apostrophes, periods, and hyphens
+ * - Must contain at least one letter
+ * Returns the trimmed name if valid; throws CustomValidationError otherwise.
+ */
+export function validatePersonName(name: string): string {
+  const trimmed = (name ?? '').trim();
+
+  if (trimmed.length < 2 || trimmed.length > 60) {
+    throw new CustomValidationError(
+      400,
+      'Invalid name. Must be between 2 and 60 characters.'
+    );
+  }
+
+  // Allow letters in any case, spaces, apostrophes, periods, and hyphens
+  const allowed = /^[A-Za-z .'-]+$/;
+  if (!allowed.test(trimmed)) {
+    throw new CustomValidationError(
+      400,
+      "Invalid name. Use only letters, spaces, apostrophes, periods, and hyphens."
+    );
+  }
+
+  // Enforce presence of first and last name (at least two name parts with letters)
+  // Example valid: "Jane Doe", "Mary-Kate O'Neil", "J. Smith"
+  const parts = trimmed.split(/\s+/).filter(p => p.length > 0);
+  const alphaParts = parts.filter(p => /[A-Za-z]/.test(p));
+  if (alphaParts.length < 2) {
+    throw new CustomValidationError(400, 'Please enter a first and last name.');
+  }
+
+  return trimmed;
+}
+
+/**
  * Formats a bindle access error message listing team owners and missing bindles.
  */
 export function formatBindleAccessError(owners: string[], missingBindles: string[]): string {
