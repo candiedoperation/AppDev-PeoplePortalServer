@@ -169,14 +169,14 @@ export const DefinedJobs: Record<string, {
                 }
                 
 
-                if (event.marketingChannels.includes("slack")) {
+                if (event.marketingChannels?.includes("slack")) {
                     const success = await JobHelperFunctions.sendEventReminderSlack(event, relTime);
                     if (!success) {
                         console.error("Failed to send Slack reminders for event:", event._id);
                     }
                 }
 
-                if (event.marketingChannels.includes("discord")) {
+                if (event.marketingChannels?.includes("discord")) {
                     const success = await JobHelperFunctions.sendEventReminderDiscord(event, relTime);
                     if (!success) {
                         console.error("Failed to send Discord reminders for event:", event._id);
@@ -195,19 +195,19 @@ export const DefinedJobs: Record<string, {
             }
 
             try {
-                if (event.marketingChannels.includes("email")) {
+                if (event.marketingChannels?.includes("email")) {
                     const emailClient = new EmailClient();
                     await JobHelperFunctions.sendEventReminderEmail(event, emailClient, "2 Hour");
                 }
                 
-                if (event.marketingChannels.includes("slack")) {
+                if (event.marketingChannels?.includes("slack")) {
                     const success = await JobHelperFunctions.sendEventReminderSlack(event, "2 Hour");
                     if (!success) {
                         console.error("Failed to send Slack reminders for event:", event._id);
                     }
                 }
 
-                if (event.marketingChannels.includes("discord")) {
+                if (event.marketingChannels?.includes("discord")) {
                     const success = await JobHelperFunctions.sendEventReminderDiscord(event, "2 Hour");
                     if (!success) {
                         console.error("Failed to send Discord reminders for event:", event._id);
