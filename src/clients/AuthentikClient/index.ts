@@ -478,7 +478,6 @@ export class AuthentikClient {
 
                     let parent_obj: TeamInformationBrief | undefined = undefined;
                     if (parentPk !== null && entry.parent_obj != null) {
-                        console.log(entry.parents_obj);
                         for (const parent of entry.parents_obj) {
                             if (parent.pk === parentPk) {
                                 parent_obj = parent;
