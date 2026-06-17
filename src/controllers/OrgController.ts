@@ -41,10 +41,8 @@ import { CustomValidationError, ResourceAccessError, SharedResourcesError } from
 import { ExpressRequestBindleExtension } from '../types/express';
 import { validateS3FileSignature, FILE_SIGNATURES } from '../utils/s3-validation';
 import { signAvatarUrl } from '../utils/avatars';
-import MarkdownIt from "markdown-it";
 import zxcvbn from 'zxcvbn';
 import { IUserReview, UserReview } from '../models/UserReview';
-import { stringify } from 'querystring';
 
 type DocumentJSON<T> = FlattenMaps<T> & Required<{ _id: Types.ObjectId; }> & { __v: number; };
 
@@ -73,17 +71,22 @@ interface APIGetReviewsOptions {
     before?: Date;
     after?: Date;
     teamId?: Date;
+
     sortBy?: "updatedAt" | "rating";
     ascending?: boolean;
+
     offset?: number;
     limit?: number;
+
+    getAggregateData?: boolean;
 }
 
 interface APIGetReviewsResponse {
     reviews: DocumentJSON<IUserReview>[];
-    pagination: {
-        totalReviews: number;
-    }
+    aggregateData?: {
+        totalReviews: number,
+        averageRating: number
+    };
 }
 
 interface APICreateReviewRequest {
@@ -391,14 +394,19 @@ export class OrgController extends Controller {
     @SuccessResponse(200)
     @Security("executive")
     async getReviews(
-        @Request() req: express.Request,
         @Path() personId: number,
         @Queries() options: APIGetReviewsOptions
     ): Promise<APIGetReviewsResponse> {
         
+        // Max 100 reviews returned.
         const limit = Math.min(100, options.limit ?? 10);
-        if (limit < 1) {
-            throw new CustomValidationError(400, "Limit must be a positive integer.");
+
+        if (limit < 0) {
+            throw new CustomValidationError(400, "Limit can not be negative.");
+        }
+
+        if (options.before && options.after && options.before.getTime() < options.after.getTime()) {
+            throw new CustomValidationError(400, "'before' can not be after 'after'.");
         }
 
         // Build query
@@ -413,6 +421,32 @@ export class OrgController extends Controller {
             ...(options.teamId !== undefined && { teamId: options.teamId }),
         };
 
+        // Just return the aggregate data
+        if (limit == 0) {
+            if (options.getAggregateData === false) {
+                return { reviews: [] };
+            }
+            try {
+                const result = await UserReview.aggregate([
+                    { $match: filters },
+                    { $facet: {
+                        stats: [
+                            { $group: {
+                                _id: null,
+                                average: { $avg: "$rating" },
+                                count: { $sum: 1 } 
+                            }}
+                        ]
+                    }}
+                ]).exec();
+                const { average, count } = result[0]?.stats[0] ?? { average: 0, count: 0 };
+
+                return { reviews: [], aggregateData: { totalReviews: count, averageRating: average } };
+            } catch (e) {
+                throw new ResourceAccessError(500, `Failed to fetch reviews: ${e}`);
+            }
+        }
+
         let query = UserReview.find(filters);
 
         if (options.sortBy !== undefined) {
@@ -423,9 +457,25 @@ export class OrgController extends Controller {
         query = query.skip(options.offset ?? 0).limit(limit);
 
         try {
-            const results = await query.lean().exec();
-            const totalReviews = await UserReview.countDocuments(filters).lean().exec();
-            return { reviews: results, pagination: { totalReviews: totalReviews } };
+            if (options.getAggregateData === false) {
+                const results = await query.lean().exec();
+                return { reviews: results };
+            }
+
+            const [results, aggregateResult] = await Promise.all([
+                await query.lean().exec(),
+                await UserReview.aggregate([
+                    { $match: filters },
+                    { $facet: { stats: [{ $group: {
+                        _id: null,
+                        average: { $avg: "$rating" },
+                        count: { $sum: 1 } 
+                    }}]}}
+                ]).exec()
+            ]);
+
+            const { average, count } = aggregateResult[0]?.stats[0] ?? { average: 0, count: 0 };
+            return { reviews: results, aggregateData: { totalReviews: count, averageRating: average } };
 
         } catch (e) {
             throw new ResourceAccessError(500, `Failed to fetch reviews: ${e}`);

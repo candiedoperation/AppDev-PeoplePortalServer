@@ -216,7 +216,7 @@ const models: TsoaRoute.Models = {
         "dataType": "refObject",
         "properties": {
             "reviews": {"dataType":"array","array":{"dataType":"refAlias","ref":"DocumentJSON_IUserReview_"},"required":true},
-            "pagination": {"dataType":"nestedObjectLiteral","nestedProperties":{"totalReviews":{"dataType":"double","required":true}},"required":true},
+            "aggregateData": {"dataType":"nestedObjectLiteral","nestedProperties":{"averageRating":{"dataType":"double","required":true},"totalReviews":{"dataType":"double","required":true}}},
         },
         "additionalProperties": false,
     },
@@ -231,6 +231,7 @@ const models: TsoaRoute.Models = {
             "ascending": {"dataType":"boolean"},
             "offset": {"dataType":"double"},
             "limit": {"dataType":"double"},
+            "getAggregateData": {"dataType":"boolean"},
         },
         "additionalProperties": false,
     },
@@ -1014,7 +1015,6 @@ export function RegisterRoutes(app: Router) {
         });
         // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
         const argsOrgController_getReviews: Record<string, TsoaRoute.ParameterSchema> = {
-                req: {"in":"request","name":"req","required":true,"dataType":"object"},
                 personId: {"in":"path","name":"personId","required":true,"dataType":"double"},
                 options: {"in":"queries","name":"options","required":true,"ref":"APIGetReviewsOptions"},
         };
