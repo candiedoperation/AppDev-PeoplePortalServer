@@ -315,11 +315,11 @@ export class OrgController extends Controller {
         const authorizedUser = req.session.authorizedUser!;
 
         const [userTeams, requesterTeams] = await Promise.all([
-            await this.authentikClient.getRootTeamsForUsername(userInfo.username)
+            this.authentikClient.getRootTeamsForUsername(userInfo.username)
                 .catch((e) => { 
                     throw new ResourceAccessError(400, `Failed to fetch user teams: ${e}`) 
                 }),
-            await this.authentikClient.getRootTeamsForUsername(authorizedUser.username)
+            this.authentikClient.getRootTeamsForUsername(authorizedUser.username)
                 .catch((e) => { 
                     throw new ResourceAccessError(400, `Failed to fetch user teams: ${e}`) 
                 })
@@ -389,6 +389,17 @@ export class OrgController extends Controller {
         }
     }
 
+
+    /**
+     * Gets a list of reviews made on the given person. Requires
+     * executive permissions. Options can be given to filter,
+     * sort, and attain aggregate data such as average rating
+     * and total review count (with the filters applied).
+     * 
+     * @param personId pk of the person.
+     * @param options APIGetReviewsOptions
+     * @returns APIGetReviewsResponse
+     */
     @Get("people/{personId}/reviews")
     @Tags("People Management")
     @SuccessResponse(200)
@@ -406,7 +417,7 @@ export class OrgController extends Controller {
         }
 
         if (options.before && options.after && options.before.getTime() < options.after.getTime()) {
-            throw new CustomValidationError(400, "'before' can not be after 'after'.");
+            throw new CustomValidationError(400, "The 'before' timestamp can not be before the 'after' timestamp.");
         }
 
         // Build query
@@ -422,7 +433,7 @@ export class OrgController extends Controller {
         };
 
         // Just return the aggregate data
-        if (limit == 0) {
+        if (limit === 0) {
             if (options.getAggregateData === false) {
                 return { reviews: [] };
             }
@@ -463,8 +474,8 @@ export class OrgController extends Controller {
             }
 
             const [results, aggregateResult] = await Promise.all([
-                await query.lean().exec(),
-                await UserReview.aggregate([
+                query.lean().exec(),
+                UserReview.aggregate([
                     { $match: filters },
                     { $facet: { stats: [{ $group: {
                         _id: null,
