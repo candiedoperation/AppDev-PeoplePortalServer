@@ -166,6 +166,8 @@ const models: TsoaRoute.Models = {
             "teamType": {"ref":"TeamType","required":true},
             "seasonType": {"dataType":"union","subSchemas":[{"ref":"SeasonType"},{"ref":"ServiceSeasonType"}],"required":true},
             "seasonYear": {"dataType":"double","required":true},
+            "teamStartDate": {"dataType":"string","required":true},
+            "teamEndDate": {"dataType":"string","required":true},
             "peoplePortalCreation": {"dataType":"boolean"},
             "flaggedForDeletion": {"dataType":"boolean"},
             "description": {"dataType":"string","required":true},
@@ -319,6 +321,8 @@ const models: TsoaRoute.Models = {
             "teamType": {"ref":"TeamType","required":true},
             "seasonType": {"dataType":"union","subSchemas":[{"ref":"SeasonType"},{"ref":"ServiceSeasonType"}],"required":true},
             "seasonYear": {"dataType":"double","required":true},
+            "teamStartDate": {"dataType":"string","required":true},
+            "teamEndDate": {"dataType":"string","required":true},
             "peoplePortalCreation": {"dataType":"boolean"},
             "flaggedForDeletion": {"dataType":"boolean"},
             "description": {"dataType":"string","required":true},
@@ -354,6 +358,8 @@ const models: TsoaRoute.Models = {
             "seasonType": {"ref":"SeasonType","required":true},
             "seasonYear": {"dataType":"double","required":true},
             "description": {"dataType":"string","required":true},
+            "teamStartDate": {"dataType":"string"},
+            "teamEndDate": {"dataType":"string","required":true},
             "requestorRole": {"dataType":"string","required":true},
         },
         "additionalProperties": false,
@@ -383,8 +389,10 @@ const models: TsoaRoute.Models = {
         "properties": {
             "friendlyName": {"dataType":"string","validators":{"minLength":{"value":1}}},
             "description": {"dataType":"string","validators":{"minLength":{"value":1}}},
+            "teamStartDate": {"dataType":"string"},
+            "teamEndDate": {"dataType":"string"},
         },
-        "additionalProperties": {"dataType":"string"},
+        "additionalProperties": false,
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
     "APITeamMeetingResponse": {
@@ -392,11 +400,12 @@ const models: TsoaRoute.Models = {
         "properties": {
             "_id": {"dataType":"string","required":true},
             "teamPk": {"dataType":"string","required":true},
+            "seriesId": {"dataType":"string","required":true},
+            "recurring": {"dataType":"boolean","required":true},
             "name": {"dataType":"string","required":true},
             "description": {"dataType":"string","required":true},
-            "day": {"dataType":"double","required":true},
-            "start": {"dataType":"double","required":true},
-            "end": {"dataType":"double","required":true},
+            "start": {"dataType":"datetime","required":true},
+            "end": {"dataType":"datetime","required":true},
             "createdBy": {"dataType":"double","required":true},
             "createdAt": {"dataType":"datetime","required":true},
             "updatedAt": {"dataType":"datetime","required":true},
@@ -407,23 +416,28 @@ const models: TsoaRoute.Models = {
     "APITeamMeetingCreateRequest": {
         "dataType": "refObject",
         "properties": {
-            "name": {"dataType":"string","required":true,"validators":{"minLength":{"value":1}}},
+            "name": {"dataType":"string","required":true},
             "description": {"dataType":"string"},
-            "day": {"dataType":"double","required":true,"validators":{"minimum":{"value":0},"maximum":{"value":4}}},
-            "start": {"dataType":"double","required":true},
-            "end": {"dataType":"double","required":true},
+            "start": {"dataType":"datetime","required":true},
+            "end": {"dataType":"datetime","required":true},
+            "recurring": {"dataType":"boolean"},
         },
         "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "MeetingScope": {
+        "dataType": "refAlias",
+        "type": {"dataType":"union","subSchemas":[{"dataType":"enum","enums":["this"]},{"dataType":"enum","enums":["following"]},{"dataType":"enum","enums":["all"]}],"validators":{}},
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
     "APITeamMeetingUpdateRequest": {
         "dataType": "refObject",
         "properties": {
-            "name": {"dataType":"string","validators":{"minLength":{"value":1}}},
+            "name": {"dataType":"string"},
             "description": {"dataType":"string"},
-            "day": {"dataType":"double","validators":{"minimum":{"value":0},"maximum":{"value":4}}},
-            "start": {"dataType":"double"},
-            "end": {"dataType":"double"},
+            "start": {"dataType":"datetime"},
+            "end": {"dataType":"datetime"},
+            "scope": {"ref":"MeetingScope"},
         },
         "additionalProperties": false,
     },
@@ -1770,6 +1784,8 @@ export function RegisterRoutes(app: Router) {
         // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
         const argsMeetingsController_getTeamMeetings: Record<string, TsoaRoute.ParameterSchema> = {
                 teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
+                from: {"in":"query","name":"from","dataType":"datetime"},
+                to: {"in":"query","name":"to","dataType":"datetime"},
         };
         app.get('/api/org/teams/:teamId/meetings',
             authenticateMiddleware([{"oidc":[]}]),
@@ -1805,7 +1821,7 @@ export function RegisterRoutes(app: Router) {
                 body: {"in":"body","name":"body","required":true,"ref":"APITeamMeetingCreateRequest"},
         };
         app.post('/api/org/teams/:teamId/meetings',
-            authenticateMiddleware([{"oidc":[]}]),
+            authenticateMiddleware([{"bindles":["corp:meetingsmgmt"]}]),
             ...(fetchMiddlewares<RequestHandler>(MeetingsController)),
             ...(fetchMiddlewares<RequestHandler>(MeetingsController.prototype.createTeamMeeting)),
 
@@ -1838,7 +1854,7 @@ export function RegisterRoutes(app: Router) {
                 body: {"in":"body","name":"body","required":true,"ref":"APITeamMeetingUpdateRequest"},
         };
         app.patch('/api/org/teams/:teamId/meetings/:meetingId',
-            authenticateMiddleware([{"oidc":[]}]),
+            authenticateMiddleware([{"bindles":["corp:meetingsmgmt"]}]),
             ...(fetchMiddlewares<RequestHandler>(MeetingsController)),
             ...(fetchMiddlewares<RequestHandler>(MeetingsController.prototype.updateTeamMeeting)),
 
@@ -1868,9 +1884,10 @@ export function RegisterRoutes(app: Router) {
         const argsMeetingsController_deleteTeamMeeting: Record<string, TsoaRoute.ParameterSchema> = {
                 teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
                 meetingId: {"in":"path","name":"meetingId","required":true,"dataType":"string"},
+                scope: {"in":"query","name":"scope","ref":"MeetingScope"},
         };
         app.delete('/api/org/teams/:teamId/meetings/:meetingId',
-            authenticateMiddleware([{"oidc":[]}]),
+            authenticateMiddleware([{"bindles":["corp:meetingsmgmt"]}]),
             ...(fetchMiddlewares<RequestHandler>(MeetingsController)),
             ...(fetchMiddlewares<RequestHandler>(MeetingsController.prototype.deleteTeamMeeting)),
 

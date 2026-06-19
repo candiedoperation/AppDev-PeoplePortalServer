@@ -20,14 +20,12 @@ import { Schema, model, Document } from 'mongoose';
 
 export interface ITeamMeeting extends Document {
     teamPk: string;
+    /** Groups all occurrences generated from one create request */
+    seriesId: string;
     name: string;
     description: string;
-    /** 0 = Monday … 4 = Friday */
-    day: number;
-    /** Decimal hour, e.g. 9.5 = 9:30 AM */
-    start: number;
-    /** Decimal hour, e.g. 10.5 = 10:30 AM */
-    end: number;
+    start: Date;
+    end: Date;
     /** Authentik user PK of the person who created the meeting */
     createdBy: number;
     createdAt: Date;
@@ -36,11 +34,11 @@ export interface ITeamMeeting extends Document {
 
 const TeamMeetingSchema = new Schema<ITeamMeeting>({
     teamPk:      { type: String, required: true, index: true },
+    seriesId:    { type: String, required: true, index: true },
     name:        { type: String, required: true },
     description: { type: String, default: '' },
-    day:         { type: Number, required: true, min: 0, max: 4 },
-    start:       { type: Number, required: true },
-    end:         { type: Number, required: true },
+    start:       { type: Date, required: true },
+    end:         { type: Date, required: true },
     createdBy:   { type: Number, required: true },
 }, { timestamps: true });
 

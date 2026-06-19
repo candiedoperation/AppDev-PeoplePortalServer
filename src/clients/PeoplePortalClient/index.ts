@@ -57,6 +57,11 @@ export class PeoplePortalClient implements SharedResourceClient {
             friendlyName: "Allow Member Management",
             description: "Enabling this allows people in this subteam to add & remove members to your team",
         },
+
+        "corp:meetingsmgmt": {
+            friendlyName: "Allow Meeting Management",
+            description: "Enabling this allows members in this subteam to create, modify and delete team meetings",
+        },
     }
 
     async init(): Promise<void> {

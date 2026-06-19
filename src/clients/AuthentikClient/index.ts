@@ -89,7 +89,9 @@ export class AuthentikClient {
                         teamType: TeamType.SERVICE,
                         seasonType: ServiceSeasonType.ROLLING,
                         seasonYear: new Date().getFullYear(),
-                        description: rootTeamConfig.description
+                        description: rootTeamConfig.description,
+                        teamStartDate: new Date().toISOString().slice(0, 10),
+                        teamEndDate: new Date().toISOString().slice(0, 10),
                     }
                 })
 
@@ -124,7 +126,9 @@ export class AuthentikClient {
                             teamType: TeamType.CORPORATE,
                             seasonType: ServiceSeasonType.ROLLING,
                             seasonYear: new Date().getFullYear(),
-                            description: subTeam.description
+                            description: subTeam.description,
+                            teamStartDate: new Date().toISOString().slice(0, 10),
+                            teamEndDate: new Date().toISOString().slice(0, 10),
                         }
                     })
                     subTeamPk = createdSubTeam.pk;
@@ -566,14 +570,14 @@ export class AuthentikClient {
     }
 
     /**
-     * Validates and updates group information (Friendly Name & Description).
+     * Validates and updates group information (Friendly Name, Description, Team Dates).
      * 
      * @param teamId Target Team ID
      * @param conf Configuration object containing potential updates
      */
     public updateGroupInformation = async (teamId: string, conf: { [key: string]: string | undefined }) => {
-        /* Strictly restrict updates to only name and description to prevent attribute pollution */
-        const allowedFields = ["friendlyName", "description"];
+        /* Strictly restrict updates to allowed fields to prevent attribute pollution */
+        const allowedFields = ["friendlyName", "description", "teamStartDate", "teamEndDate"];
         const filteredConf: any = {};
 
         for (const key of allowedFields) {

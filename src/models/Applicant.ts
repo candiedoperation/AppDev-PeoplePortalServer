@@ -19,6 +19,7 @@
 import { Document, Schema, model } from "mongoose";
 
 export interface IApplicant extends Document {
+  _id: Schema.Types.ObjectId;
   email: string;
   fullName: string;
   profile: Map<string, string>; // Made required with default
