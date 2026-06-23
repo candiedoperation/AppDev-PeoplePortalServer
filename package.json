@@ -4,6 +4,7 @@
   "main": "app.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
+    "lint": "eslint src",
     "build": "tsoa spec-and-routes && tsc && cpx src/**/*.hbs dist",
     "start": "node dist/app.js",
     "dev": "npm run build && nodemon src/app.ts"
@@ -44,14 +45,18 @@
     "zxcvbn": "^4.4.2"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.3",
     "@types/express-session": "^1.18.2",
     "@types/node": "^24.3.0",
     "@types/nodemailer": "^7.0.1",
     "@types/nodemailer-express-handlebars": "^4.0.5",
+    "eslint": "^10.5.0",
+    "globals": "^17.7.0",
     "nodemon": "^3.1.10",
     "ts-node": "^10.9.2",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "typescript-eslint": "^8.62.0"
   }
 }
