@@ -17,46 +17,51 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-import { GetObjectCommand } from "@aws-sdk/client-s3";
-import { s3Client, BUCKET_NAME } from "../clients/AWSClient/S3Client";
+import { GetObjectCommand } from '@aws-sdk/client-s3'
+import { s3Client, BUCKET_NAME } from '../clients/AWSClient/S3Client'
 
 export const FILE_SIGNATURES = {
-    PNG: "89504e47",
-    JPEG: "ffd8ff",
-    GIF: "47494638",
-    WEBP: "52494646", // RIFF
-    PDF: "25504446"  // %PDF
-};
+  PNG: '89504e47',
+  JPEG: 'ffd8ff',
+  GIF: '47494638',
+  WEBP: '52494646', // RIFF
+  PDF: '25504446', // %PDF
+}
 
 /**
  * Validates the file signature (magic numbers) of a file stored in S3.
- * 
+ *
  * @param key The S3 key of the file to validate.
  * @param allowedSignatures An array of allowed hexadecimal signatures.
  * @returns Promise<boolean> True if the file signature matches any of the allowed signatures, false otherwise.
  */
-export async function validateS3FileSignature(key: string, allowedSignatures: string[]): Promise<boolean> {
-    try {
-        const { Body } = await s3Client.send(new GetObjectCommand({
-            Bucket: BUCKET_NAME,
-            Key: key,
-            Range: "bytes=0-7"
-        }));
+export async function validateS3FileSignature(
+  key: string,
+  allowedSignatures: string[]
+): Promise<boolean> {
+  try {
+    const { Body } = await s3Client.send(
+      new GetObjectCommand({
+        Bucket: BUCKET_NAME,
+        Key: key,
+        Range: 'bytes=0-7',
+      })
+    )
 
-        if (!Body) return false;
+    if (!Body) return false
 
-        const byteArray = await Body.transformToByteArray();
-        let header = "";
-        for (let i = 0; i < byteArray.length; i++) {
-            const byte = byteArray[i];
-            if (byte !== undefined) {
-                header += byte.toString(16).padStart(2, '0');
-            }
-        }
-
-        return allowedSignatures.some(sig => header.startsWith(sig.toLowerCase()));
-    } catch (e) {
-        console.error(`Signature check failed for key: ${key}`, e);
-        return false;
+    const byteArray = await Body.transformToByteArray()
+    let header = ''
+    for (let i = 0; i < byteArray.length; i++) {
+      const byte = byteArray[i]
+      if (byte !== undefined) {
+        header += byte.toString(16).padStart(2, '0')
+      }
     }
+
+    return allowedSignatures.some((sig) => header.startsWith(sig.toLowerCase()))
+  } catch (e) {
+    console.error(`Signature check failed for key: ${key}`, e)
+    return false
+  }
 }

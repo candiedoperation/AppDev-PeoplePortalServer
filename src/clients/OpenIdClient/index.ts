@@ -16,42 +16,42 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-import jwt from "jsonwebtoken"
-import jwksClient from 'jwks-rsa';
+import jwt from 'jsonwebtoken'
+import jwksClient from 'jwks-rsa'
 import * as client from 'openid-client'
-import { UserAttributeDefinition } from "../AuthentikClient/models";
+import { UserAttributeDefinition } from '../AuthentikClient/models'
 
 export interface AuthorizedUser {
-  sub: string,
-  email: string,
-  name: string,
-  pk: number,
-  attributes: UserAttributeDefinition,
-  is_superuser: boolean,
-  username: string,
+  sub: string
+  email: string
+  name: string
+  pk: number
+  attributes: UserAttributeDefinition
+  is_superuser: boolean
+  username: string
   groups: string[]
 }
 
 export interface AuthorizationStamp {
-  accessToken: string,
-  expiry: Date,
-  refreshToken?: string,
-  idToken?: string | undefined,
+  accessToken: string
+  expiry: Date
+  refreshToken?: string
+  idToken?: string | undefined
   user: AuthorizedUser
 }
 
 export interface RedirectionRequest {
-  redirectUrl: URL,
+  redirectUrl: URL
   expectedState: string
 }
 
 export class OpenIdClient {
-  private static config: client.Configuration | undefined;
+  private static config: client.Configuration | undefined
   private static code_challenge_method = 'S256'
   private static code_verifier = client.randomPKCECodeVerifier()
   private static code_challenge: string | undefined
   private static redirect_uri: string | undefined
-  private static jwksClient: jwksClient.JwksClient | undefined;
+  private static jwksClient: jwksClient.JwksClient | undefined
 
   public static async init() {
     this.config = await client.discovery(
@@ -74,11 +74,10 @@ export class OpenIdClient {
 
   public static startAuthFlow(): RedirectionRequest {
     /* We Init the Module before Accepting Conns */
-    if (!this.config || !this.code_challenge)
-      throw new Error("OpenID Client is Not Initialized!")
+    if (!this.config || !this.code_challenge) throw new Error('OpenID Client is Not Initialized!')
 
     const expectedState = client.randomState()
-    let parameters: Record<string, string> = {
+    const parameters: Record<string, string> = {
       redirect_uri: this.redirect_uri!,
       scope: 'openid profile email people_portal offline_access',
       code_challenge: this.code_challenge,
@@ -86,20 +85,22 @@ export class OpenIdClient {
     }
 
     parameters.state = expectedState
-    let redirectUrl = client.buildAuthorizationUrl(this.config, parameters)
+    const redirectUrl = client.buildAuthorizationUrl(this.config, parameters)
     return { redirectUrl, expectedState }
   }
 
-  public static async issueAuthorizationStamps(currentUrl: URL, expectedState: string): Promise<AuthorizationStamp> {
-    let tokens = await client.authorizationCodeGrant(this.config!, currentUrl, {
+  public static async issueAuthorizationStamps(
+    currentUrl: URL,
+    expectedState: string
+  ): Promise<AuthorizationStamp> {
+    const tokens = await client.authorizationCodeGrant(this.config!, currentUrl, {
       pkceCodeVerifier: this.code_verifier,
       idTokenExpected: true,
-      expectedState
+      expectedState,
     })
 
     const claims = tokens.claims()
-    if (!claims)
-      throw new Error("Failed to Obtain OIDC Claims!")
+    if (!claims) throw new Error('Failed to Obtain OIDC Claims!')
 
     return {
       accessToken: tokens.access_token,
@@ -112,10 +113,10 @@ export class OpenIdClient {
         name: claims.name as string,
         username: claims.preferred_username as string,
         groups: claims.groups as string[],
-        pk: (claims.pk as number),
-        attributes: (claims.attributes as unknown as UserAttributeDefinition),
-        is_superuser: claims.is_superuser as boolean
-      }
+        pk: claims.pk as number,
+        attributes: claims.attributes as unknown as UserAttributeDefinition,
+        is_superuser: claims.is_superuser as boolean,
+      },
     }
   }
 
@@ -131,9 +132,9 @@ export class OpenIdClient {
         },
 
         {
-          algorithms: ["RS256"],
+          algorithms: ['RS256'],
           ignoreExpiration: false,
-          audience: process.env.PEOPLEPORTAL_OIDC_CLIENTID
+          audience: process.env.PEOPLEPORTAL_OIDC_CLIENTID,
         },
 
         (err, decoded) => {
@@ -150,13 +151,11 @@ export class OpenIdClient {
   }
 
   public static async refreshAccessToken(refreshToken: string): Promise<AuthorizationStamp> {
-    if (!this.config)
-      throw new Error("OpenID Client is Uninitialized!")
+    if (!this.config) throw new Error('OpenID Client is Uninitialized!')
 
     const tokens = await client.refreshTokenGrant(this.config, refreshToken)
     const claims = tokens.claims()
-    if (!claims)
-      throw new Error("Failed to Obtain OIDC Claims from Refresh!")
+    if (!claims) throw new Error('Failed to Obtain OIDC Claims from Refresh!')
 
     return {
       accessToken: tokens.access_token,
@@ -169,16 +168,15 @@ export class OpenIdClient {
         name: claims.name as string,
         username: claims.preferred_username as string,
         groups: claims.groups as string[],
-        pk: (claims.pk as number),
-        attributes: (claims.attributes as unknown as UserAttributeDefinition),
-        is_superuser: claims.is_superuser as boolean
-      }
+        pk: claims.pk as number,
+        attributes: claims.attributes as unknown as UserAttributeDefinition,
+        is_superuser: claims.is_superuser as boolean,
+      },
     }
   }
 
   public static async getUserInfo(accessToken: string, sub: string) {
-    if (!this.config)
-      throw new Error("OpenID Client is Uninitialized!")
+    if (!this.config) throw new Error('OpenID Client is Uninitialized!')
 
     return await client.fetchUserInfo(this.config, accessToken, sub)
   }

@@ -17,16 +17,14 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-import { RootTeamSettingInfo } from "../../controllers/OrgController";
+import { RootTeamSettingInfo } from '../../controllers/OrgController'
 
 export interface AWSAccountTeamSetting extends RootTeamSettingInfo {
-    accountId: string
+  accountId: string
 }
 
-export interface AdditionalRootSettingParams {
-
-}
+export interface AdditionalRootSettingParams {}
 
 export interface AWSAdditionalParams extends AdditionalRootSettingParams {
-    budgetLimit: string
+  budgetLimit: string
 }
