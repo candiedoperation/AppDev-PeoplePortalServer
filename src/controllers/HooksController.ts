@@ -16,12 +16,12 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-import { Route, Controller, Get, SuccessResponse, Post, Body, Tags } from "tsoa";
-import { GiteaHookCommitTrigger, GiteaHookRepositoryTrigger } from "../clients/GiteaClient/models";
-import { GiteaClient } from "../clients/GiteaClient";
-import { AuthentikClient } from "../clients/AuthentikClient";
+import { Route, Controller, Get, SuccessResponse, Post, Body, Tags } from 'tsoa'
+import { GiteaHookCommitTrigger, GiteaHookRepositoryTrigger } from '../clients/GiteaClient/models'
+import { GiteaClient } from '../clients/GiteaClient'
+import { AuthentikClient } from '../clients/AuthentikClient'
 
-@Route("/api/webhook")
+@Route('/api/webhook')
 export class HooksController extends Controller {
   private readonly giteaClient: GiteaClient
   private readonly authentikClient: AuthentikClient
@@ -32,21 +32,21 @@ export class HooksController extends Controller {
     this.authentikClient = new AuthentikClient()
   }
 
-  @Post("git/repoevent")
-  @Tags("Git Web Hooks")
+  @Post('git/repoevent')
+  @Tags('Git Web Hooks')
   @SuccessResponse(200)
   async processGitRepoEventHook(@Body() repoEvent: GiteaHookRepositoryTrigger) {
     switch (repoEvent.action) {
-      case "created":
+      case 'created':
         return this.handleRepoCreation(repoEvent)
 
       default:
-        return "OK"
+        return 'OK'
     }
   }
 
-  @Post("git/commitevent")
-  @Tags("Git Web Hooks")
+  @Post('git/commitevent')
+  @Tags('Git Web Hooks')
   @SuccessResponse(200)
   async processGitMainCommitEventHook(@Body() commitEvent: GiteaHookCommitTrigger) {
     if (
@@ -54,21 +54,25 @@ export class HooksController extends Controller {
       commitEvent.before !== GiteaClient.GIT_NULL_COMMITID
     ) {
       /* Not Main Branch or First Commit */
-      return "OK";
+      return 'OK'
     }
 
     try {
-      const teamPk = await this.authentikClient.getGroupPkFromName(commitEvent.repository.owner.username)
+      const teamPk = await this.authentikClient.getGroupPkFromName(
+        commitEvent.repository.owner.username
+      )
       const teamInfo = await this.authentikClient.getGroupInfo(teamPk)
 
       /* Apply Branch Protections now that main exists */
       await this.giteaClient.handleBranchProtectionSync(teamInfo, [commitEvent.repository])
     } catch (e: any) {
       /* Potential Group Not Found Error! We're good, not mission critical. */
-      console.error(`Failed applying branch protection for ${commitEvent.repository.full_name}: ${e.message}`);
+      console.error(
+        `Failed applying branch protection for ${commitEvent.repository.full_name}: ${e.message}`
+      )
     }
 
-    return "OK";
+    return 'OK'
   }
 
   private async handleRepoCreation(repoEvent: GiteaHookRepositoryTrigger) {
@@ -78,8 +82,11 @@ export class HooksController extends Controller {
       await this.giteaClient.handleRepoProvisioning(repoEvent)
     } catch (e: any) {
       /* Processing Failed! Delete the Repository */
-      await this.giteaClient.deleteRepository(repoEvent.repository.owner.username, repoEvent.repository.name)
-      return `OK (Actions Failed: ${e.message})`;
+      await this.giteaClient.deleteRepository(
+        repoEvent.repository.owner.username,
+        repoEvent.repository.name
+      )
+      return `OK (Actions Failed: ${e.message})`
     }
   }
 }

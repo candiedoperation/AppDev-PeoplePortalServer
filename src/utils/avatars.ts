@@ -16,46 +16,46 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-import { GetObjectCommand } from "@aws-sdk/client-s3";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { s3Client, BUCKET_NAME } from "../clients/AWSClient/S3Client";
+import { GetObjectCommand } from '@aws-sdk/client-s3'
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
+import { s3Client, BUCKET_NAME } from '../clients/AWSClient/S3Client'
 
-const avatarUrlCache = new Map<string, { url: string, expiresAt: number }>();
+const avatarUrlCache = new Map<string, { url: string; expiresAt: number }>()
 
 /**
  * Generates a pre-signed URL for downloading a user's avatar.
  * Uses in-memory caching to reduce S3 API calls.
- * 
+ *
  * @param userPk The PK of the user whose avatar to fetch
  * @param avatarKey The S3 key of the avatar image
  * @returns Promise<string> The signed URL or an empty string if no avatar is provided
  */
 export async function signAvatarUrl(userPk: string | number, avatarKey?: string): Promise<string> {
-    const pk = userPk.toString();
+  const pk = userPk.toString()
 
-    if (!avatarKey) return "";
+  if (!avatarKey) return ''
 
-    const cached = avatarUrlCache.get(pk);
-    if (cached && cached.expiresAt > Date.now()) {
-        return cached.url;
-    }
+  const cached = avatarUrlCache.get(pk)
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.url
+  }
 
-    try {
-        const command = new GetObjectCommand({
-            Bucket: BUCKET_NAME,
-            Key: avatarKey,
-        });
+  try {
+    const command = new GetObjectCommand({
+      Bucket: BUCKET_NAME,
+      Key: avatarKey,
+    })
 
-        const url = await getSignedUrl(s3Client, command, { expiresIn: 86400 });
+    const url = await getSignedUrl(s3Client, command, { expiresIn: 86400 })
 
-        avatarUrlCache.set(pk, {
-            url: url,
-            expiresAt: Date.now() + 86400 * 1000 // 24 hours
-        });
+    avatarUrlCache.set(pk, {
+      url: url,
+      expiresAt: Date.now() + 86400 * 1000, // 24 hours
+    })
 
-        return url;
-    } catch (e) {
-        console.error(`Failed to sign avatar URL for user ${pk}`, e);
-        return "";
-    }
+    return url
+  } catch (e) {
+    console.error(`Failed to sign avatar URL for user ${pk}`, e)
+    return ''
+  }
 }

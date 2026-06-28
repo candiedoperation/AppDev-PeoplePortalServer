@@ -16,11 +16,14 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-import crypto from 'crypto';
-import { CustomValidationError } from './errors';
+import crypto from 'crypto'
+import { CustomValidationError } from './errors'
 
 export function generateSecureRandomString(length: number) {
-  return crypto.randomBytes(Math.ceil(length / 2)).toString('hex').slice(0, length);
+  return crypto
+    .randomBytes(Math.ceil(length / 2))
+    .toString('hex')
+    .slice(0, length)
 }
 
 export function sanitizeGroupName(str: string) {
@@ -28,8 +31,8 @@ export function sanitizeGroupName(str: string) {
   // \w matches [A-Za-z0-9_], so replace underscores by removing them after
   // [^-] will exclude anything that isn't a letter, a number, or a hyphen/underscore
 
-  let sanitized = str.replace(/[^A-Za-z0-9-_]/g, '');
-  return sanitized;
+  const sanitized = str.replace(/[^A-Za-z0-9-_]/g, '')
+  return sanitized
 }
 
 /**
@@ -37,43 +40,49 @@ export function sanitizeGroupName(str: string) {
  * Example: "HELLO wORLD" -> "Hello World"
  */
 export function capitalizeString(str: string): string {
-  if (!str) return str;
-  return str.split(' ').map(word => {
-    if (word.length === 0) return "";
+  if (!str) return str
+  return str
+    .split(' ')
+    .map((word) => {
+      if (word.length === 0) return ''
 
-    // 1. Preserve All Caps or Symbols (No lowercase letters)
-    // Example: "UI/UX", "HELLO", "USA"
-    if (/^[^a-z]*$/.test(word)) return word;
+      // 1. Preserve All Caps or Symbols (No lowercase letters)
+      // Example: "UI/UX", "HELLO", "USA"
+      if (/^[^a-z]*$/.test(word)) return word
 
-    // 2. Preserve Acronym Plurals
-    // Example: "PMs", "SWEs", "APIs"
-    if (/^[A-Z]+s$/.test(word)) return word;
+      // 2. Preserve Acronym Plurals
+      // Example: "PMs", "SWEs", "APIs"
+      if (/^[A-Z]+s$/.test(word)) return word
 
-    // 3. Default: Title Case (First Upper, Rest Lower)
-    return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
-  }).join(' ');
+      // 3. Default: Title Case (First Upper, Rest Lower)
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+    })
+    .join(' ')
 }
 
 /**
  * Normalizes a full name into FirstLast format, removing middle names and hyphens while capitalizing segments.
  */
 export function sanitizeUserFullName(fullName: string): string {
-  if (!fullName || typeof fullName !== 'string') return '';
+  if (!fullName || typeof fullName !== 'string') return ''
 
-  const parts = fullName.trim().split(/\s+/);
-  if (parts.length === 0) return '';
+  const parts = fullName.trim().split(/\s+/)
+  if (parts.length === 0) return ''
 
-  const firstNameRaw = parts[0] ?? '';
-  const lastNameRaw = parts.length > 1 ? (parts[parts.length - 1] ?? '') : '';
+  const firstNameRaw = parts[0] ?? ''
+  const lastNameRaw = parts.length > 1 ? (parts[parts.length - 1] ?? '') : ''
 
   const normalizeSegment = (str: string): string => {
-    if (!str) return '';
-    return str.split('-').map(segment => {
-      return segment.charAt(0).toUpperCase() + segment.slice(1).toLowerCase();
-    }).join('');
-  };
+    if (!str) return ''
+    return str
+      .split('-')
+      .map((segment) => {
+        return segment.charAt(0).toUpperCase() + segment.slice(1).toLowerCase()
+      })
+      .join('')
+  }
 
-  return normalizeSegment(firstNameRaw) + normalizeSegment(lastNameRaw);
+  return normalizeSegment(firstNameRaw) + normalizeSegment(lastNameRaw)
 }
 
 /**
@@ -85,33 +94,30 @@ export function sanitizeUserFullName(fullName: string): string {
  * Returns the trimmed name if valid; throws CustomValidationError otherwise.
  */
 export function validatePersonName(name: string): string {
-  const trimmed = (name ?? '').trim();
+  const trimmed = (name ?? '').trim()
 
   if (trimmed.length < 2 || trimmed.length > 60) {
-    throw new CustomValidationError(
-      400,
-      'Invalid name. Must be between 2 and 60 characters.'
-    );
+    throw new CustomValidationError(400, 'Invalid name. Must be between 2 and 60 characters.')
   }
 
   // Allow letters in any case, spaces, apostrophes, periods, and hyphens
-  const allowed = /^[A-Za-z .'-]+$/;
+  const allowed = /^[A-Za-z .'-]+$/
   if (!allowed.test(trimmed)) {
     throw new CustomValidationError(
       400,
-      "Invalid name. Use only letters, spaces, apostrophes, periods, and hyphens."
-    );
+      'Invalid name. Use only letters, spaces, apostrophes, periods, and hyphens.'
+    )
   }
 
   // Enforce presence of first and last name (at least two name parts with letters)
   // Example valid: "Jane Doe", "Mary-Kate O'Neil", "J. Smith"
-  const parts = trimmed.split(/\s+/).filter(p => p.length > 0);
-  const alphaParts = parts.filter(p => /[A-Za-z]/.test(p));
+  const parts = trimmed.split(/\s+/).filter((p) => p.length > 0)
+  const alphaParts = parts.filter((p) => /[A-Za-z]/.test(p))
   if (alphaParts.length < 2) {
-    throw new CustomValidationError(400, 'Please enter a first and last name.');
+    throw new CustomValidationError(400, 'Please enter a first and last name.')
   }
 
-  return trimmed;
+  return trimmed
 }
 
 /**
@@ -119,17 +125,17 @@ export function validatePersonName(name: string): string {
  */
 export function formatBindleAccessError(owners: string[], missingBindles: string[]): string {
   const formatList = (items: string[], conjunction: string) => {
-    if (items.length === 0) return "";
-    if (items.length === 1) return items[0];
-    const last = items[items.length - 1];
-    const rest = items.slice(0, -1).join(", ");
-    return `${rest} ${conjunction} ${last}`;
-  };
+    if (items.length === 0) return ''
+    if (items.length === 1) return items[0]
+    const last = items[items.length - 1]
+    const rest = items.slice(0, -1).join(', ')
+    return `${rest} ${conjunction} ${last}`
+  }
 
-  const ownersStr = formatList(owners, "or") || "an administrator";
-  const bindlesStr = formatList(missingBindles, "and");
+  const ownersStr = formatList(owners, 'or') || 'an administrator'
+  const bindlesStr = formatList(missingBindles, 'and')
 
-  return `You do not have permission to access this resource. Please ask ${ownersStr} to grant you the ${bindlesStr} bindle${missingBindles.length === 1 ? "" : "s"}.`;
+  return `You do not have permission to access this resource. Please ask ${ownersStr} to grant you the ${bindlesStr} bindle${missingBindles.length === 1 ? '' : 's'}.`
 }
 
 /**
@@ -141,34 +147,31 @@ export function formatBindleAccessError(owners: string[], missingBindles: string
  */
 export function validateTeamName(name: string): string {
   if (name.length < 3 || name.length > 25) {
-    throw new CustomValidationError(
-      400,
-      "Invalid Team Name. Must be between 3 and 25 characters."
-    );
+    throw new CustomValidationError(400, 'Invalid Team Name. Must be between 3 and 25 characters.')
   }
 
   // Allow letters, numbers, spaces, and apostrophes
-  const regex = /^[a-zA-Z0-9' ]+$/;
+  const regex = /^[a-zA-Z0-9' ]+$/
   if (!regex.test(name)) {
     throw new CustomValidationError(
       400,
-      "Invalid Team Name. Use only letters, numbers, spaces, and apostrophes."
-    );
+      'Invalid Team Name. Use only letters, numbers, spaces, and apostrophes.'
+    )
   }
 
   // Must contain at least one letter
   if (!/[a-zA-Z]/.test(name)) {
-    throw new CustomValidationError(
-      400,
-      "Invalid Team Name. Must contain at least one letter."
-    );
+    throw new CustomValidationError(400, 'Invalid Team Name. Must contain at least one letter.')
   }
 
   // Title Case Formatting
-  return name.split(' ').map(word => {
-    if (word.length === 0) return "";
-    return word.charAt(0).toUpperCase() + word.slice(1);
-  }).join(' ');
+  return name
+    .split(' ')
+    .map((word) => {
+      if (word.length === 0) return ''
+      return word.charAt(0).toUpperCase() + word.slice(1)
+    })
+    .join(' ')
 }
 
 /**
@@ -190,5 +193,5 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with this program.  If not, see <https://www.gnu.org/licenses/>.`;
+along with this program.  If not, see <https://www.gnu.org/licenses/>.`
 }

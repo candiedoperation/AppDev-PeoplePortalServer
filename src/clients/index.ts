@@ -16,23 +16,23 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-import { BindlePermissionMap } from "../controllers/BindleController";
-import { RootTeamSettingMap } from "../controllers/OrgController";
-import { GetGroupInfoResponse } from "./AuthentikClient/models";
+import { BindlePermissionMap } from '../controllers/BindleController'
+import { RootTeamSettingMap } from '../controllers/OrgController'
+import { GetGroupInfoResponse } from './AuthentikClient/models'
 
 /**
  * Interface to define clients that manipulate Shared Resources like,
  * Gitea, Slack, etc.
  */
 export interface SharedResourceClient {
-    init(): Promise<void>
-    getResourceName(): string
-    getSupportedBindles(): BindlePermissionMap
+  init(): Promise<void>
+  getResourceName(): string
+  getSupportedBindles(): BindlePermissionMap
 
-    handleOrgBindleSync(
-        org: GetGroupInfoResponse,
-        callback: (updatedResourceCount: number, status: string) => void
-    ): Promise<boolean>
+  handleOrgBindleSync(
+    org: GetGroupInfoResponse,
+    callback: (updatedResourceCount: number, status: string) => void
+  ): Promise<boolean>
 }
 
 /**
@@ -40,7 +40,7 @@ export interface SharedResourceClient {
  * changes like, AWS accounts, etc.
  */
 export interface RootTeamSettingClient {
-    getResourceName(): string
-    getSupportedSettings(): RootTeamSettingMap
-    syncSettingUpdate(org: GetGroupInfoResponse): Promise<boolean>
+  getResourceName(): string
+  getSupportedSettings(): RootTeamSettingMap
+  syncSettingUpdate(org: GetGroupInfoResponse): Promise<boolean>
 }

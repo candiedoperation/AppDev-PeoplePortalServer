@@ -16,14 +16,14 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-import { GiteaClient } from "./clients/GiteaClient";
-import { SlackClient } from "./clients/SlackClient";
-import { RootTeamSettingClient, SharedResourceClient } from "./clients";
-import { AWSClient } from "./clients/AWSClient";
-import { AppleAccountClient } from "./clients/AppleAccountClient";
-import { PeoplePortalClient } from "./clients/PeoplePortalClient";
-import { EnabledBindlePermissions } from "./controllers/BindleController";
-import { TeamType } from "./clients/AuthentikClient/models";
+import { GiteaClient } from './clients/GiteaClient'
+import { SlackClient } from './clients/SlackClient'
+import { RootTeamSettingClient, SharedResourceClient } from './clients'
+import { AWSClient } from './clients/AWSClient'
+import { AppleAccountClient } from './clients/AppleAccountClient'
+import { PeoplePortalClient } from './clients/PeoplePortalClient'
+import { EnabledBindlePermissions } from './controllers/BindleController'
+import { TeamType } from './clients/AuthentikClient/models'
 
 /**
  * This interface helps define the default configuration that needs to be applied
@@ -32,33 +32,33 @@ import { TeamType } from "./clients/AuthentikClient/models";
  */
 export interface TeamTypeConfig {
   defaultSubteams: {
-    friendlyName: string;
-    description: string;
-    bindles?: { [key: string]: EnabledBindlePermissions }; /* Optional Bindle Permissions */
-  }[];
+    friendlyName: string
+    description: string
+    bindles?: { [key: string]: EnabledBindlePermissions } /* Optional Bindle Permissions */
+  }[]
 }
 
 /**
  * This interface helps define the configuration for service teams.
  * Service teams are teams that are unique to the organization and are created
  * automatically by People Portal if they don't exist.
- * 
+ *
  * Some service teams enable hardcoded internal functionality. For example, the
  * ExecutiveBoard team integrates with the Executive Authorization Layer to override
  * all bindles just as how superusers would do.
- * 
+ *
  * Adding to and removing members from these service teams have predefined rulesets
  * that are defined in the code.
  */
 export interface ServiceTeamConfig {
-  friendlyName: string;
-  description: string;
+  friendlyName: string
+  description: string
   subteams: {
-    uniqueName: string;
-    friendlyName: string;
-    description: string;
-    bindles?: { [key: string]: EnabledBindlePermissions };
-  }[];
+    uniqueName: string
+    friendlyName: string
+    description: string
+    bindles?: { [key: string]: EnabledBindlePermissions }
+  }[]
 }
 
 /* Define Enabled Shared Resources Here */
@@ -71,27 +71,27 @@ export const ENABLED_SHARED_RESOURCES: { [key: string]: SharedResourceClient } =
 
 /* Define Enabled Root Team Setting Resources Here */
 export const ENABLED_TEAMSETTING_RESOURCES: { [key: string]: RootTeamSettingClient } = {
-  awsClient: new AWSClient()
+  awsClient: new AWSClient(),
 }
 
 /* Define Enabled Service Teams Here */
 export const ENABLED_SERVICE_TEAMS: Record<string, ServiceTeamConfig> = {
   ExecutiveBoard: {
-    friendlyName: "Executive Board",
-    description: "The President and Other Club Executives",
+    friendlyName: 'Executive Board',
+    description: 'The President and Other Club Executives',
     subteams: [
       {
-        uniqueName: "ExecutiveBoardMembers",
-        friendlyName: "Current Executives",
-        description: "The Current President and Club Executives"
+        uniqueName: 'ExecutiveBoardMembers',
+        friendlyName: 'Current Executives',
+        description: 'The Current President and Club Executives',
       },
       {
-        uniqueName: "ExecutiveBoardAlumni",
-        friendlyName: "Previous Executives",
-        description: "The Previous Presidents and Club Executives"
+        uniqueName: 'ExecutiveBoardAlumni',
+        friendlyName: 'Previous Executives',
+        description: 'The Previous Presidents and Club Executives',
       },
-    ]
-  }
+    ],
+  },
 }
 
 /* Define Team Type Templates Here */
@@ -99,85 +99,85 @@ export const TEAM_TYPE_CONFIGS: Partial<Record<TeamType, TeamTypeConfig>> = {
   [TeamType.PROJECT]: {
     defaultSubteams: [
       {
-        friendlyName: "Leadership",
-        description: "Project and Tech Leads",
+        friendlyName: 'Leadership',
+        description: 'Project and Tech Leads',
         bindles: {
-          "PeoplePortalClient": {
-            "corp:awsaccess": true,
-            "corp:hiringaccess": true
+          PeoplePortalClient: {
+            'corp:awsaccess': true,
+            'corp:hiringaccess': true,
           },
 
-          "SlackClient": {
-            "slack:universalaccess": true,
+          SlackClient: {
+            'slack:universalaccess': true,
           },
 
-          "GiteaClient": {
-            "repo:allowcreate": true,
-            "repo:brprotect-approvals": true,
-            "repo:brprotect-override": true,
-            "repo:brprotect-merge": true
+          GiteaClient: {
+            'repo:allowcreate': true,
+            'repo:brprotect-approvals': true,
+            'repo:brprotect-override': true,
+            'repo:brprotect-merge': true,
           },
-        }
+        },
       },
       {
-        friendlyName: "Engineering",
-        description: "UI/UX, PMs, SWEs, etc.",
+        friendlyName: 'Engineering',
+        description: 'UI/UX, PMs, SWEs, etc.',
         bindles: {
-          "GiteaClient": {
-            "repo:brprotect-override": true,
-            "repo:brprotect-merge": true
+          GiteaClient: {
+            'repo:brprotect-override': true,
+            'repo:brprotect-merge': true,
           },
-        }
-      }
-    ]
+        },
+      },
+    ],
   },
 
   [TeamType.BOOTCAMP]: {
     defaultSubteams: [
       {
-        friendlyName: "Learners",
-        description: "Bootcamp Students",
+        friendlyName: 'Learners',
+        description: 'Bootcamp Students',
         bindles: {
-          "GiteaClient": {
-            "repo:allowcreate": true,
-            "repo:brprotect-override": true,
-            "repo:brprotect-merge": true,
-            "repo:brprotect-approvals": true
+          GiteaClient: {
+            'repo:allowcreate': true,
+            'repo:brprotect-override': true,
+            'repo:brprotect-merge': true,
+            'repo:brprotect-approvals': true,
           },
-        }
+        },
       },
       {
-        friendlyName: "Educators",
-        description: "Bootcamp Teachers",
+        friendlyName: 'Educators',
+        description: 'Bootcamp Teachers',
         bindles: {
-          "PeoplePortalClient": {
-            "corp:hiringaccess": true,
-            "corp:bindlesync": true,
-            "corp:subteamaccess": true,
-            "corp:membermgmt": true
+          PeoplePortalClient: {
+            'corp:hiringaccess': true,
+            'corp:bindlesync': true,
+            'corp:subteamaccess': true,
+            'corp:membermgmt': true,
           },
 
-          "SlackClient": {
-            "slack:universalaccess": true,
+          SlackClient: {
+            'slack:universalaccess': true,
           },
 
-          "GiteaClient": {
-            "repo:allowcreate": true,
-            "repo:brprotect-override": true,
-            "repo:brprotect-merge": true,
-            "repo:brprotect-approvals": true
+          GiteaClient: {
+            'repo:allowcreate': true,
+            'repo:brprotect-override': true,
+            'repo:brprotect-merge': true,
+            'repo:brprotect-approvals': true,
           },
-        }
+        },
       },
       {
-        friendlyName: "Interviewers",
-        description: "Interviewers for Bootcamp",
+        friendlyName: 'Interviewers',
+        description: 'Interviewers for Bootcamp',
         bindles: {
-          "PeoplePortalClient": {
-            "corp:hiringaccess": true
-          }
-        }
-      }
-    ]
-  }
+          PeoplePortalClient: {
+            'corp:hiringaccess': true,
+          },
+        },
+      },
+    ],
+  },
 }

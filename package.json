@@ -4,9 +4,11 @@
   "main": "app.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
+    "lint": "eslint src",
     "build": "tsoa spec-and-routes && tsc && cpx src/**/*.hbs dist",
     "start": "node dist/app.js",
-    "dev": "npm run build && nodemon src/app.ts"
+    "dev": "npm run build && nodemon src/app.ts",
+    "prepare": "husky"
   },
   "keywords": [],
   "author": "Atheesh Thirumalairajan",
@@ -43,15 +45,30 @@
     "tsoa": "^6.6.0",
     "zxcvbn": "^4.4.2"
   },
+  "lint-staged": {
+    "src/**/*.ts": [
+      "prettier --write"
+    ]
+  },
   "devDependencies": {
+    "@commitlint/cli": "^21.0.2",
+    "@commitlint/config-conventional": "^21.0.2",
+    "@eslint/js": "^10.0.1",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.3",
     "@types/express-session": "^1.18.2",
     "@types/node": "^24.3.0",
     "@types/nodemailer": "^7.0.1",
     "@types/nodemailer-express-handlebars": "^4.0.5",
+    "eslint": "^10.5.0",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^17.7.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.8",
     "nodemon": "^3.1.10",
+    "prettier": "^3.8.4",
     "ts-node": "^10.9.2",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "typescript-eslint": "^8.62.0"
   }
 }
