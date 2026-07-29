@@ -1008,6 +1008,7 @@ export function RegisterRoutes(app: Router) {
                 teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
         };
         app.get('/api/org/orgchart/node/:teamId',
+            authenticateMiddleware([{"oidc":[]}]),
             ...(fetchMiddlewares<RequestHandler>(OrgController)),
             ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.getOrgChartNode)),
 
@@ -2359,7 +2360,7 @@ export function RegisterRoutes(app: Router) {
                 body: {"in":"body","name":"body","required":true,"ref":"ATSUpdateApplicationStageRequest"},
         };
         app.put('/api/ats/applications/:teamId/:applicationId/stage',
-            authenticateMiddleware([{"oidc":[]}]),
+            authenticateMiddleware([{"bindles":["corp:hiringaccess"]}]),
             ...(fetchMiddlewares<RequestHandler>(ATSController)),
             ...(fetchMiddlewares<RequestHandler>(ATSController.prototype.updateApplicationStage)),
 

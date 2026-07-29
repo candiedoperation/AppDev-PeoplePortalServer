@@ -466,7 +466,7 @@ export class OrgController extends Controller {
     @Get("orgchart/node/{teamId}")
     @Tags("Team Management")
     @SuccessResponse(200)
-    //@Security("oidc")
+    @Security("oidc")
     async getOrgChartNode(@Path() teamId: string): Promise<OrgChartNode> {
         // Case A: Virtual Division ID (e.g. "div_project")
         // NOTE: With the logic above, we pre-populate divisions, so this might not be hit often
@@ -643,6 +643,14 @@ export class OrgController extends Controller {
         const authorizedUser = req.session.authorizedUser!;
         const invitorInfo = await this.authentikClient.getUserInfoFromEmail(authorizedUser.email)
         const teamInfo = req.bindle!.teamInfo;
+        const destination = await this.authentikClient.getGroupInfo(inviteReq.subteamPk, { includeParentInfo: true });
+        if (!teamInfo.attributes.peoplePortalCreation ||
+            !destination.attributes.peoplePortalCreation ||
+            teamInfo.attributes.flaggedForDeletion ||
+            destination.attributes.flaggedForDeletion ||
+            destination.parentPk !== teamInfo.pk) {
+            throw new CustomValidationError(400, "Invite destination must be an active subteam of the authorized team");
+        }
 
         /* Create New Invite */
         const createdInvite = await Invite.create({
@@ -650,6 +658,7 @@ export class OrgController extends Controller {
             inviteEmail: inviteReq.inviteeEmail,
             roleTitle: inviteReq.roleTitle,
             teamName: teamInfo.attributes.friendlyName,
+            teamPk: teamInfo.pk,
             subteamPk: inviteReq.subteamPk,
             inviterPk: invitorInfo.pk,
             expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000) /* 48 Hours */
@@ -763,8 +772,8 @@ export class OrgController extends Controller {
     @SuccessResponse(200)
     async getInviteInfo(@Path() inviteId: string): Promise<APITeamInviteGetResponse> {
         const invite = await Invite.findById(inviteId).lean<APITeamInviteGetResponse>().exec()
-        if (!invite)
-            throw new Error("Invalid Invite ID!")
+        if (!invite || !invite.teamPk || invite.expiresAt <= new Date())
+            throw new CustomValidationError(400, "Invalid or expired invite")
 
         return {
             ...invite,
@@ -789,8 +798,8 @@ export class OrgController extends Controller {
         req.major = capitalizeString(req.major);
 
         const invite = await Invite.findById(inviteId).exec()
-        if (!invite)
-            throw new Error("Invalid Invite ID")
+        if (!invite || !invite.teamPk || invite.expiresAt <= new Date())
+            throw new CustomValidationError(400, "Invalid or expired invite")
 
         /* Validate Password Complexity */
         if (req.password) {
@@ -816,8 +825,16 @@ export class OrgController extends Controller {
             throw new Error("User has not joined the Slack Workspace!")
 
         /* Check if Subteam is Valid and Isn't Archived */
-        const subteam = await this.authentikClient.getGroupInfo(invite.subteamPk)
+        const rootTeam = await this.authentikClient.getGroupInfo(invite.teamPk)
+        const subteam = await this.authentikClient.getGroupInfo(invite.subteamPk, { includeParentInfo: true })
         const isSubteamArchived = subteam.attributes.flaggedForDeletion
+        if (!rootTeam.attributes.peoplePortalCreation ||
+            !subteam.attributes.peoplePortalCreation ||
+            rootTeam.attributes.flaggedForDeletion ||
+            isSubteamArchived ||
+            subteam.parentPk !== invite.teamPk) {
+            throw new CustomValidationError(400, "Invite destination is no longer valid");
+        }
 
         /* Construct New Request */
         const createUserRequest: CreateUserRequest = {

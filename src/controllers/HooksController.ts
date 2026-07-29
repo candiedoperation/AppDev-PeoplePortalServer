@@ -58,11 +58,18 @@ export class HooksController extends Controller {
     }
 
     try {
-      const teamPk = await this.authentikClient.getGroupPkFromName(commitEvent.repository.owner.username)
+      const ownerName = commitEvent.repository.owner.username;
+      const repository = await this.giteaClient.getRepository(ownerName, commitEvent.repository.name);
+      if (repository.id !== commitEvent.repository.id ||
+          repository.owner.username !== ownerName) {
+        throw new Error("Repository does not match webhook event");
+      }
+
+      const teamPk = await this.authentikClient.getGroupPkFromName(ownerName)
       const teamInfo = await this.authentikClient.getGroupInfo(teamPk)
 
       /* Apply Branch Protections now that main exists */
-      await this.giteaClient.handleBranchProtectionSync(teamInfo, [commitEvent.repository])
+      await this.giteaClient.handleBranchProtectionSync(teamInfo, [repository])
     } catch (e: any) {
       /* Potential Group Not Found Error! We're good, not mission critical. */
       console.error(`Failed applying branch protection for ${commitEvent.repository.full_name}: ${e.message}`);
@@ -73,13 +80,27 @@ export class HooksController extends Controller {
 
   private async handleRepoCreation(repoEvent: GiteaHookRepositoryTrigger) {
     try {
-      /* Get Repo Team Information (Make sure Team Exists, No Personal Repos!) & Provision Repo */
-      await this.authentikClient.getGroupPkFromName(repoEvent.organization.username)
-      await this.giteaClient.handleRepoProvisioning(repoEvent)
+      const organizationName = repoEvent.organization.username;
+      if (repoEvent.repository.owner.username !== organizationName) {
+        throw new Error("Repository owner does not match webhook organization");
+      }
+
+      /* Resolve both resources authoritatively before applying privileged changes. */
+      await this.authentikClient.getGroupPkFromName(organizationName);
+      const repository = await this.giteaClient.getRepository(
+        organizationName,
+        repoEvent.repository.name
+      );
+      if (repository.id !== repoEvent.repository.id ||
+          repository.owner.username !== organizationName) {
+        throw new Error("Repository does not match webhook event");
+      }
+
+      await this.giteaClient.handleRepoProvisioning({ ...repoEvent, repository });
     } catch (e: any) {
-      /* Processing Failed! Delete the Repository */
-      await this.giteaClient.deleteRepository(repoEvent.repository.owner.username, repoEvent.repository.name)
-      return `OK (Actions Failed: ${e.message})`;
+      /* Processing failed; leave the repository untouched for an authorized operator to review. */
+      console.error(`Failed provisioning repository ${repoEvent.repository.full_name}: ${e.message}`);
+      return "OK (Actions Failed)";
     }
   }
 }

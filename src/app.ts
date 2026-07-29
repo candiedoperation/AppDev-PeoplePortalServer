@@ -35,6 +35,7 @@ import { AuthentikClient } from "./clients/AuthentikClient";
 import { CustomValidationError, ResourceAccessError } from "./utils/errors";
 import { ENABLED_SHARED_RESOURCES } from "./config";
 import log from 'loglevel';
+import { authenticateGiteaWebhook } from './utils/gitea-webhook-auth';
 
 log.setLevel("info")
 
@@ -66,6 +67,8 @@ app.use(
 
 /* Register TSOA Routes */
 const ApiRouter = Router()
+ApiRouter.use("/api/webhook/git/repoevent", authenticateGiteaWebhook)
+ApiRouter.use("/api/webhook/git/commitevent", authenticateGiteaWebhook)
 ApiRouter.get("/api/docs/swagger.json", async (req, res) => {
   const doc = await import("../dist/swagger.json");
   res.json(doc.default || doc);
