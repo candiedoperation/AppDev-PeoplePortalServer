@@ -30,6 +30,10 @@ const avatarUrlCache = new Map<string, { url: string, expiresAt: number }>();
  * @param avatarKey The S3 key of the avatar image
  * @returns Promise<string> The signed URL or an empty string if no avatar is provided
  */
+export function invalidateAvatarUrlCache(userPk: string | number): void {
+    avatarUrlCache.delete(userPk.toString());
+}
+
 export async function signAvatarUrl(userPk: string | number, avatarKey?: string): Promise<string> {
     const pk = userPk.toString();
 

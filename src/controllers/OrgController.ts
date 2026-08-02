@@ -27,6 +27,7 @@ import { SharedResourceClient } from '../clients';
 import { ENABLED_SHARED_RESOURCES, ENABLED_TEAMSETTING_RESOURCES, ENABLED_SERVICE_TEAMS, TEAM_TYPE_CONFIGS } from '../config';
 import { SlackClient } from '../clients/SlackClient';
 import { AWSClient } from '../clients/AWSClient';
+import { checkPhotoHasFace } from '../clients/PhotoCheckClient/PhotoCheckClient';
 import { s3Client, BUCKET_NAME } from '../clients/AWSClient/S3Client';
 import { GetObjectCommand, PutObjectCommand, CopyObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
@@ -38,8 +39,8 @@ import { executiveAuthVerify } from '../auth';
 import { TeamCreationRequest, TeamCreationRequestStatus, ITeamCreationRequest } from '../models/TeamCreationRequest';
 import { CustomValidationError, SharedResourcesError } from '../utils/errors';
 import { ExpressRequestBindleExtension } from '../types/express';
-import { validateS3FileSignature, FILE_SIGNATURES } from '../utils/s3-validation';
-import { signAvatarUrl } from '../utils/avatars';
+import { validateS3FileSignature, FILE_SIGNATURES, getS3ObjectBytes, deleteTempAvatar } from '../utils/s3-validation';
+import { signAvatarUrl, invalidateAvatarUrlCache } from '../utils/avatars';
 import MarkdownIt from "markdown-it";
 import zxcvbn from 'zxcvbn';
 
@@ -181,6 +182,17 @@ interface APITeamCreationRequestResponse {
     createdAt: Date;
 }
 
+/**
+ * Validates a graduation date string.
+ * Accepts ISO date strings in the format YYYY-MM-DD.
+ */
+function isValidGradDate(value: string): boolean {
+    const match = value.match(/^(Spring|Summer|Fall|Winter)-(\d{4})$/);
+    if (!match) return false;
+    const year = parseInt(match[2]!, 10);
+    return year >= 2000 && year <= 2100;
+}
+
 @Route("/api/org")
 export class OrgController extends Controller {
     private teamSettingList: { [key: string]: RootTeamSettingMap } = {}
@@ -242,6 +254,197 @@ export class OrgController extends Controller {
         return {
             ...authentikUserInfo
         }
+    }
+
+    /**
+     * Updates the profile attributes of a user. Only the authenticated user
+     * can update their own profile. Supports updating major, expected graduation
+     * date, phone number, and avatar.
+     * 
+     * @param req Express Request Object
+     * @param personId Internal User ID
+     * @param body Update Request Body
+     */
+    @Patch("people/{personId}")
+    @Tags("People Management")
+    @SuccessResponse(200)
+    @Security("oidc")
+    async updatePersonInfo(
+        @Request() req: express.Request,
+        @Path() personId: number,
+        @Body() body: {
+            major?: string;
+            expectedGrad?: string;
+            phoneNumber?: string;
+            avatarKey?: string;
+        }
+    ): Promise<{ success: boolean }> {
+        const authorizedUser = (req as any).session.authorizedUser as AuthorizedUser;
+        const callerInfo = await this.authentikClient.getUserInfoFromEmail(authorizedUser.email);
+
+        if (Number(callerInfo.pk) !== personId) {
+            this.setStatus(403);
+            throw new CustomValidationError(403, "You can only update your own profile.");
+        }
+
+        const updatePayload: Record<string, any> = {};
+        if (body.major !== undefined) {
+            if (body.major === "") {
+                updatePayload.major = "";
+            } else {
+                if (body.major.length > 100) throw new CustomValidationError(400, "Invalid major.");
+                updatePayload.major = capitalizeString(body.major);
+            }
+        }
+
+        if (body.expectedGrad !== undefined) {
+            if (body.expectedGrad === "") {
+                updatePayload.expectedGrad = "";
+            } else {
+                if (!isValidGradDate(body.expectedGrad)) throw new CustomValidationError(400, "Invalid graduation date.");
+                updatePayload.expectedGrad = body.expectedGrad;
+            }
+        }
+
+        if (body.phoneNumber !== undefined) {
+            if (body.phoneNumber === "") {
+                updatePayload.phoneNumber = "";
+            } else {
+                const digits = body.phoneNumber.replace(/[\s\-().+]/g, "");
+                if (!/^\d{10,15}$/.test(digits)) throw new CustomValidationError(400, "Invalid phone number.");
+                updatePayload.phoneNumber = body.phoneNumber;
+            }
+        }
+
+        if (Object.keys(updatePayload).length > 0) {
+            await this.authentikClient.updateUserAttributes(personId, updatePayload);
+        }
+
+        // Handle avatar update
+        if (body.avatarKey) {
+            const avatarKey = path.posix.normalize(body.avatarKey);
+            const expectedPrefix = `avatars/temp/profile/${personId}/`;
+            if (!avatarKey.startsWith(expectedPrefix) || avatarKey.includes('..')) {
+                throw new CustomValidationError(400, "Invalid avatar key");
+            }
+
+            try {
+                const filename = path.posix.basename(avatarKey);
+                const ext = filename.includes('.') ? filename.split('.').pop()?.toLowerCase() : '';
+                const allowedExtensions = ['png', 'jpg', 'jpeg', 'gif', 'webp'];
+                if (!ext || !allowedExtensions.includes(ext)) {
+                    throw new CustomValidationError(400, "Invalid avatar file extension.");
+                }
+
+                const newKey = `avatars/${personId}/avatar.${ext}`;
+
+                // Validate magic bytes
+                const allowedAvatars = [FILE_SIGNATURES.PNG, FILE_SIGNATURES.JPEG, FILE_SIGNATURES.GIF, FILE_SIGNATURES.WEBP];
+                const isValid = await validateS3FileSignature(avatarKey, allowedAvatars);
+                if (!isValid) {
+                    await deleteTempAvatar(avatarKey);
+                    throw new CustomValidationError(400, "Invalid image file.");
+                }
+
+                const imageBytes = await getS3ObjectBytes(avatarKey);
+                if (!imageBytes) {
+                    await deleteTempAvatar(avatarKey);
+                    throw new CustomValidationError(400, "Upload failed, please try again.");
+                }
+
+                const faceCheckResult = await checkPhotoHasFace(imageBytes);
+                if (faceCheckResult.passed === false) {
+                    await deleteTempAvatar(avatarKey);
+                    throw new CustomValidationError(400, "Please upload a photo of only your face.");
+                }
+
+                // Capture old key before overwriting
+                const existingUser = await this.authentikClient.getUserInfo(personId);
+                const oldAvatarKey = existingUser.attributes.avatar;
+
+                // Copy new avatar into place
+                await s3Client.send(new CopyObjectCommand({
+                    Bucket: BUCKET_NAME,
+                    CopySource: `${BUCKET_NAME}/${avatarKey}`,
+                    Key: newKey
+                }));
+
+                // Commit: point DB at new avatar
+                await this.authentikClient.updateUserAttributes(personId, { avatar: newKey });
+                invalidateAvatarUrlCache(personId);
+
+                // Best-effort cleanup — failures here are non-fatal
+                if (oldAvatarKey && oldAvatarKey !== newKey) {
+                    try {
+                        await s3Client.send(new DeleteObjectCommand({ Bucket: BUCKET_NAME, Key: oldAvatarKey }));
+                    } catch (e) {
+                        console.error("Failed to delete old avatar", e);
+                    }
+                }
+
+                try {
+                    await s3Client.send(new DeleteObjectCommand({ Bucket: BUCKET_NAME, Key: avatarKey }));
+                } catch (e) {
+                    console.error("Failed to delete temp avatar after commit", e);
+                }
+
+            } catch (e) {
+                if (e instanceof CustomValidationError) throw e;
+                console.error("Failed to process avatar update", e);
+                throw new CustomValidationError(500, "Failed to update avatar.");
+            }
+        }
+
+        return { success: true };
+    }
+
+    /**
+     * Generates a pre-signed URL for uploading a profile picture for an
+     * authenticated user editing their own profile.
+     * 
+     * @param req Express Request Object
+     * @param fileName Name of the file
+     * @param contentType MIME type of the file
+     */
+    @Get("people/avatar/profile-upload-url")
+    @Tags("People Management")
+    @SuccessResponse(200)
+    @Security("oidc")
+    async getProfileAvatarUploadUrl(
+        @Request() req: express.Request,
+        @Query() fileName: string,
+        @Query() contentType: string
+    ): Promise<{ uploadUrl: string, key: string, fields: Record<string, string> }> {
+        const authorizedUser = (req as any).session.authorizedUser as AuthorizedUser;
+        const callerInfo = await this.authentikClient.getUserInfoFromEmail(authorizedUser.email);
+
+        const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+        if (!allowedTypes.includes(contentType)) {
+            throw new CustomValidationError(400, "Invalid file type. Only images are allowed.");
+        }
+
+        const safeFileName = path.posix.basename(fileName);
+        const ext = safeFileName.includes('.') ? safeFileName.split('.').pop()?.toLowerCase() : '';
+        const allowedExtensions = ['png', 'jpg', 'jpeg', 'gif', 'webp'];
+        if (!ext || !allowedExtensions.includes(ext)) {
+            throw new CustomValidationError(400, "Invalid file name. Only image extensions are allowed.");
+        }
+
+        const timestamp = Date.now();
+        const key = `avatars/temp/profile/${callerInfo.pk}/${timestamp}.${ext}`;
+
+        const { url, fields } = await createPresignedPost(s3Client, {
+            Bucket: BUCKET_NAME,
+            Key: key,
+            Conditions: [
+                ["content-length-range", 0, 819200],
+                ["eq", "$Content-Type", contentType],
+            ],
+            Fields: { "Content-Type": contentType },
+            Expires: 300,
+        });
+
+        return { uploadUrl: url, key, fields };
     }
 
     /**
@@ -656,6 +859,7 @@ export class OrgController extends Controller {
         })
 
         /* Send an Email to the Invitee and the Invitor */
+        const onboardUrl = `${process.env.PEOPLEPORTAL_BASE_URL}/onboard/${createdInvite._id}`;
         await this.emailClient.send({
             to: inviteReq.inviteeEmail,
             cc: [invitorInfo.email],
@@ -667,7 +871,7 @@ export class OrgController extends Controller {
                 invitorName: invitorInfo.name,
                 teamName: teamInfo.attributes.friendlyName,
                 roleTitle: inviteReq.roleTitle,
-                onboardUrl: `${process.env.PEOPLEPORTAL_BASE_URL}/onboard/${createdInvite._id}`
+                onboardUrl
             }
         })
     }
@@ -857,24 +1061,28 @@ export class OrgController extends Controller {
                 const ext = req.avatarKey.split('.').pop();
                 const newKey = `avatars/${userPk}/avatar.${ext}`;
 
-                // Server-Side Magic Number Validation
                 const allowedAvatars = [FILE_SIGNATURES.PNG, FILE_SIGNATURES.JPEG, FILE_SIGNATURES.GIF, FILE_SIGNATURES.WEBP];
                 const isValid = await validateS3FileSignature(req.avatarKey, allowedAvatars);
                 if (!isValid) {
-                    console.error(`Invalid avatar signature for ${req.avatarKey}`);
-                    // Delete the bad file
-                    try {
-                        await s3Client.send(new DeleteObjectCommand({
-                            Bucket: BUCKET_NAME,
-                            Key: req.avatarKey
-                        }));
-                    } catch (e) {
-                        console.error("Failed to delete invalid avatar", e);
-                    }
+                    console.error("Profile picture was not valid. Account created anyway.");
+                    await deleteTempAvatar(req.avatarKey);
+                    await invite.deleteOne();
+                    return;
+                }
 
-                    // Proceed without setting avatar
-                    console.error("Profile picture was not valid. Account created anyway.")
-                    await invite.deleteOne()
+                const imageBytes = await getS3ObjectBytes(req.avatarKey);
+                if (!imageBytes) {
+                    console.error("Failed to fetch avatar bytes. Account created anyway.");
+                    await deleteTempAvatar(req.avatarKey);
+                    await invite.deleteOne();
+                    return;
+                }
+
+                const faceCheckResult = await checkPhotoHasFace(imageBytes);
+                if (faceCheckResult.passed === false) {
+                    console.error("Avatar failed face check. Account created anyway.");
+                    await deleteTempAvatar(req.avatarKey);
+                    await invite.deleteOne();
                     return;
                 }
 

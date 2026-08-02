@@ -128,6 +128,11 @@ const models: TsoaRoute.Models = {
         "additionalProperties": false,
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "Record_string.string_": {
+        "dataType": "refAlias",
+        "type": {"dataType":"nestedObjectLiteral","nestedProperties":{},"additionalProperties":{"dataType":"string"},"validators":{}},
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
     "TeamType": {
         "dataType": "refEnum",
         "enums": ["PROJECT","CORPORATE","BOOTCAMP","SERVICE"],
@@ -261,11 +266,6 @@ const models: TsoaRoute.Models = {
             "subteamPk": {"dataType":"string","required":true},
         },
         "additionalProperties": false,
-    },
-    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-    "Record_string.string_": {
-        "dataType": "refAlias",
-        "type": {"dataType":"nestedObjectLiteral","nestedProperties":{},"additionalProperties":{"dataType":"string"},"validators":{}},
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
     "APITeamInviteGetResponse": {
@@ -869,6 +869,72 @@ export function RegisterRoutes(app: Router) {
 
               await templateService.apiHandler({
                 methodName: 'getPersonInfo',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsOrgController_updatePersonInfo: Record<string, TsoaRoute.ParameterSchema> = {
+                req: {"in":"request","name":"req","required":true,"dataType":"object"},
+                personId: {"in":"path","name":"personId","required":true,"dataType":"double"},
+                body: {"in":"body","name":"body","required":true,"dataType":"nestedObjectLiteral","nestedProperties":{"avatarKey":{"dataType":"string"},"phoneNumber":{"dataType":"string"},"expectedGrad":{"dataType":"string"},"major":{"dataType":"string"}}},
+        };
+        app.patch('/api/org/people/:personId',
+            authenticateMiddleware([{"oidc":[]}]),
+            ...(fetchMiddlewares<RequestHandler>(OrgController)),
+            ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.updatePersonInfo)),
+
+            async function OrgController_updatePersonInfo(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsOrgController_updatePersonInfo, request, response });
+
+                const controller = new OrgController();
+
+              await templateService.apiHandler({
+                methodName: 'updatePersonInfo',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsOrgController_getProfileAvatarUploadUrl: Record<string, TsoaRoute.ParameterSchema> = {
+                req: {"in":"request","name":"req","required":true,"dataType":"object"},
+                fileName: {"in":"query","name":"fileName","required":true,"dataType":"string"},
+                contentType: {"in":"query","name":"contentType","required":true,"dataType":"string"},
+        };
+        app.get('/api/org/people/avatar/profile-upload-url',
+            authenticateMiddleware([{"oidc":[]}]),
+            ...(fetchMiddlewares<RequestHandler>(OrgController)),
+            ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.getProfileAvatarUploadUrl)),
+
+            async function OrgController_getProfileAvatarUploadUrl(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsOrgController_getProfileAvatarUploadUrl, request, response });
+
+                const controller = new OrgController();
+
+              await templateService.apiHandler({
+                methodName: 'getProfileAvatarUploadUrl',
                 controller,
                 response,
                 next,
