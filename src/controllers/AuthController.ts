@@ -111,7 +111,13 @@ export class AuthController extends Controller {
         }
 
         if (return_to) {
-            req.session.tempsession.return_to = return_to;
+            /* Only same-host or relative targets: return_to is redirected to
+               verbatim after login, so anything else is an open redirect. */
+            let safe = return_to.startsWith("/") && !return_to.startsWith("//");
+            if (!safe) {
+                try { safe = new URL(return_to).host === req.get("host"); } catch { safe = false; }
+            }
+            if (safe) req.session.tempsession.return_to = return_to;
         }
 
         let authFlowResponse = OpenIdClient.startAuthFlow()

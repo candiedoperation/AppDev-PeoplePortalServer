@@ -28,6 +28,13 @@ export interface ITeamMeeting extends Document {
     end: Date;
     /** Authentik user PK of the person who created the meeting */
     createdBy: number;
+    /**
+     * When true, every team member sees this meeting on the calendar even if
+     * they are not invited. When false, non-managers only see it if they are
+     * invited (directly or via a subteam) or the meeting has no invite list
+     * at all (assumed general audience).
+     */
+    visibleToAll: boolean;
     createdAt: Date;
     updatedAt: Date;
 }
@@ -40,6 +47,7 @@ const TeamMeetingSchema = new Schema<ITeamMeeting>({
     start:       { type: Date, required: true },
     end:         { type: Date, required: true },
     createdBy:   { type: Number, required: true },
+    visibleToAll: { type: Boolean, default: false },
 }, { timestamps: true });
 
 export const TeamMeeting = model<ITeamMeeting>('TeamMeeting', TeamMeetingSchema);
