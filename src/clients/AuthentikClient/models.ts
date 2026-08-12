@@ -109,8 +109,21 @@ export interface TeamInformationBrief extends TeamAttributeDefinition {
     pk: string,
 }
 
+/* Given in groups-list Authentik API endpoint */
+export interface TeamInformationDetail extends TeamInformationBrief {
+    users: UserInformationPartial[],
+    parent_obj?: TeamInformationBrief,
+    subteamPkList: string[],
+    subteams: TeamInformationBrief[]
+}
+
 export interface GetTeamsListResponse {
     teams: TeamInformationBrief[],
+    nextCursor?: string
+}
+
+export interface GetTeamsListDetailResponse {
+    teams: TeamInformationDetail[],
     nextCursor?: string
 }
 
@@ -169,6 +182,16 @@ export interface CreateTeamRequest {
         seasonYear: number,
         description: string
     }
+}
+
+/* Returned in authentik groups-list API endpoint */
+export interface UserInformationPartial {
+    pk: string,
+    username: string,
+    name: string,
+    email: string,
+    active: boolean,
+    attributes: UserAttributeDefinition,
 }
 
 /* User Information API Models */
