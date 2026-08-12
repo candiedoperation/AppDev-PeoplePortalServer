@@ -16,10 +16,11 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-import * as express from 'express'
+import * as express from 'express';
 import path from 'path';
+import { Error, FlattenMaps, HydratedDocument, Types } from 'mongoose';
 import { Request, Body, Controller, Get, Patch, Path, Post, Queries, Route, SuccessResponse, Put, Security, Delete, Tags, Query } from "tsoa";
-import { AddGroupMemberRequest, GetGroupInfoResponse, GetTeamsListResponse, GetUserListOptions, GetUserListResponse, RemoveGroupMemberRequest, SeasonType, TeamType, UserInformationBrief, GetTeamsForUsernameResponse, AuthentikClientError, CreateUserRequest, ServiceSeasonType, AuthentikClientErrorType, TeamInformationDetail, GetTeamsListDetailResponse, UserInformationPartial } from "../clients/AuthentikClient/models";
+import { AddGroupMemberRequest, GetGroupInfoResponse, GetTeamsListResponse, GetUserListOptions, GetUserListResponse, RemoveGroupMemberRequest, SeasonType, TeamType, UserInformationBrief, GetTeamsForUsernameResponse, AuthentikClientError, CreateUserRequest, ServiceSeasonType, AuthentikClientErrorType, TeamInformationDetail, GetTeamsListDetailResponse, UserInformationPartial, TeamAttributeDefinition, TeamInformationBrief } from "../clients/AuthentikClient/models";
 import { AuthentikClient } from "../clients/AuthentikClient";
 import { Invite } from "../models/Invites";
 import { EmailClient } from "../clients/EmailClient";
@@ -40,8 +41,10 @@ import { CustomValidationError, ResourceAccessError, SharedResourcesError } from
 import { ExpressRequestBindleExtension } from '../types/express';
 import { validateS3FileSignature, FILE_SIGNATURES } from '../utils/s3-validation';
 import { signAvatarUrl } from '../utils/avatars';
-import MarkdownIt from "markdown-it";
 import zxcvbn from 'zxcvbn';
+import { IUserReview, UserReview } from '../models/UserReview';
+
+type DocumentJSON<T> = FlattenMaps<T> & Required<{ _id: Types.ObjectId; }> & { __v: number; };
 
 export interface EnabledRootSettings {
     [key: string]: boolean
@@ -54,6 +57,47 @@ export interface RootTeamSettingMap {
 export interface RootTeamSettingInfo {
     friendlyName: string,
     description: string,
+}
+
+interface APIGetCommonTeamsResponse {
+    teams: TeamInformationBrief[];
+}
+
+interface APIGetReviewResponse {
+    review: DocumentJSON<IUserReview> | null;
+}
+
+interface APIGetReviewsOptions {
+    before?: Date;
+    after?: Date;
+    teamId?: Date;
+
+    sortBy?: "updatedAt" | "rating";
+    ascending?: boolean;
+
+    offset?: number;
+    limit?: number;
+
+    getAggregateData?: boolean;
+}
+
+interface APIGetReviewsResponse {
+    reviews: DocumentJSON<IUserReview>[];
+    aggregateData?: {
+        totalReviews: number,
+        averageRating: number
+    };
+}
+
+interface APICreateReviewRequest {
+    rating: number;
+    title: string;
+    content: string;
+    teamId: string;
+}
+
+interface APICreateReviewResponse {
+    review: DocumentJSON<IUserReview>;
 }
 
 /* Define Request Interfaces */
@@ -241,6 +285,401 @@ export class OrgController extends Controller {
 
         return {
             ...authentikUserInfo
+        }
+    }
+
+    /**
+     * Gets all common teams between the requesting user and
+     * another person given their id.
+     * 
+     * @param req express Request object
+     * @param personId id of the person to get common teams.
+     * @returns APIGetCommonTeamsResponse
+     */
+    @Get("people/{personId}/commonteams")
+    @Tags("People Management")
+    @SuccessResponse(200)
+    @Security("oidc")
+    async getCommonTeams(
+        @Request() req: express.Request,
+        @Path() personId: number
+    ): Promise<APIGetCommonTeamsResponse>
+    {
+        // Get user info
+        const userInfo = await this.authentikClient.getUserInfo(personId)
+            .catch((e) => { 
+                throw new ResourceAccessError(400, `Failed to fetch user info: ${e}`) 
+            });
+        
+        // Get common teams
+        const authorizedUser = req.session.authorizedUser!;
+
+        const [userTeams, requesterTeams] = await Promise.all([
+            this.authentikClient.getRootTeamsForUsername(userInfo.username)
+                .catch((e) => { 
+                    throw new ResourceAccessError(400, `Failed to fetch user teams: ${e}`) 
+                }),
+            this.authentikClient.getRootTeamsForUsername(authorizedUser.username)
+                .catch((e) => { 
+                    throw new ResourceAccessError(400, `Failed to fetch user teams: ${e}`) 
+                })
+        ]);
+        
+        const commonTeams = userTeams.teams.filter((t) => 
+            requesterTeams.teams.find((team) => team.pk === t.pk) !== undefined
+        );
+
+        // Return team info
+        return { teams: commonTeams };
+    }
+
+    /**
+     * Gets the requestor's review (if it exists) of a user
+     * for a certain team.
+     * 
+     * @param req express Request object
+     * @param personId id of the target person
+     * @param teamId id of the target team
+     * @returns APIGetReviewResponse
+     */
+    @Get("people/{personId}/reviews/{teamId}")
+    @Tags("People Management")
+    @SuccessResponse(200)
+    @Security("bindles", ["corp:reviewaccess"])
+    async getReview(
+        @Request() req: express.Request,
+        @Path() personId: number,
+        @Path() teamId: string
+    ): Promise<APIGetReviewResponse> {
+        // 0. Ensure requester and user id are not equal
+        if (req.session.authorizedUser!.pk === personId) {
+            throw new CustomValidationError(403, "Can not access own reviews.");
+        }
+        // 1. Ensure user exists
+        const userInfo = await this.authentikClient.getUserInfo(personId)
+            .catch((e) => { 
+                throw new ResourceAccessError(400, `Failed to fetch user info: ${e}`) 
+            });
+
+        // 2. Ensure user is in the target team
+        let userTeams: GetTeamsForUsernameResponse;
+        try {
+            userTeams = await this.authentikClient.getRootTeamsForUsername(userInfo.username);
+        } catch (e) {
+            console.error(e);
+            throw new ResourceAccessError(500, "Failed to get user team membership");
+        }
+
+        if (userTeams.teams.findIndex((team) => team.pk === teamId) === -1) {
+            // User is not in target team.
+            throw new CustomValidationError(403, "User is not in target team.");
+        }
+
+        // 3. Find document and return it.
+        try { 
+            const review = await UserReview.findOne({
+                userId: personId,
+                creatorId: req.session.authorizedUser!.pk,
+                teamId: teamId,
+            }).lean().exec();
+            return { review: review };
+        } catch (e) {
+            console.error(e);
+            throw new ResourceAccessError(500, "Failed to fetch review");
+        }
+    }
+
+
+    /**
+     * Gets a list of reviews made on the given person. Requires
+     * executive permissions. Options can be given to filter,
+     * sort, and attain aggregate data such as average rating
+     * and total review count (with the filters applied).
+     * 
+     * @param personId pk of the person.
+     * @param options APIGetReviewsOptions
+     * @returns APIGetReviewsResponse
+     */
+    @Get("people/{personId}/reviews")
+    @Tags("People Management")
+    @SuccessResponse(200)
+    @Security("executive")
+    async getReviews(
+        @Path() personId: number,
+        @Queries() options: APIGetReviewsOptions
+    ): Promise<APIGetReviewsResponse> {
+        
+        // Max 100 reviews returned.
+        const limit = Math.min(100, options.limit ?? 10);
+
+        if (limit < 0) {
+            throw new CustomValidationError(400, "Limit can not be negative.");
+        }
+
+        if (options.before && options.after && options.before.getTime() < options.after.getTime()) {
+            throw new CustomValidationError(400, "The 'before' timestamp can not be before the 'after' timestamp.");
+        }
+
+        // Build query
+        const filters: Record<string, any> = {
+            userId: personId,
+            ...(options.before !== undefined || options.after !== undefined) && {
+                updatedAt: {
+                    ...(options.before !== undefined && { $lte: options.before }),
+                    ...(options.after !== undefined && { $gte: options.after }),
+                }
+            },
+            ...(options.teamId !== undefined && { teamId: options.teamId }),
+        };
+
+        // Just return the aggregate data
+        if (limit === 0) {
+            if (options.getAggregateData === false) {
+                return { reviews: [] };
+            }
+            try {
+                const result = await UserReview.aggregate([
+                    { $match: filters },
+                    { $facet: {
+                        stats: [
+                            { $group: {
+                                _id: null,
+                                average: { $avg: "$rating" },
+                                count: { $sum: 1 } 
+                            }}
+                        ]
+                    }}
+                ]).exec();
+                const { average, count } = result[0]?.stats[0] ?? { average: 0, count: 0 };
+
+                return { reviews: [], aggregateData: { totalReviews: count, averageRating: average } };
+            } catch (e) {
+                throw new ResourceAccessError(500, `Failed to fetch reviews: ${e}`);
+            }
+        }
+
+        let query = UserReview.find(filters);
+
+        if (options.sortBy !== undefined) {
+            const ascending = (options.ascending ?? true) ? 'asc' : 'desc';
+            query = query.sort({ [options.sortBy]: ascending });
+        }
+
+        query = query.skip(options.offset ?? 0).limit(limit);
+
+        try {
+            if (options.getAggregateData === false) {
+                const results = await query.lean().exec();
+                return { reviews: results };
+            }
+
+            const [results, aggregateResult] = await Promise.all([
+                query.lean().exec(),
+                UserReview.aggregate([
+                    { $match: filters },
+                    { $facet: { stats: [{ $group: {
+                        _id: null,
+                        average: { $avg: "$rating" },
+                        count: { $sum: 1 } 
+                    }}]}}
+                ]).exec()
+            ]);
+
+            const { average, count } = aggregateResult[0]?.stats[0] ?? { average: 0, count: 0 };
+            return { reviews: results, aggregateData: { totalReviews: count, averageRating: average } };
+
+        } catch (e) {
+            throw new ResourceAccessError(500, `Failed to fetch reviews: ${e}`);
+        }
+    }
+
+    /**
+     * Write an internal review for a person. the requestor and person
+     * must both be in body.teamId and the requestor must have the
+     * corp:reviewaccess bindle in that team.
+     * 
+     * @param req express Request object
+     * @param personId pk of the person being reviewed
+     * @param body APICreateReviewRequest instance
+     * @returns APICreateReviewResponse instance
+     */
+    @Post("people/{personId}/reviews")
+    @Tags("People Management")
+    @SuccessResponse(201)
+    // First scope is teamId path (see bindlesAuthVerify)
+    @Security("bindles", ["body.teamId", "corp:reviewaccess"])
+    async writeReview(
+        @Request() req: express.Request,
+        @Path() personId: number,
+        @Body() body: APICreateReviewRequest
+    ): Promise<APICreateReviewResponse> {
+        // User refers to the personId, requester refers to the user making the request.
+
+        // 0. Ensure user and requester aren't the same
+        if (personId === req.session.authorizedUser!.pk) {
+            throw new CustomValidationError(403, "You can not review yourself.");
+        }
+
+        // 1. Ensure user exists
+        const userInfo = await this.authentikClient.getUserInfo(personId)
+            .catch((e) => { throw new ResourceAccessError(400, `Failed to fetch user info: ${e}`) });
+
+        // 2. Ensure user is in the target team
+        let userTeams: GetTeamsForUsernameResponse;
+        try {
+            userTeams = await this.authentikClient.getRootTeamsForUsername(userInfo.username);
+        } catch (e) {
+            console.error(e);
+            throw new ResourceAccessError(500, "Failed to get user team membership");
+        }
+
+        if (userTeams.teams.findIndex((team) => team.pk === body.teamId) === -1) {
+            // User is not in target team.
+            throw new CustomValidationError(403, "User is not in target team.");
+        }
+
+        // 3. Requester is authorized to write the review. Check if a review was already made for this team.
+        try {
+            const existingReview = await UserReview.findOne({
+                userId: personId,
+                creatorId: req.session.authorizedUser!.pk,
+                teamId: body.teamId,
+            }).lean().exec();
+            if (existingReview !== null) {
+                throw new CustomValidationError(400, "Review already created.");
+            }
+        } catch (e) {
+            console.error(e);
+            if (e instanceof CustomValidationError) {
+                throw e;
+            }
+            throw new ResourceAccessError(500, "Failed to fetch review.");
+        }
+        
+        // 4. Create review.
+        let review: HydratedDocument<IUserReview>;
+        try {
+            review = await UserReview.create({
+                userId: personId,
+                creatorId: req.session.authorizedUser!.pk,
+                ...body,
+            });
+        } catch (e) {
+            if (e instanceof Error.ValidationError) {
+                throw new CustomValidationError(400, `Invalid Review: ${e}`);
+            }
+            console.error(e);
+            throw new ResourceAccessError(500, "Failed to create review");
+        }
+
+        return { review: review.toJSON() };
+    }   
+
+    /**
+     * Edit an existing review for a person. The requestor must
+     * have the corp:reviewaccess bindle in the team being requested.
+     * Only permits the review author to edit the review.
+     * 
+     * @param req express Request object
+     * @param personId pk of the person being reviewed
+     * @param reviewId ObjectID of the review
+     * @param body APICreateReviewRequest instance
+     * @returns APICreateReviewResponse instance
+     */
+    @Put("people/{personId}/reviews/{reviewId}")
+    @Tags("People Management")
+    @SuccessResponse(200)
+    // First scope is teamId path (see bindlesAuthVerify)
+    @Security("bindles", ["body.teamId", "corp:reviewaccess"])
+    async editReview(
+        @Request() req: express.Request,
+        @Path() personId: number,
+        @Path() reviewId: string,
+        @Body() body: APICreateReviewRequest
+    ): Promise<APICreateReviewResponse> {
+        // 0. Ensure user and requester aren't the same
+        if (personId === req.session.authorizedUser!.pk) {
+            throw new CustomValidationError(403, "You can not review yourself.");
+        }
+
+        // 1. Get Review
+        const review = await UserReview.findById(reviewId).exec()
+            .catch((e) => { throw new ResourceAccessError(500, `Failed to fetch review: ${e}`)});
+
+        if (review === null) {
+            throw new CustomValidationError(404, "Review does not exist");
+        }
+
+        // 2. Validation Checks
+        // Ensure creator and user ids match
+        if (review.creatorId !== req.session.authorizedUser!.pk) {
+            // Return does not exist for obscurity
+            throw new CustomValidationError(404, "Review does not exist");
+        }
+        if (review.userId !== personId) {
+            throw new CustomValidationError(400, "User ID does not match");
+        }
+        
+        // Ensure teamId matches review
+        if (review.teamId !== body.teamId) {
+            throw new CustomValidationError(400, "Team ID does not match.");
+        }
+
+        // 3. Update Review
+        review.rating = body.rating;
+        review.title = body.title;
+        review.content = body.content;
+        await review.save();
+
+        // 4. Return updated document
+        return { review: review.toJSON() };
+    }
+
+    /**
+     * Delete an existing review for a person.
+     * Permites either the author or any executives to 
+     * delete the review.
+     * 
+     * @param req express Request object
+     * @param personId pk of the person being reviewed
+     * @param reviewId ObjectID of the review
+     * @returns void
+     */
+    @Delete("people/{personId}/reviews/{reviewId}")
+    @Tags("People Management")
+    @SuccessResponse(204)
+    @Security("oidc")
+    async deleteReview(
+        @Request() req: express.Request,
+        @Path() personId: number,
+        @Path() reviewId: string
+    ) {
+        // 1. Get Review
+        const review = await UserReview.findById(reviewId).exec()
+            .catch((e) => { throw new ResourceAccessError(500, `Failed to fetch review: ${e}`)});
+
+        if (review === null) {
+            throw new CustomValidationError(404, "Review does not exist");
+        }
+
+        // 2. Validation Checks
+        // Ensure creator and user ids match
+        if (review.creatorId !== req.session.authorizedUser!.pk) {
+            // Allow exec/superuser to delete other's reviews
+            if (!executiveAuthVerify(req, [], true)) {
+                // Return does not exist for obscurity
+                throw new CustomValidationError(404, "Review does not exist");
+            }
+        }
+        if (review.userId !== personId) {
+            throw new CustomValidationError(400, "User ID does not match");
+        }
+        
+        // 3. Delete Review
+        try {
+            await review.deleteOne().exec();
+        } catch (e) {
+            throw new ResourceAccessError(500, `Failed to delete review: ${e}`);
         }
     }
 

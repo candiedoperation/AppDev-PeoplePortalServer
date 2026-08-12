@@ -57,6 +57,11 @@ export class PeoplePortalClient implements SharedResourceClient {
             friendlyName: "Allow Member Management",
             description: "Enabling this allows people in this subteam to add & remove members to your team",
         },
+
+        "corp:reviewaccess": {
+            friendlyName: "Allow Internal Review Access",
+            description: "Enabling this allows people in this subteam to write internal reviews on other members of this team.",
+        },
     }
 
     async init(): Promise<void> {
