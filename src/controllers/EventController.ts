@@ -903,8 +903,7 @@ export class EventController extends Controller {
      * @returns Generated link : string
      */
     public static generateEventInviteLink(event: HydratedDocument<IEvent> | DocumentJSON<IEvent>) {
-        // TODO
-        return '';
+        return `${process.env.PEOPLEPORTAL_BASE_URL}/community/events/${event._id}/attendance`;
     }
 
 
