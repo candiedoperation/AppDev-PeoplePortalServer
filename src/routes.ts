@@ -10,6 +10,8 @@ import { BindleController } from './controllers/BindleController';
 // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
 import { OrgController } from './controllers/OrgController';
 // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+import { MeetingsController } from './controllers/MeetingsController';
+// WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
 import { HooksController } from './controllers/HooksController';
 // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
 import { AuthController } from './controllers/AuthController';
@@ -164,6 +166,8 @@ const models: TsoaRoute.Models = {
             "teamType": {"ref":"TeamType","required":true},
             "seasonType": {"dataType":"union","subSchemas":[{"ref":"SeasonType"},{"ref":"ServiceSeasonType"}],"required":true},
             "seasonYear": {"dataType":"double","required":true},
+            "teamStartDate": {"dataType":"string"},
+            "teamEndDate": {"dataType":"string"},
             "peoplePortalCreation": {"dataType":"boolean"},
             "flaggedForDeletion": {"dataType":"boolean"},
             "description": {"dataType":"string","required":true},
@@ -317,6 +321,8 @@ const models: TsoaRoute.Models = {
             "teamType": {"ref":"TeamType","required":true},
             "seasonType": {"dataType":"union","subSchemas":[{"ref":"SeasonType"},{"ref":"ServiceSeasonType"}],"required":true},
             "seasonYear": {"dataType":"double","required":true},
+            "teamStartDate": {"dataType":"string"},
+            "teamEndDate": {"dataType":"string"},
             "peoplePortalCreation": {"dataType":"boolean"},
             "flaggedForDeletion": {"dataType":"boolean"},
             "description": {"dataType":"string","required":true},
@@ -352,6 +358,8 @@ const models: TsoaRoute.Models = {
             "seasonType": {"ref":"SeasonType","required":true},
             "seasonYear": {"dataType":"double","required":true},
             "description": {"dataType":"string","required":true},
+            "teamStartDate": {"dataType":"string"},
+            "teamEndDate": {"dataType":"string","required":true},
             "requestorRole": {"dataType":"string","required":true},
         },
         "additionalProperties": false,
@@ -381,8 +389,163 @@ const models: TsoaRoute.Models = {
         "properties": {
             "friendlyName": {"dataType":"string","validators":{"minLength":{"value":1}}},
             "description": {"dataType":"string","validators":{"minLength":{"value":1}}},
+            "teamStartDate": {"dataType":"string"},
+            "teamEndDate": {"dataType":"string"},
         },
-        "additionalProperties": {"dataType":"string"},
+        "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "APITeamMeetingResponse": {
+        "dataType": "refObject",
+        "properties": {
+            "_id": {"dataType":"string","required":true},
+            "teamPk": {"dataType":"string","required":true},
+            "seriesId": {"dataType":"string","required":true},
+            "recurring": {"dataType":"boolean","required":true},
+            "name": {"dataType":"string","required":true},
+            "description": {"dataType":"string","required":true},
+            "start": {"dataType":"datetime","required":true},
+            "end": {"dataType":"datetime","required":true},
+            "createdBy": {"dataType":"double","required":true},
+            "visibleToAll": {"dataType":"boolean","required":true},
+            "createdAt": {"dataType":"datetime","required":true},
+            "updatedAt": {"dataType":"datetime","required":true},
+        },
+        "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "APITeamMeetingCreateRequest": {
+        "dataType": "refObject",
+        "properties": {
+            "name": {"dataType":"string","required":true},
+            "description": {"dataType":"string"},
+            "start": {"dataType":"datetime","required":true},
+            "end": {"dataType":"datetime","required":true},
+            "recurring": {"dataType":"boolean"},
+            "requiredAttendees": {"dataType":"array","array":{"dataType":"double"}},
+            "optionalAttendees": {"dataType":"array","array":{"dataType":"double"}},
+            "requiredSubteams": {"dataType":"array","array":{"dataType":"string"}},
+            "optionalSubteams": {"dataType":"array","array":{"dataType":"string"}},
+            "visibleToAll": {"dataType":"boolean"},
+        },
+        "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "MeetingScope": {
+        "dataType": "refAlias",
+        "type": {"dataType":"union","subSchemas":[{"dataType":"enum","enums":["this"]},{"dataType":"enum","enums":["following"]},{"dataType":"enum","enums":["all"]}],"validators":{}},
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "APITeamMeetingUpdateRequest": {
+        "dataType": "refObject",
+        "properties": {
+            "name": {"dataType":"string"},
+            "description": {"dataType":"string"},
+            "start": {"dataType":"datetime"},
+            "end": {"dataType":"datetime"},
+            "visibleToAll": {"dataType":"boolean"},
+            "scope": {"ref":"MeetingScope"},
+        },
+        "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "APIMeetingRosterMember": {
+        "dataType": "refObject",
+        "properties": {
+            "pk": {"dataType":"double","required":true},
+            "name": {"dataType":"string","required":true},
+            "username": {"dataType":"string","required":true},
+            "email": {"dataType":"string","required":true},
+        },
+        "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "AttendanceRole": {
+        "dataType": "refAlias",
+        "type": {"dataType":"union","subSchemas":[{"dataType":"enum","enums":["required"]},{"dataType":"enum","enums":["optional"]}],"validators":{}},
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "APIMyAttendanceItem": {
+        "dataType": "refObject",
+        "properties": {
+            "_id": {"dataType":"string","required":true},
+            "teamPk": {"dataType":"string","required":true},
+            "seriesId": {"dataType":"string","required":true},
+            "recurring": {"dataType":"boolean","required":true},
+            "name": {"dataType":"string","required":true},
+            "description": {"dataType":"string","required":true},
+            "start": {"dataType":"datetime","required":true},
+            "end": {"dataType":"datetime","required":true},
+            "createdBy": {"dataType":"double","required":true},
+            "visibleToAll": {"dataType":"boolean","required":true},
+            "createdAt": {"dataType":"datetime","required":true},
+            "updatedAt": {"dataType":"datetime","required":true},
+            "role": {"ref":"AttendanceRole","required":true},
+            "present": {"dataType":"boolean","required":true},
+        },
+        "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "APIMeetingAttendee": {
+        "dataType": "refObject",
+        "properties": {
+            "userPk": {"dataType":"double","required":true},
+            "name": {"dataType":"string","required":true},
+            "role": {"ref":"AttendanceRole","required":true},
+            "present": {"dataType":"boolean","required":true},
+            "markedBy": {"dataType":"union","subSchemas":[{"dataType":"double"},{"dataType":"enum","enums":[null]}],"required":true},
+            "markedAt": {"dataType":"union","subSchemas":[{"dataType":"datetime"},{"dataType":"enum","enums":[null]}],"required":true},
+            "explicit": {"dataType":"boolean","required":true},
+            "viaSubteam": {"dataType":"union","subSchemas":[{"dataType":"string"},{"dataType":"enum","enums":[null]}],"required":true},
+        },
+        "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "APIMeetingSubteamRef": {
+        "dataType": "refObject",
+        "properties": {
+            "subteamPk": {"dataType":"string","required":true},
+            "name": {"dataType":"string","required":true},
+            "role": {"ref":"AttendanceRole","required":true},
+        },
+        "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "APIMeetingAttendanceResponse": {
+        "dataType": "refObject",
+        "properties": {
+            "viewerPk": {"dataType":"double","required":true},
+            "canManage": {"dataType":"boolean","required":true},
+            "attendees": {"dataType":"array","array":{"dataType":"refObject","ref":"APIMeetingAttendee"},"required":true},
+            "subteams": {"dataType":"array","array":{"dataType":"refObject","ref":"APIMeetingSubteamRef"},"required":true},
+        },
+        "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "APIAddAttendeeRequest": {
+        "dataType": "refObject",
+        "properties": {
+            "userPk": {"dataType":"double","required":true},
+            "role": {"ref":"AttendanceRole"},
+        },
+        "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "APIAddSubteamRequest": {
+        "dataType": "refObject",
+        "properties": {
+            "subteamPk": {"dataType":"string","required":true},
+            "role": {"ref":"AttendanceRole"},
+        },
+        "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "APIMarkAttendanceRequest": {
+        "dataType": "refObject",
+        "properties": {
+            "present": {"dataType":"boolean","required":true},
+        },
+        "additionalProperties": false,
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
     "GiteaRepositoryPermissions": {
@@ -642,7 +805,7 @@ const models: TsoaRoute.Models = {
         "type": {"dataType":"nestedObjectLiteral","nestedProperties":{},"validators":{}},
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-    "Required___id-mongoose.Types.ObjectId__": {
+    "Required___id-mongoose.FlattenMaps_unknown___": {
         "dataType": "refAlias",
         "type": {"dataType":"nestedObjectLiteral","nestedProperties":{},"validators":{}},
     },
@@ -700,11 +863,6 @@ const models: TsoaRoute.Models = {
             "notes": {"dataType":"string"},
         },
         "additionalProperties": false,
-    },
-    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-    "mongoose.Types.ObjectId": {
-        "dataType": "refAlias",
-        "type": {"dataType":"string","validators":{}},
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
     "ATSUpdateApplicationStageRequest": {
@@ -1724,6 +1882,502 @@ export function RegisterRoutes(app: Router) {
                 next,
                 validatedArgs,
                 successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsMeetingsController_getTeamMeetings: Record<string, TsoaRoute.ParameterSchema> = {
+                req: {"in":"request","name":"req","required":true,"dataType":"object"},
+                teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
+                from: {"in":"query","name":"from","dataType":"datetime"},
+                to: {"in":"query","name":"to","dataType":"datetime"},
+        };
+        app.get('/api/org/teams/:teamId/meetings',
+            authenticateMiddleware([{"oidc":[]}]),
+            ...(fetchMiddlewares<RequestHandler>(MeetingsController)),
+            ...(fetchMiddlewares<RequestHandler>(MeetingsController.prototype.getTeamMeetings)),
+
+            async function MeetingsController_getTeamMeetings(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsMeetingsController_getTeamMeetings, request, response });
+
+                const controller = new MeetingsController();
+
+              await templateService.apiHandler({
+                methodName: 'getTeamMeetings',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsMeetingsController_createTeamMeeting: Record<string, TsoaRoute.ParameterSchema> = {
+                req: {"in":"request","name":"req","required":true,"dataType":"object"},
+                teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
+                body: {"in":"body","name":"body","required":true,"ref":"APITeamMeetingCreateRequest"},
+        };
+        app.post('/api/org/teams/:teamId/meetings',
+            authenticateMiddleware([{"bindles":["corp:meetingsmgmt"]}]),
+            ...(fetchMiddlewares<RequestHandler>(MeetingsController)),
+            ...(fetchMiddlewares<RequestHandler>(MeetingsController.prototype.createTeamMeeting)),
+
+            async function MeetingsController_createTeamMeeting(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsMeetingsController_createTeamMeeting, request, response });
+
+                const controller = new MeetingsController();
+
+              await templateService.apiHandler({
+                methodName: 'createTeamMeeting',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 201,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsMeetingsController_updateTeamMeeting: Record<string, TsoaRoute.ParameterSchema> = {
+                teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
+                meetingId: {"in":"path","name":"meetingId","required":true,"dataType":"string"},
+                body: {"in":"body","name":"body","required":true,"ref":"APITeamMeetingUpdateRequest"},
+        };
+        app.patch('/api/org/teams/:teamId/meetings/:meetingId',
+            authenticateMiddleware([{"bindles":["corp:meetingsmgmt"]}]),
+            ...(fetchMiddlewares<RequestHandler>(MeetingsController)),
+            ...(fetchMiddlewares<RequestHandler>(MeetingsController.prototype.updateTeamMeeting)),
+
+            async function MeetingsController_updateTeamMeeting(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsMeetingsController_updateTeamMeeting, request, response });
+
+                const controller = new MeetingsController();
+
+              await templateService.apiHandler({
+                methodName: 'updateTeamMeeting',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsMeetingsController_deleteTeamMeeting: Record<string, TsoaRoute.ParameterSchema> = {
+                teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
+                meetingId: {"in":"path","name":"meetingId","required":true,"dataType":"string"},
+                scope: {"in":"query","name":"scope","ref":"MeetingScope"},
+        };
+        app.delete('/api/org/teams/:teamId/meetings/:meetingId',
+            authenticateMiddleware([{"bindles":["corp:meetingsmgmt"]}]),
+            ...(fetchMiddlewares<RequestHandler>(MeetingsController)),
+            ...(fetchMiddlewares<RequestHandler>(MeetingsController.prototype.deleteTeamMeeting)),
+
+            async function MeetingsController_deleteTeamMeeting(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsMeetingsController_deleteTeamMeeting, request, response });
+
+                const controller = new MeetingsController();
+
+              await templateService.apiHandler({
+                methodName: 'deleteTeamMeeting',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 204,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsMeetingsController_getMeetingRoster: Record<string, TsoaRoute.ParameterSchema> = {
+                teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
+        };
+        app.get('/api/org/teams/:teamId/meetings/roster',
+            authenticateMiddleware([{"oidc":[]}]),
+            ...(fetchMiddlewares<RequestHandler>(MeetingsController)),
+            ...(fetchMiddlewares<RequestHandler>(MeetingsController.prototype.getMeetingRoster)),
+
+            async function MeetingsController_getMeetingRoster(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsMeetingsController_getMeetingRoster, request, response });
+
+                const controller = new MeetingsController();
+
+              await templateService.apiHandler({
+                methodName: 'getMeetingRoster',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsMeetingsController_getMeetingCapabilities: Record<string, TsoaRoute.ParameterSchema> = {
+                req: {"in":"request","name":"req","required":true,"dataType":"object"},
+                teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
+        };
+        app.get('/api/org/teams/:teamId/meetings/capabilities',
+            authenticateMiddleware([{"oidc":[]}]),
+            ...(fetchMiddlewares<RequestHandler>(MeetingsController)),
+            ...(fetchMiddlewares<RequestHandler>(MeetingsController.prototype.getMeetingCapabilities)),
+
+            async function MeetingsController_getMeetingCapabilities(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsMeetingsController_getMeetingCapabilities, request, response });
+
+                const controller = new MeetingsController();
+
+              await templateService.apiHandler({
+                methodName: 'getMeetingCapabilities',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsMeetingsController_getMyAttendance: Record<string, TsoaRoute.ParameterSchema> = {
+                req: {"in":"request","name":"req","required":true,"dataType":"object"},
+                teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
+                from: {"in":"query","name":"from","dataType":"datetime"},
+                to: {"in":"query","name":"to","dataType":"datetime"},
+        };
+        app.get('/api/org/teams/:teamId/meetings/mine',
+            authenticateMiddleware([{"oidc":[]}]),
+            ...(fetchMiddlewares<RequestHandler>(MeetingsController)),
+            ...(fetchMiddlewares<RequestHandler>(MeetingsController.prototype.getMyAttendance)),
+
+            async function MeetingsController_getMyAttendance(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsMeetingsController_getMyAttendance, request, response });
+
+                const controller = new MeetingsController();
+
+              await templateService.apiHandler({
+                methodName: 'getMyAttendance',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsMeetingsController_getTeamMeeting: Record<string, TsoaRoute.ParameterSchema> = {
+                req: {"in":"request","name":"req","required":true,"dataType":"object"},
+                teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
+                meetingId: {"in":"path","name":"meetingId","required":true,"dataType":"string"},
+        };
+        app.get('/api/org/teams/:teamId/meetings/:meetingId',
+            authenticateMiddleware([{"oidc":[]}]),
+            ...(fetchMiddlewares<RequestHandler>(MeetingsController)),
+            ...(fetchMiddlewares<RequestHandler>(MeetingsController.prototype.getTeamMeeting)),
+
+            async function MeetingsController_getTeamMeeting(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsMeetingsController_getTeamMeeting, request, response });
+
+                const controller = new MeetingsController();
+
+              await templateService.apiHandler({
+                methodName: 'getTeamMeeting',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsMeetingsController_checkInToMeeting: Record<string, TsoaRoute.ParameterSchema> = {
+                req: {"in":"request","name":"req","required":true,"dataType":"object"},
+                teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
+                meetingId: {"in":"path","name":"meetingId","required":true,"dataType":"string"},
+        };
+        app.post('/api/org/teams/:teamId/meetings/:meetingId/checkin',
+            authenticateMiddleware([{"oidc":[]}]),
+            ...(fetchMiddlewares<RequestHandler>(MeetingsController)),
+            ...(fetchMiddlewares<RequestHandler>(MeetingsController.prototype.checkInToMeeting)),
+
+            async function MeetingsController_checkInToMeeting(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsMeetingsController_checkInToMeeting, request, response });
+
+                const controller = new MeetingsController();
+
+              await templateService.apiHandler({
+                methodName: 'checkInToMeeting',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsMeetingsController_getMeetingAttendance: Record<string, TsoaRoute.ParameterSchema> = {
+                req: {"in":"request","name":"req","required":true,"dataType":"object"},
+                teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
+                meetingId: {"in":"path","name":"meetingId","required":true,"dataType":"string"},
+        };
+        app.get('/api/org/teams/:teamId/meetings/:meetingId/attendance',
+            authenticateMiddleware([{"bindles":["corp:meetingsmgmt"]}]),
+            ...(fetchMiddlewares<RequestHandler>(MeetingsController)),
+            ...(fetchMiddlewares<RequestHandler>(MeetingsController.prototype.getMeetingAttendance)),
+
+            async function MeetingsController_getMeetingAttendance(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsMeetingsController_getMeetingAttendance, request, response });
+
+                const controller = new MeetingsController();
+
+              await templateService.apiHandler({
+                methodName: 'getMeetingAttendance',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsMeetingsController_addMeetingAttendee: Record<string, TsoaRoute.ParameterSchema> = {
+                teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
+                meetingId: {"in":"path","name":"meetingId","required":true,"dataType":"string"},
+                body: {"in":"body","name":"body","required":true,"ref":"APIAddAttendeeRequest"},
+        };
+        app.post('/api/org/teams/:teamId/meetings/:meetingId/attendance',
+            authenticateMiddleware([{"bindles":["corp:meetingsmgmt"]}]),
+            ...(fetchMiddlewares<RequestHandler>(MeetingsController)),
+            ...(fetchMiddlewares<RequestHandler>(MeetingsController.prototype.addMeetingAttendee)),
+
+            async function MeetingsController_addMeetingAttendee(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsMeetingsController_addMeetingAttendee, request, response });
+
+                const controller = new MeetingsController();
+
+              await templateService.apiHandler({
+                methodName: 'addMeetingAttendee',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 201,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsMeetingsController_addMeetingSubteam: Record<string, TsoaRoute.ParameterSchema> = {
+                teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
+                meetingId: {"in":"path","name":"meetingId","required":true,"dataType":"string"},
+                body: {"in":"body","name":"body","required":true,"ref":"APIAddSubteamRequest"},
+        };
+        app.post('/api/org/teams/:teamId/meetings/:meetingId/attendance/subteams',
+            authenticateMiddleware([{"bindles":["corp:meetingsmgmt"]}]),
+            ...(fetchMiddlewares<RequestHandler>(MeetingsController)),
+            ...(fetchMiddlewares<RequestHandler>(MeetingsController.prototype.addMeetingSubteam)),
+
+            async function MeetingsController_addMeetingSubteam(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsMeetingsController_addMeetingSubteam, request, response });
+
+                const controller = new MeetingsController();
+
+              await templateService.apiHandler({
+                methodName: 'addMeetingSubteam',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 201,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsMeetingsController_removeMeetingSubteam: Record<string, TsoaRoute.ParameterSchema> = {
+                teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
+                meetingId: {"in":"path","name":"meetingId","required":true,"dataType":"string"},
+                subteamPk: {"in":"path","name":"subteamPk","required":true,"dataType":"string"},
+        };
+        app.delete('/api/org/teams/:teamId/meetings/:meetingId/attendance/subteams/:subteamPk',
+            authenticateMiddleware([{"bindles":["corp:meetingsmgmt"]}]),
+            ...(fetchMiddlewares<RequestHandler>(MeetingsController)),
+            ...(fetchMiddlewares<RequestHandler>(MeetingsController.prototype.removeMeetingSubteam)),
+
+            async function MeetingsController_removeMeetingSubteam(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsMeetingsController_removeMeetingSubteam, request, response });
+
+                const controller = new MeetingsController();
+
+              await templateService.apiHandler({
+                methodName: 'removeMeetingSubteam',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 204,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsMeetingsController_markAttendance: Record<string, TsoaRoute.ParameterSchema> = {
+                req: {"in":"request","name":"req","required":true,"dataType":"object"},
+                teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
+                meetingId: {"in":"path","name":"meetingId","required":true,"dataType":"string"},
+                userPk: {"in":"path","name":"userPk","required":true,"dataType":"double"},
+                body: {"in":"body","name":"body","required":true,"ref":"APIMarkAttendanceRequest"},
+        };
+        app.patch('/api/org/teams/:teamId/meetings/:meetingId/attendance/:userPk',
+            authenticateMiddleware([{"bindles":["corp:meetingsmgmt"]}]),
+            ...(fetchMiddlewares<RequestHandler>(MeetingsController)),
+            ...(fetchMiddlewares<RequestHandler>(MeetingsController.prototype.markAttendance)),
+
+            async function MeetingsController_markAttendance(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsMeetingsController_markAttendance, request, response });
+
+                const controller = new MeetingsController();
+
+              await templateService.apiHandler({
+                methodName: 'markAttendance',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsMeetingsController_removeMeetingAttendee: Record<string, TsoaRoute.ParameterSchema> = {
+                teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
+                meetingId: {"in":"path","name":"meetingId","required":true,"dataType":"string"},
+                userPk: {"in":"path","name":"userPk","required":true,"dataType":"double"},
+        };
+        app.delete('/api/org/teams/:teamId/meetings/:meetingId/attendance/:userPk',
+            authenticateMiddleware([{"bindles":["corp:meetingsmgmt"]}]),
+            ...(fetchMiddlewares<RequestHandler>(MeetingsController)),
+            ...(fetchMiddlewares<RequestHandler>(MeetingsController.prototype.removeMeetingAttendee)),
+
+            async function MeetingsController_removeMeetingAttendee(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsMeetingsController_removeMeetingAttendee, request, response });
+
+                const controller = new MeetingsController();
+
+              await templateService.apiHandler({
+                methodName: 'removeMeetingAttendee',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 204,
               });
             } catch (err) {
                 return next(err);
