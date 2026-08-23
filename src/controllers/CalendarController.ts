@@ -243,6 +243,11 @@ export class CalendarController extends Controller {
         const res = (req as any).res as express.Response;
         const etag = `"${createHash("sha1").update(body).digest("hex")}"`;
 
+        /* Calendar apps never send cookies back, so the session express-session
+           auto-created for this request would just pile up in the store with
+           every poll. Dropping it also suppresses the Set-Cookie header. */
+        if (req.session) req.session.destroy(() => { /* best effort */ });
+
         res.setHeader("Content-Type", "text/calendar; charset=utf-8");
         res.setHeader("Content-Disposition", `inline; filename="${FEED_FILENAME}"`);
         res.setHeader("Cache-Control", "private, no-cache");
