@@ -14,6 +14,8 @@ import { MeetingsController } from './controllers/MeetingsController';
 // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
 import { HooksController } from './controllers/HooksController';
 // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+import { CalendarController } from './controllers/CalendarController';
+// WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
 import { AuthController } from './controllers/AuthController';
 // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
 import { ATSController } from './controllers/ATSController';
@@ -714,6 +716,26 @@ const models: TsoaRoute.Models = {
             "repository": {"ref":"GiteaRepository","required":true},
             "pusher": {"ref":"GiteaUser","required":true},
             "sender": {"ref":"GiteaUser","required":true},
+        },
+        "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "APICalendarFeedLinks": {
+        "dataType": "refObject",
+        "properties": {
+            "url": {"dataType":"string","required":true},
+            "webcalUrl": {"dataType":"string","required":true},
+        },
+        "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "APICalendarSubscriptionResponse": {
+        "dataType": "refObject",
+        "properties": {
+            "allTeams": {"ref":"APICalendarFeedLinks","required":true},
+            "team": {"dataType":"union","subSchemas":[{"ref":"APICalendarFeedLinks"},{"dataType":"enum","enums":[null]}],"required":true},
+            "issuedAt": {"dataType":"datetime","required":true},
+            "lastAccessedAt": {"dataType":"union","subSchemas":[{"dataType":"datetime"},{"dataType":"enum","enums":[null]}],"required":true},
         },
         "additionalProperties": false,
     },
@@ -2433,6 +2455,133 @@ export function RegisterRoutes(app: Router) {
 
               await templateService.apiHandler({
                 methodName: 'processGitMainCommitEventHook',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsCalendarController_getSubscription: Record<string, TsoaRoute.ParameterSchema> = {
+                req: {"in":"request","name":"req","required":true,"dataType":"object"},
+                teamId: {"in":"query","name":"teamId","dataType":"string"},
+        };
+        app.get('/api/calendar/subscription',
+            authenticateMiddleware([{"oidc":[]}]),
+            ...(fetchMiddlewares<RequestHandler>(CalendarController)),
+            ...(fetchMiddlewares<RequestHandler>(CalendarController.prototype.getSubscription)),
+
+            async function CalendarController_getSubscription(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsCalendarController_getSubscription, request, response });
+
+                const controller = new CalendarController();
+
+              await templateService.apiHandler({
+                methodName: 'getSubscription',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsCalendarController_rotateSubscription: Record<string, TsoaRoute.ParameterSchema> = {
+                req: {"in":"request","name":"req","required":true,"dataType":"object"},
+                teamId: {"in":"query","name":"teamId","dataType":"string"},
+        };
+        app.post('/api/calendar/subscription/rotate',
+            authenticateMiddleware([{"oidc":[]}]),
+            ...(fetchMiddlewares<RequestHandler>(CalendarController)),
+            ...(fetchMiddlewares<RequestHandler>(CalendarController.prototype.rotateSubscription)),
+
+            async function CalendarController_rotateSubscription(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsCalendarController_rotateSubscription, request, response });
+
+                const controller = new CalendarController();
+
+              await templateService.apiHandler({
+                methodName: 'rotateSubscription',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsCalendarController_getAllTeamsFeed: Record<string, TsoaRoute.ParameterSchema> = {
+                req: {"in":"request","name":"req","required":true,"dataType":"object"},
+                token: {"in":"path","name":"token","required":true,"dataType":"string"},
+        };
+        app.get('/api/calendar/feed/:token/peopleportal.ics',
+            ...(fetchMiddlewares<RequestHandler>(CalendarController)),
+            ...(fetchMiddlewares<RequestHandler>(CalendarController.prototype.getAllTeamsFeed)),
+
+            async function CalendarController_getAllTeamsFeed(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsCalendarController_getAllTeamsFeed, request, response });
+
+                const controller = new CalendarController();
+
+              await templateService.apiHandler({
+                methodName: 'getAllTeamsFeed',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsCalendarController_getTeamFeed: Record<string, TsoaRoute.ParameterSchema> = {
+                req: {"in":"request","name":"req","required":true,"dataType":"object"},
+                token: {"in":"path","name":"token","required":true,"dataType":"string"},
+                teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
+        };
+        app.get('/api/calendar/feed/:token/teams/:teamId/peopleportal.ics',
+            ...(fetchMiddlewares<RequestHandler>(CalendarController)),
+            ...(fetchMiddlewares<RequestHandler>(CalendarController.prototype.getTeamFeed)),
+
+            async function CalendarController_getTeamFeed(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsCalendarController_getTeamFeed, request, response });
+
+                const controller = new CalendarController();
+
+              await templateService.apiHandler({
+                methodName: 'getTeamFeed',
                 controller,
                 response,
                 next,
