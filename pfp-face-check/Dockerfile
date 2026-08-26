@@ -11,9 +11,13 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY main.py .
+RUN useradd --create-home --uid 10001 appuser
+
+COPY --chown=appuser:appuser main.py .
 # face_detection_yunet_2023mar.onnx must be present in the build context
-COPY face_detection_yunet_2023mar.onnx .
+COPY --chown=appuser:appuser face_detection_yunet_2023mar.onnx .
+
+USER appuser
 
 EXPOSE 8001
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001"]

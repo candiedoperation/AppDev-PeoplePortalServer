@@ -355,6 +355,12 @@ export class OrgController extends Controller {
                 const faceCheckResult = await checkPhotoHasFace(imageBytes);
                 if (faceCheckResult.passed === false) {
                     await deleteTempAvatar(avatarKey);
+                    if (faceCheckResult.reason === "file_too_large") {
+                        throw new CustomValidationError(400, "File is too large. Please upload an image smaller than 1 MB.");
+                    }
+                    if (faceCheckResult.reason === "image_dimensions_too_large") {
+                        throw new CustomValidationError(400, "Image dimensions are too large. Please use an image no larger than 4096 x 4096 pixels.");
+                    }
                     throw new CustomValidationError(400, "Please upload a photo of only your face.");
                 }
 
