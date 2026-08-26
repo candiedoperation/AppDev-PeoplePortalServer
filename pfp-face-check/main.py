@@ -9,6 +9,12 @@ app = FastAPI()
 MODEL_PATH = "face_detection_yunet_2023mar.onnx"
 SCORE_THRESHOLD = 0.85
 
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
+
 def check_photo_bytes(image_bytes, score_threshold=SCORE_THRESHOLD):
     # Use PIL for robust format handling (JPEG/PNG/WEBP/HEIC), per earlier discussion
     pil_img = Image.open(io.BytesIO(image_bytes)).convert("RGB")

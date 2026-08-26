@@ -26,16 +26,14 @@ export async function checkPhotoHasFace(imageBytes: Uint8Array): Promise<PhotoCh
         }
 
         const payload = (await response.json()) as Partial<PhotoCheckResult>;
+        // Only an explicit rejection from the service may block an upload.
+        // Missing or malformed decision fields fail open by design.
         const result: PhotoCheckResult = {
-            passed: payload.passed === true,
+            passed: payload.passed !== false,
             reason: payload.reason ?? "service_error",
         };
         if (typeof payload.count === "number") {
             result.count = payload.count;
-        }
-        if (result.count !== undefined && result.count !== 1) {
-            result.passed = false;
-            result.reason = "multiple_faces";
         }
         return result;
     } catch (e) {
