@@ -41,6 +41,7 @@ import { CustomValidationError, SharedResourcesError } from '../utils/errors';
 import { ExpressRequestBindleExtension } from '../types/express';
 import { validateS3FileSignature, FILE_SIGNATURES, getS3ObjectBytes, deleteTempAvatar } from '../utils/s3-validation';
 import { signAvatarUrl, invalidateAvatarUrlCache } from '../utils/avatars';
+import { normalizeLinkedInProfileUrl } from '../utils/linkedin';
 import MarkdownIt from "markdown-it";
 import zxcvbn from 'zxcvbn';
 
@@ -117,6 +118,7 @@ interface APITeamInviteAcceptRequest {
     major: string;
     expectedGrad: Date;
     phoneNumber: string;
+    linkedinUrl?: string;
     avatarKey?: string;
 }
 
@@ -276,6 +278,7 @@ export class OrgController extends Controller {
             major?: string;
             expectedGrad?: string;
             phoneNumber?: string;
+            linkedinUrl?: string;
             avatarKey?: string;
         }
     ): Promise<{ success: boolean }> {
@@ -314,6 +317,14 @@ export class OrgController extends Controller {
                 if (!/^\d{10,15}$/.test(digits)) throw new CustomValidationError(400, "Invalid phone number.");
                 updatePayload.phoneNumber = body.phoneNumber;
             }
+        }
+
+        if (body.linkedinUrl !== undefined) {
+            const normalizedLinkedinUrl = normalizeLinkedInProfileUrl(body.linkedinUrl);
+            if (normalizedLinkedinUrl === null) {
+                throw new CustomValidationError(400, "Please enter a valid LinkedIn profile URL.");
+            }
+            updatePayload.linkedinUrl = normalizedLinkedinUrl;
         }
 
         if (Object.keys(updatePayload).length > 0) {
@@ -998,6 +1009,11 @@ export class OrgController extends Controller {
         /* Sanitize Request */
         req.major = capitalizeString(req.major);
 
+        const normalizedLinkedinUrl = normalizeLinkedInProfileUrl(req.linkedinUrl ?? "");
+        if (normalizedLinkedinUrl === null) {
+            throw new CustomValidationError(400, "Please enter a valid LinkedIn profile URL.");
+        }
+
         const invite = await Invite.findById(inviteId).exec()
         if (!invite)
             throw new Error("Invalid Invite ID")
@@ -1038,6 +1054,7 @@ export class OrgController extends Controller {
                 major: req.major,
                 expectedGrad: req.expectedGrad,
                 phoneNumber: req.phoneNumber,
+                linkedinUrl: normalizedLinkedinUrl,
                 roles: {}
             }
         }

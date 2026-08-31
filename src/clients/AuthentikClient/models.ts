@@ -60,6 +60,7 @@ export interface UserAttributeDefinition {
     major: string,
     expectedGrad: Date,
     phoneNumber: string,
+    linkedinUrl?: string,
     roles: {
         /* Org ID Mapped to Role Title */
         [key: string]: string
@@ -153,6 +154,7 @@ export interface CreateUserRequest {
         major: string;
         expectedGrad: Date;
         phoneNumber: string;
+        linkedinUrl?: string;
         roles: { [key: string]: string }
     }
 }

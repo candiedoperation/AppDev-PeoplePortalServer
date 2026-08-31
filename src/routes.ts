@@ -72,6 +72,7 @@ const models: TsoaRoute.Models = {
             "major": {"dataType":"string","required":true},
             "expectedGrad": {"dataType":"datetime","required":true},
             "phoneNumber": {"dataType":"string","required":true},
+            "linkedinUrl": {"dataType":"string"},
             "roles": {"dataType":"nestedObjectLiteral","nestedProperties":{},"additionalProperties":{"dataType":"string"},"required":true},
             "avatar": {"dataType":"string"},
         },
@@ -290,6 +291,7 @@ const models: TsoaRoute.Models = {
             "major": {"dataType":"string","required":true},
             "expectedGrad": {"dataType":"datetime","required":true},
             "phoneNumber": {"dataType":"string","required":true},
+            "linkedinUrl": {"dataType":"string"},
             "avatarKey": {"dataType":"string"},
         },
         "additionalProperties": false,
@@ -883,7 +885,7 @@ export function RegisterRoutes(app: Router) {
         const argsOrgController_updatePersonInfo: Record<string, TsoaRoute.ParameterSchema> = {
                 req: {"in":"request","name":"req","required":true,"dataType":"object"},
                 personId: {"in":"path","name":"personId","required":true,"dataType":"double"},
-                body: {"in":"body","name":"body","required":true,"dataType":"nestedObjectLiteral","nestedProperties":{"avatarKey":{"dataType":"string"},"phoneNumber":{"dataType":"string"},"expectedGrad":{"dataType":"string"},"major":{"dataType":"string"}}},
+                body: {"in":"body","name":"body","required":true,"dataType":"nestedObjectLiteral","nestedProperties":{"avatarKey":{"dataType":"string"},"linkedinUrl":{"dataType":"string"},"phoneNumber":{"dataType":"string"},"expectedGrad":{"dataType":"string"},"major":{"dataType":"string"}}},
         };
         app.patch('/api/org/people/:personId',
             authenticateMiddleware([{"oidc":[]}]),
