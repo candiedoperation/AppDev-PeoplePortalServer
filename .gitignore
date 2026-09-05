@@ -9,3 +9,7 @@ docs/.venv/
 
 # committed test stubs, no secrets
 !.env.test
+
+# local contribution analysis, not part of the project
+git-metrics/
+git-contrib-dump.sh
