@@ -17,8 +17,9 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-import { GetObjectCommand } from "@aws-sdk/client-s3";
+
 import { s3Client, BUCKET_NAME } from "../clients/AWSClient/S3Client";
+import { GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 
 export const FILE_SIGNATURES = {
     PNG: "89504e47",
@@ -60,3 +61,26 @@ export async function validateS3FileSignature(key: string, allowedSignatures: st
         return false;
     }
 }
+
+export async function getS3ObjectBytes(key: string): Promise<Uint8Array | null> {
+    try {
+        const { Body } = await s3Client.send(new GetObjectCommand({
+            Bucket: BUCKET_NAME,
+            Key: key
+        }));
+        if (!Body) return null;
+        return await Body.transformToByteArray();
+    } catch (e) {
+        console.error(`Failed to fetch S3 object: ${key}`, e);
+        return null;
+    }
+}
+
+export async function deleteTempAvatar(key: string): Promise<void> {
+    try {
+        await s3Client.send(new DeleteObjectCommand({ Bucket: BUCKET_NAME, Key: key }));
+    } catch (e) {
+        console.error(`Failed to delete temp avatar: ${key}`, e);
+    }
+}
+
