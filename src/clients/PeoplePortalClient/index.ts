@@ -62,6 +62,16 @@ export class PeoplePortalClient implements SharedResourceClient {
             friendlyName: "Allow Internal Review Access",
             description: "Enabling this allows people in this subteam to write internal reviews on other members of this team.",
         },
+
+        "corp:meetingsmgmt": {
+            friendlyName: "Allow Meeting Management",
+            description: "Enabling this allows members in this subteam to create, modify and delete team meetings",
+        },
+
+        "corp:eventmgmt": {
+            friendlyName: "Allow Event Management",
+            description: "Enabling this allows members in this subteam to create, modify, and delete events"
+        },
     }
 
     async init(): Promise<void> {

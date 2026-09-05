@@ -47,6 +47,8 @@ const TeamCreationRequestSchema: Schema = new Schema({
         teamType: { type: String, required: true },
         seasonType: { type: String, required: true },
         seasonYear: { type: Number, required: true },
+        teamStartDate: { type: String, required: true },
+        teamEndDate: { type: String, required: true },
         description: { type: String, required: true },
         requestorRole: { type: String, required: true }
     },
