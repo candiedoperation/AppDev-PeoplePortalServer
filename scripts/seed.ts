@@ -36,12 +36,14 @@
  *
  *   1. Sign in at the UI as a superuser.
  *   2. Copy the session cookie value (DevTools > Application > Cookies).
- *   3. PEOPLEPORTAL_SEED_COOKIE="connect.sid=s%3A..." npm run seed
+ *   3. PEOPLEPORTAL_SEED_COOKIE="peopleportal_sid=s%3A..." npm run seed
  *
  * Deliberately not automated: scripting the login means handling a password,
  * and a dev-only bypass route is an auth bypass one bad merge away from
  * production.
  */
+
+import mongoose from "mongoose";
 
 import { ENVIRONMENT, isProduction, loadEnvironmentFiles } from "../src/config/environment";
 
@@ -109,6 +111,30 @@ const TEAMS: SeedTeam[] = [
     },
 ];
 
+interface SeedMember {
+    name: string;
+    email: string;
+    roleTitle: string;
+    /** friendlyName of the subteam they join. */
+    subteam: string;
+}
+
+/* Members are onboarded through the real invite flow, so each one exercises
+   invite creation, invite acceptance, Authentik user creation and subteam
+   membership. Names are obviously fictional so nobody mistakes seed data for
+   a real member. */
+const MEMBERS: Record<string, SeedMember[]> = {
+    "Web Dev": [
+        { name: "Ada Lovelace", email: "ada.lovelace@example.invalid", roleTitle: "Software Engineer", subteam: "Frontend" },
+        { name: "Grace Hopper", email: "grace.hopper@example.invalid", roleTitle: "Software Engineer", subteam: "Backend" },
+        { name: "Alan Turing", email: "alan.turing@example.invalid", roleTitle: "Tech Lead", subteam: "Backend" },
+    ],
+    "ML Bootcamp": [
+        { name: "Katherine Johnson", email: "katherine.johnson@example.invalid", roleTitle: "Learner", subteam: "Core" },
+        { name: "Barbara Liskov", email: "barbara.liskov@example.invalid", roleTitle: "Educator", subteam: "Core" },
+    ],
+};
+
 const EVENTS = [
     {
         title: "Fall Symposium", description: "End-of-semester project showcase.",
@@ -129,6 +155,55 @@ const EVENTS = [
 
 let created = 0;
 let skipped = 0;
+
+/**
+ * A password that satisfies the accept-invite rules: at least 12 characters
+ * and strong enough for zxcvbn. These are throwaway local-fixture credentials,
+ * printed rather than hidden so nobody mistakes them for secrets.
+ */
+function seedPassword(seed: string): string {
+    return `Seed-${seed.replace(/[^a-z]/gi, "")}-2026!Portal`;
+}
+
+/**
+ * Onboards one member through the real flow: create an invite, then accept it.
+ *
+ * The invite id is read from Mongo rather than the response, because
+ * POST /teams/{id}/externalinvite returns void and only sends the id out by
+ * email. That lookup is the single place this script touches the database
+ * directly; both state changes still go through the API.
+ */
+async function onboardMember(
+    teamPk: string,
+    member: SeedMember,
+    subteamPk: string,
+    lookupInviteId: (email: string) => Promise<string | null>
+): Promise<"created" | "exists" | "failed"> {
+    try {
+        await api("POST", `/api/org/teams/${teamPk}/externalinvite`, {
+            inviteeName: member.name,
+            inviteeEmail: member.email,
+            roleTitle: member.roleTitle,
+            subteamPk,
+        });
+    } catch (e: any) {
+        /* An existing member or a pending invite both surface here. */
+        if (/exists|already|duplicate/i.test(e.message)) return "exists";
+        throw e;
+    }
+
+    const inviteId = await lookupInviteId(member.email);
+    if (!inviteId) return "failed";
+
+    await api("PUT", `/api/org/invites/${inviteId}`, {
+        password: seedPassword(member.name),
+        major: "Computer Science",
+        expectedGrad: "2028-05",
+        phoneNumber: "+13015550100",
+    });
+
+    return "created";
+}
 
 async function api(method: string, route: string, body?: unknown): Promise<any> {
     const response = await fetch(`${BASE_URL}${route}`, {
@@ -189,6 +264,25 @@ async function main(): Promise<void> {
         console.warn("  This account is not an executive; team and event creation will likely be refused.\n");
     }
 
+    /* The one direct database read: POST /externalinvite returns void, so the
+       invite id it generates is only available from the Invite collection.
+       Both writes still go through the API. */
+    let inviteLookup: ((email: string) => Promise<string | null>) | null = null;
+    const mongoUrl = process.env.PEOPLEPORTAL_MONGO_URL;
+    if (mongoUrl) {
+        await mongoose.connect(mongoUrl);
+        const invites = mongoose.connection.collection("invites");
+        inviteLookup = async (email: string) => {
+            const doc = await invites.findOne(
+                { inviteEmail: email },
+                { sort: { createdAt: -1 } }
+            );
+            return doc ? String(doc._id) : null;
+        };
+    }
+    const lookupInviteId = async (email: string): Promise<string | null> =>
+        inviteLookup ? inviteLookup(email) : null;
+
     const existing: any[] = (await api("GET", "/api/org/teams?limit=200").catch(() => ({ teams: [] }))).teams ?? [];
     const byFriendlyName = new Map<string, any>(
         existing.map((t: any) => [t.friendlyName ?? t.name, t])
@@ -243,6 +337,44 @@ async function main(): Promise<void> {
             } catch (e: any) {
                 skipped++;
                 console.log(`  skipped  subteam   ${subteam.friendlyName} (${e.message.split(": ").pop()})`);
+            }
+        }
+
+        /* Members, through the real invite-and-accept flow. */
+        const members = MEMBERS[team.friendlyName] ?? [];
+        if (members.length > 0) {
+            const detail = await api("GET", `/api/org/teams/${teamPk}`).catch(() => null);
+            const subteamPkByName = new Map<string, string>(
+                (detail?.subteams ?? []).map((st: any) => [st.attributes?.friendlyName ?? st.friendlyName, st.pk])
+            );
+            const existingEmails = new Set<string>(
+                (detail?.users ?? []).map((u: any) => (u.email ?? "").toLowerCase())
+            );
+
+            for (const member of members) {
+                if (existingEmails.has(member.email.toLowerCase())) {
+                    skipped++;
+                    console.log(`  exists   member    ${member.name}`);
+                    continue;
+                }
+
+                const subteamPk = subteamPkByName.get(member.subteam) ?? teamPk;
+                try {
+                    const outcome = await onboardMember(teamPk, member, subteamPk, lookupInviteId);
+                    if (outcome === "created") {
+                        created++;
+                        console.log(`  created  member    ${member.name.padEnd(20)} ${member.roleTitle} / ${member.subteam}`);
+                    } else if (outcome === "exists") {
+                        skipped++;
+                        console.log(`  exists   member    ${member.name}`);
+                    } else {
+                        skipped++;
+                        console.log(`  skipped  member    ${member.name} (invite created but its id could not be read back)`);
+                    }
+                } catch (e: any) {
+                    skipped++;
+                    console.log(`  skipped  member    ${member.name} (${e.message.split(": ").pop()})`);
+                }
             }
         }
 
@@ -307,6 +439,11 @@ async function main(): Promise<void> {
     }
 
     console.log(`\n${created} created, ${skipped} skipped.`);
+    if (created > 0) {
+        console.log(`\nSeeded members sign in with the password pattern Seed-<Name>-2026!Portal`);
+        console.log(`e.g. ada.lovelace@example.invalid / ${seedPassword("Ada Lovelace")}`);
+    }
+    await mongoose.disconnect().catch(() => { /* never connected */ });
 }
 
 main().catch((e: unknown) => {
