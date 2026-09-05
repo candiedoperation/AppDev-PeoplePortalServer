@@ -25,16 +25,20 @@ import {
     CreateAccountCommand,
     DescribeCreateAccountStatusCommand,
     MoveAccountCommand,
+    ListParentsCommand,
     paginateListAccountsForParent
 } from "@aws-sdk/client-organizations";
 import {
     BudgetsClient,
     CreateBudgetCommand,
+    CreateBudgetActionCommand,
+    DeleteBudgetCommand,
     BudgetType,
     TimeUnit,
     ThresholdType,
     NotificationType,
-    ComparisonOperator
+    ComparisonOperator,
+    ActionType
 } from "@aws-sdk/client-budgets";
 import { STSClient, AssumeRoleCommand } from "@aws-sdk/client-sts";
 import axios from "axios";
@@ -49,10 +53,13 @@ export class AWSClient implements RootTeamSettingClient {
     private readonly REGION = process.env.AWS_REGION ?? "us-east-1";
     private readonly ROOT_ID = process.env.AWS_ORG_ROOT_ID;
     private readonly NONPROD_OU_ID = process.env.AWS_NONPROD_OU_ID;
+    private readonly SUSPENDED_OU_ID = process.env.AWS_SUSPENDED_OU_ID;
     private readonly MANAGEMENT_ACCOUNT_ID = process.env.AWS_MANAGEMENT_ACCOUNT_ID;
-    private readonly ADMIN_ROLE_NAME = "AppDevNonProductionRole";
+    private readonly ADMIN_ROLE_NAME = process.env.AWS_ADMIN_ROLE_NAME ?? "AppDevNonProductionRole";
     private readonly BUDGET_LIMIT = process.env.AWS_DEFAULT_BUDGET_AMOUNT ?? "50";
-    private readonly BILLING_ALERT_EMAIL = "awsclient+financealerts@appdevclub.com";
+    private readonly BILLING_ALERT_EMAIL = process.env.AWS_BILLING_ALERT_EMAIL ?? "awsclient+financealerts@appdevclub.com";
+    private readonly DENY_ALL_SCP_ID = process.env.AWS_DENY_ALL_SCP_ID;
+    private readonly BUDGET_ACTION_ROLE_ARN = process.env.AWS_BUDGET_ACTION_ROLE_ARN;
     private readonly SESSION_EXPIRY = 3600;
 
 
@@ -130,6 +137,66 @@ export class AWSClient implements RootTeamSettingClient {
         }
     }
 
+    /**
+     * Archives the team's AWS account by moving it to the Suspended OU and
+     * deleting its monthly budget. The account and all its data are preserved;
+     * only billing is stopped and the account is isolated from active OUs.
+     *
+     * @param org Team Information
+     */
+    async archiveTeam(org: GetGroupInfoResponse): Promise<boolean> {
+        const settings = org.attributes.rootTeamSettings?.[this.getResourceName()];
+        const isProvisioned = settings && settings["awsclient:provision"] === true;
+
+        if (!isProvisioned) {
+            console.debug("[AWS_CLIENT] Archive: AWS not provisioned for this team, skipping.");
+            return true;
+        }
+
+        if (!this.SUSPENDED_OU_ID) {
+            throw new Error("AWS_SUSPENDED_OU_ID is not configured; cannot archive team account.");
+        }
+
+        const accountId = await this.findAccountIdByName(org.name);
+        if (!accountId) {
+            console.debug(`[AWS_CLIENT] Archive: No AWS account found for team '${org.name}', skipping.`);
+            return true;
+        }
+
+        /* Move account to Suspended OU, resolving current parent dynamically */
+        const parentsRes = await this.orgClient.send(new ListParentsCommand({ ChildId: accountId }));
+        const currentParentId = parentsRes.Parents?.[0]?.Id;
+        if (!currentParentId) {
+            throw new Error(`[AWS_CLIENT] Archive: Could not determine parent OU for account ${accountId}.`);
+        }
+
+        if (currentParentId !== this.SUSPENDED_OU_ID) {
+            await this.orgClient.send(new MoveAccountCommand({
+                AccountId: accountId,
+                SourceParentId: currentParentId,
+                DestinationParentId: this.SUSPENDED_OU_ID
+            }));
+            console.debug(`[AWS_CLIENT] Archive: Moved account ${accountId} to Suspended OU.`);
+        } else {
+            console.debug(`[AWS_CLIENT] Archive: Account ${accountId} already in Suspended OU.`);
+        }
+
+        /* Delete the monthly budget — best-effort, not fatal if missing */
+        try {
+            await this.budgetsClient.send(new DeleteBudgetCommand({
+                AccountId: this.MANAGEMENT_ACCOUNT_ID,
+                BudgetName: `Project-Budget-${org.name}`
+            }));
+            console.debug(`[AWS_CLIENT] Archive: Deleted budget for ${org.name}.`);
+        } catch (e: any) {
+            if (e.name !== 'NotFoundException') {
+                console.warn(`[AWS_CLIENT] Archive: Could not delete budget: ${e.message}`);
+            }
+        }
+
+        return true;
+    }
+
     public async generateConsoleLink(accountId: string, sessionName: string): Promise<string> {
         // Assume Admin Role
         const roleArn = `arn:aws:iam::${accountId}:role/${this.ADMIN_ROLE_NAME}`;
@@ -158,7 +225,7 @@ export class AWSClient implements RootTeamSettingClient {
         const token = response.data.SigninToken;
 
         // Build URL
-        const destination = "https://console.aws.amazon.com/";
+        const destination = `https://${this.REGION}.console.aws.amazon.com/console/home?region=${this.REGION}`;
         return `https://signin.aws.amazon.com/federation?Action=login&Issuer=AppDevPortal&Destination=${encodeURIComponent(destination)}&SigninToken=${token}`;
     }
 
@@ -201,26 +268,22 @@ export class AWSClient implements RootTeamSettingClient {
     }
 
     private async moveAccount(accountId: string) {
-        try {
-            await this.orgClient.send(new MoveAccountCommand({
-                AccountId: accountId,
-                SourceParentId: this.ROOT_ID,
-                DestinationParentId: this.NONPROD_OU_ID
-            }));
-        } catch (e: any) {
-            if (e.name !== 'SourceParentNotFoundException' && e.name !== 'DestinationParentNotFoundException') {
-                console.warn(`Could not move account: ${e.message}. It might already be in the target OU.`);
-            }
-        }
+        await this.orgClient.send(new MoveAccountCommand({
+            AccountId: accountId,
+            SourceParentId: this.ROOT_ID,
+            DestinationParentId: this.NONPROD_OU_ID
+        }));
     }
 
     private async createBudget(accountId: string, email: string, projectName: string, budgetLimit: string) {
         await new Promise(r => setTimeout(r, 5000));
 
+        const budgetName = `Project-Budget-${projectName}`;
+
         await this.budgetsClient.send(new CreateBudgetCommand({
             AccountId: this.MANAGEMENT_ACCOUNT_ID,
             Budget: {
-                BudgetName: `Project-Budget-${projectName}`,
+                BudgetName: budgetName,
                 BudgetType: BudgetType.Cost,
                 TimeUnit: TimeUnit.MONTHLY,
                 BudgetLimit: { Amount: budgetLimit, Unit: "USD" },
@@ -238,6 +301,45 @@ export class AWSClient implements RootTeamSettingClient {
                 }
             ]
         }));
+
+        await this.createBudgetEnforcementAction(accountId, budgetName);
+    }
+
+    /**
+     * Attaches a Budget Action that automatically applies a Deny-All SCP to the
+     * account when actual spend reaches 100% of the budget. This stops all AWS
+     * activity in the account without deleting any resources.
+     *
+     * Requires AWS_DENY_ALL_SCP_ID and AWS_BUDGET_ACTION_ROLE_ARN to be set.
+     * If either is missing the action is skipped with a warning.
+     */
+    private async createBudgetEnforcementAction(accountId: string, budgetName: string) {
+        if (!this.DENY_ALL_SCP_ID || !this.BUDGET_ACTION_ROLE_ARN) {
+            console.warn("[AWS_CLIENT] AWS_DENY_ALL_SCP_ID or AWS_BUDGET_ACTION_ROLE_ARN not set; budget enforcement action skipped.");
+            return;
+        }
+
+        await this.budgetsClient.send(new CreateBudgetActionCommand({
+            AccountId: this.MANAGEMENT_ACCOUNT_ID,
+            BudgetName: budgetName,
+            NotificationType: NotificationType.ACTUAL,
+            ActionType: ActionType.SCP,
+            ActionThreshold: {
+                ActionThresholdValue: 100,
+                ActionThresholdType: "PERCENTAGE"
+            },
+            Definition: {
+                ScpActionDefinition: {
+                    PolicyId: this.DENY_ALL_SCP_ID,
+                    TargetIds: [accountId]
+                }
+            },
+            ExecutionRoleArn: this.BUDGET_ACTION_ROLE_ARN,
+            ApprovalModel: "AUTOMATIC",
+            Subscribers: [{ SubscriptionType: "EMAIL", Address: this.BILLING_ALERT_EMAIL }]
+        }));
+
+        console.debug(`[AWS_CLIENT] Budget enforcement action created for account ${accountId}.`);
     }
 
     public async findAccountIdByName(name: string): Promise<string | undefined> {
@@ -260,19 +362,23 @@ export class AWSClient implements RootTeamSettingClient {
             }
 
             // just in case the account was created but not moved
-            const rootConfig = { client: this.orgClient };
-            const rootInput = { ParentId: this.ROOT_ID };
-
-            const rootPaginator = paginateListAccountsForParent(rootConfig, rootInput);
+            const rootPaginator = paginateListAccountsForParent({ client: this.orgClient }, { ParentId: this.ROOT_ID });
 
             for await (const page of rootPaginator) {
-                const accounts = page.Accounts || [];
-
-                const match = accounts.find((a) => a.Name === name);
-
+                const match = (page.Accounts || []).find((a) => a.Name === name);
                 if (match) {
                     await this.moveAccount(match.Id!);
                     return match.Id;
+                }
+            }
+
+            // check suspended OU so archived accounts aren't re-provisioned
+            if (this.SUSPENDED_OU_ID) {
+                const suspendedPaginator = paginateListAccountsForParent({ client: this.orgClient }, { ParentId: this.SUSPENDED_OU_ID });
+
+                for await (const page of suspendedPaginator) {
+                    const match = (page.Accounts || []).find((a) => a.Name === name);
+                    if (match) return match.Id;
                 }
             }
 

@@ -20,7 +20,7 @@ import * as express from 'express';
 import path from 'path';
 import { Error, FlattenMaps, HydratedDocument, Types } from 'mongoose';
 import { Request, Body, Controller, Get, Patch, Path, Post, Queries, Route, SuccessResponse, Put, Security, Delete, Tags, Query } from "tsoa";
-import { AddGroupMemberRequest, GetGroupInfoResponse, GetTeamsListResponse, GetUserListOptions, GetUserListResponse, RemoveGroupMemberRequest, SeasonType, TeamType, UserInformationBrief, GetTeamsForUsernameResponse, AuthentikClientError, CreateUserRequest, ServiceSeasonType, AuthentikClientErrorType, TeamInformationDetail, GetTeamsListDetailResponse, UserInformationPartial, TeamAttributeDefinition, TeamInformationBrief } from "../clients/AuthentikClient/models";
+import { AddGroupMemberRequest, GetGroupInfoResponse, GetTeamsListResponse, GetUserListOptions, GetUserListResponse, RemoveGroupMemberRequest, SeasonType, TeamType, UserInformationBrief, GetTeamsForUsernameResponse, AuthentikClientError, CreateUserRequest, ServiceSeasonType, AuthentikClientErrorType, TeamInformationDetail, GetTeamsListDetailResponse, UserInformationPartial, TeamAttributeDefinition, TeamInformationBrief, GetTeamMembershipsResponse } from "../clients/AuthentikClient/models";
 import { AuthentikClient } from "../clients/AuthentikClient";
 import { Invite } from "../models/Invites";
 import { EmailClient } from "../clients/EmailClient";
@@ -28,6 +28,7 @@ import { SharedResourceClient } from '../clients';
 import { ENABLED_SHARED_RESOURCES, ENABLED_TEAMSETTING_RESOURCES, ENABLED_SERVICE_TEAMS, TEAM_TYPE_CONFIGS } from '../config';
 import { SlackClient } from '../clients/SlackClient';
 import { AWSClient } from '../clients/AWSClient';
+import { checkPhotoHasFace } from '../clients/PhotoCheckClient/PhotoCheckClient';
 import { s3Client, BUCKET_NAME } from '../clients/AWSClient/S3Client';
 import { GetObjectCommand, PutObjectCommand, CopyObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
@@ -37,14 +38,16 @@ import { BindleController, EnabledBindlePermissions } from '../controllers/Bindl
 import { AuthorizedUser } from '../clients/OpenIdClient';
 import { executiveAuthVerify } from '../auth';
 import { TeamCreationRequest, TeamCreationRequestStatus, ITeamCreationRequest } from '../models/TeamCreationRequest';
-import { CustomValidationError, ResourceAccessError, SharedResourcesError } from '../utils/errors';
+import { CustomValidationError, ResourceAccessError, SharedResourcesError, describeUnknownError } from '../utils/errors';
 import { ExpressRequestBindleExtension } from '../types/express';
-import { validateS3FileSignature, FILE_SIGNATURES } from '../utils/s3-validation';
-import { signAvatarUrl } from '../utils/avatars';
+import { validateS3FileSignature, FILE_SIGNATURES, getS3ObjectBytes, deleteTempAvatar } from '../utils/s3-validation';
+import { signAvatarUrl, invalidateAvatarUrlCache } from '../utils/avatars';
+import { normalizeLinkedInProfileUrl } from '../utils/linkedin';
+import MarkdownIt from "markdown-it";
 import zxcvbn from 'zxcvbn';
 import { IUserReview, UserReview } from '../models/UserReview';
 
-type DocumentJSON<T> = FlattenMaps<T> & Required<{ _id: Types.ObjectId; }> & { __v: number; };
+import type { DocumentJSON } from "../utils/types";
 
 export interface EnabledRootSettings {
     [key: string]: boolean
@@ -116,6 +119,8 @@ export interface APICreateTeamRequest {
     seasonType: SeasonType,
     seasonYear: number,
     description: string,
+    teamStartDate?: string,
+    teamEndDate: string,
     requestorRole: string
 }
 
@@ -124,8 +129,8 @@ interface APIUpdateTeamRequest {
     friendlyName?: string,
     /** @minLength 1 */
     description?: string,
-    /** @minLength 1 */
-    [key: string]: string
+    teamStartDate?: string,
+    teamEndDate?: string,
 }
 
 interface APITeamInfoResponse {
@@ -160,6 +165,7 @@ interface APITeamInviteAcceptRequest {
     major: string;
     expectedGrad: Date;
     phoneNumber: string;
+    linkedinUrl?: string;
     avatarKey?: string;
 }
 
@@ -167,6 +173,8 @@ interface APIGetTeamsListOptions {
     search?: string,
     subgroupsOnly?: boolean,
     includeUsers?: boolean,
+    /** When false (default), archived teams are excluded from the results. @default false */
+    includeArchived?: boolean,
 
     /** @default 20 */
     limit?: number;
@@ -225,6 +233,17 @@ interface APITeamCreationRequestResponse {
     createdAt: Date;
 }
 
+/**
+ * Validates a graduation date string.
+ * Accepts ISO date strings in the format YYYY-MM-DD.
+ */
+function isValidGradDate(value: string): boolean {
+    const match = value.match(/^(Spring|Summer|Fall|Winter)-(\d{4})$/);
+    if (!match) return false;
+    const year = parseInt(match[2]!, 10);
+    return year >= 2000 && year <= 2100;
+}
+
 @Route("/api/org")
 export class OrgController extends Controller {
     private teamSettingList: { [key: string]: RootTeamSettingMap } = {}
@@ -243,6 +262,23 @@ export class OrgController extends Controller {
         for (const teamSettingResource of Object.values(ENABLED_TEAMSETTING_RESOURCES)) {
             const resourceName = teamSettingResource.getResourceName()
             this.teamSettingList[resourceName] = teamSettingResource.getSupportedSettings()
+        }
+    }
+
+    private validateTeamDateRange(startDate: string, endDate: string) {
+        const parsedStart = new Date(startDate);
+        const parsedEnd = new Date(endDate);
+
+        if (Number.isNaN(parsedStart.getTime())) {
+            throw new CustomValidationError(400, "Invalid team start date");
+        }
+
+        if (Number.isNaN(parsedEnd.getTime())) {
+            throw new CustomValidationError(400, "Invalid team end date");
+        }
+
+        if (parsedStart > parsedEnd) {
+            throw new CustomValidationError(400, "Team start date must be on or before team end date");
         }
     }
 
@@ -663,16 +699,30 @@ export class OrgController extends Controller {
         }
 
         // 2. Validation Checks
+        /* The review must belong to the person named in the path. Checked before
+           the authorization branch, and reported as a 404 like every other
+           rejection here, so the endpoint never confirms a review's existence. */
+        if (review.userId !== personId) {
+            throw new CustomValidationError(404, "Review does not exist");
+        }
+
         // Ensure creator and user ids match
         if (review.creatorId !== req.session.authorizedUser!.pk) {
-            // Allow exec/superuser to delete other's reviews
-            if (!executiveAuthVerify(req, [], true)) {
+            /* Allow exec/superuser to delete other's reviews. executiveAuthVerify
+               is async and REJECTS for non-executives rather than returning false,
+               so it must be awaited inside a try/catch. Negating the bare promise
+               is always false, which silently grants every caller. */
+            let isExecutive = false;
+            try {
+                isExecutive = await executiveAuthVerify(req, [], true);
+            } catch {
+                isExecutive = false;
+            }
+
+            if (!isExecutive) {
                 // Return does not exist for obscurity
                 throw new CustomValidationError(404, "Review does not exist");
             }
-        }
-        if (review.userId !== personId) {
-            throw new CustomValidationError(400, "User ID does not match");
         }
         
         // 3. Delete Review
@@ -681,6 +731,212 @@ export class OrgController extends Controller {
         } catch (e) {
             throw new ResourceAccessError(500, `Failed to delete review: ${e}`);
         }
+    }
+
+    /**
+     * Updates the profile attributes of a user. Only the authenticated user
+     * can update their own profile. Supports updating major, expected graduation
+     * date, phone number, and avatar.
+     * 
+     * @param req Express Request Object
+     * @param personId Internal User ID
+     * @param body Update Request Body
+     */
+    @Patch("people/{personId}")
+    @Tags("People Management")
+    @SuccessResponse(200)
+    @Security("oidc")
+    async updatePersonInfo(
+        @Request() req: express.Request,
+        @Path() personId: number,
+        @Body() body: {
+            major?: string;
+            expectedGrad?: string;
+            phoneNumber?: string;
+            linkedinUrl?: string;
+            avatarKey?: string;
+        }
+    ): Promise<{ success: boolean }> {
+        const authorizedUser = (req as any).session.authorizedUser as AuthorizedUser;
+        const callerInfo = await this.authentikClient.getUserInfoFromEmail(authorizedUser.email);
+
+        if (Number(callerInfo.pk) !== personId) {
+            this.setStatus(403);
+            throw new CustomValidationError(403, "You can only update your own profile.");
+        }
+
+        const updatePayload: Record<string, any> = {};
+        if (body.major !== undefined) {
+            if (body.major === "") {
+                updatePayload.major = "";
+            } else {
+                if (body.major.length > 100) throw new CustomValidationError(400, "Invalid major.");
+                updatePayload.major = capitalizeString(body.major);
+            }
+        }
+
+        if (body.expectedGrad !== undefined) {
+            if (body.expectedGrad === "") {
+                updatePayload.expectedGrad = "";
+            } else {
+                if (!isValidGradDate(body.expectedGrad)) throw new CustomValidationError(400, "Invalid graduation date.");
+                updatePayload.expectedGrad = body.expectedGrad;
+            }
+        }
+
+        if (body.phoneNumber !== undefined) {
+            if (body.phoneNumber === "") {
+                updatePayload.phoneNumber = "";
+            } else {
+                const digits = body.phoneNumber.replace(/[\s\-().+]/g, "");
+                if (!/^\d{10,15}$/.test(digits)) throw new CustomValidationError(400, "Invalid phone number.");
+                updatePayload.phoneNumber = body.phoneNumber;
+            }
+        }
+
+        if (body.linkedinUrl !== undefined) {
+            const normalizedLinkedinUrl = normalizeLinkedInProfileUrl(body.linkedinUrl);
+            if (normalizedLinkedinUrl === null) {
+                throw new CustomValidationError(400, "Please enter a valid LinkedIn profile URL.");
+            }
+            updatePayload.linkedinUrl = normalizedLinkedinUrl;
+        }
+
+        if (Object.keys(updatePayload).length > 0) {
+            await this.authentikClient.updateUserAttributes(personId, updatePayload);
+        }
+
+        // Handle avatar update
+        if (body.avatarKey) {
+            const avatarKey = path.posix.normalize(body.avatarKey);
+            const expectedPrefix = `avatars/temp/profile/${personId}/`;
+            if (!avatarKey.startsWith(expectedPrefix) || avatarKey.includes('..')) {
+                throw new CustomValidationError(400, "Invalid avatar key");
+            }
+
+            try {
+                const filename = path.posix.basename(avatarKey);
+                const ext = filename.includes('.') ? filename.split('.').pop()?.toLowerCase() : '';
+                const allowedExtensions = ['png', 'jpg', 'jpeg', 'gif', 'webp'];
+                if (!ext || !allowedExtensions.includes(ext)) {
+                    throw new CustomValidationError(400, "Invalid avatar file extension.");
+                }
+
+                const newKey = `avatars/${personId}/avatar.${ext}`;
+
+                // Validate magic bytes
+                const allowedAvatars = [FILE_SIGNATURES.PNG, FILE_SIGNATURES.JPEG, FILE_SIGNATURES.GIF, FILE_SIGNATURES.WEBP];
+                const isValid = await validateS3FileSignature(avatarKey, allowedAvatars);
+                if (!isValid) {
+                    await deleteTempAvatar(avatarKey);
+                    throw new CustomValidationError(400, "Invalid image file.");
+                }
+
+                const imageBytes = await getS3ObjectBytes(avatarKey);
+                if (!imageBytes) {
+                    await deleteTempAvatar(avatarKey);
+                    throw new CustomValidationError(400, "Upload failed, please try again.");
+                }
+
+                const faceCheckResult = await checkPhotoHasFace(imageBytes);
+                if (faceCheckResult.passed === false) {
+                    await deleteTempAvatar(avatarKey);
+                    if (faceCheckResult.reason === "file_too_large") {
+                        throw new CustomValidationError(400, "File is too large. Please upload an image smaller than 1 MB.");
+                    }
+                    if (faceCheckResult.reason === "image_dimensions_too_large") {
+                        throw new CustomValidationError(400, "Image dimensions are too large. Please use an image no larger than 4096 x 4096 pixels.");
+                    }
+                    throw new CustomValidationError(400, "Please upload a photo of only your face.");
+                }
+
+                // Capture old key before overwriting
+                const existingUser = await this.authentikClient.getUserInfo(personId);
+                const oldAvatarKey = existingUser.attributes.avatar;
+
+                // Copy new avatar into place
+                await s3Client.send(new CopyObjectCommand({
+                    Bucket: BUCKET_NAME,
+                    CopySource: `${BUCKET_NAME}/${avatarKey}`,
+                    Key: newKey
+                }));
+
+                // Commit: point DB at new avatar
+                await this.authentikClient.updateUserAttributes(personId, { avatar: newKey });
+                invalidateAvatarUrlCache(personId);
+
+                // Best-effort cleanup — failures here are non-fatal
+                if (oldAvatarKey && oldAvatarKey !== newKey) {
+                    try {
+                        await s3Client.send(new DeleteObjectCommand({ Bucket: BUCKET_NAME, Key: oldAvatarKey }));
+                    } catch (e) {
+                        console.error("Failed to delete old avatar", e);
+                    }
+                }
+
+                try {
+                    await s3Client.send(new DeleteObjectCommand({ Bucket: BUCKET_NAME, Key: avatarKey }));
+                } catch (e) {
+                    console.error("Failed to delete temp avatar after commit", e);
+                }
+
+            } catch (e) {
+                if (e instanceof CustomValidationError) throw e;
+                console.error("Failed to process avatar update", e);
+                throw new CustomValidationError(500, "Failed to update avatar.");
+            }
+        }
+
+        return { success: true };
+    }
+
+    /**
+     * Generates a pre-signed URL for uploading a profile picture for an
+     * authenticated user editing their own profile.
+     * 
+     * @param req Express Request Object
+     * @param fileName Name of the file
+     * @param contentType MIME type of the file
+     */
+    @Get("people/avatar/profile-upload-url")
+    @Tags("People Management")
+    @SuccessResponse(200)
+    @Security("oidc")
+    async getProfileAvatarUploadUrl(
+        @Request() req: express.Request,
+        @Query() fileName: string,
+        @Query() contentType: string
+    ): Promise<{ uploadUrl: string, key: string, fields: Record<string, string> }> {
+        const authorizedUser = (req as any).session.authorizedUser as AuthorizedUser;
+        const callerInfo = await this.authentikClient.getUserInfoFromEmail(authorizedUser.email);
+
+        const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+        if (!allowedTypes.includes(contentType)) {
+            throw new CustomValidationError(400, "Invalid file type. Only images are allowed.");
+        }
+
+        const safeFileName = path.posix.basename(fileName);
+        const ext = safeFileName.includes('.') ? safeFileName.split('.').pop()?.toLowerCase() : '';
+        const allowedExtensions = ['png', 'jpg', 'jpeg', 'gif', 'webp'];
+        if (!ext || !allowedExtensions.includes(ext)) {
+            throw new CustomValidationError(400, "Invalid file name. Only image extensions are allowed.");
+        }
+
+        const timestamp = Date.now();
+        const key = `avatars/temp/profile/${callerInfo.pk}/${timestamp}.${ext}`;
+
+        const { url, fields } = await createPresignedPost(s3Client, {
+            Bucket: BUCKET_NAME,
+            Key: key,
+            Conditions: [
+                ["content-length-range", 0, 819200],
+                ["eq", "$Content-Type", contentType],
+            ],
+            Fields: { "Content-Type": contentType },
+            Expires: 300,
+        });
+
+        return { uploadUrl: url, key, fields };
     }
 
     /**
@@ -703,6 +959,17 @@ export class OrgController extends Controller {
     @Security("oidc")
     async getUserRootTeams(@Request() req: express.Request, @Path() username: string): Promise<GetTeamsForUsernameResponse> {
         return await this.authentikClient.getRootTeamsForUsername(username)
+    }
+
+    /**
+     * Fetches all subteam and root memberships for the user with parents.
+     */
+    @Get("people/{username}/memberships")
+    @Tags("Team Management")
+    @SuccessResponse(200)
+    @Security("oidc")
+    async getUserTeamMemberships(@Path() username: string): Promise<GetTeamMembershipsResponse> {
+        return await this.authentikClient.getTeamMembershipsForUsername(username)
     }
 
     /**
@@ -801,7 +1068,10 @@ export class OrgController extends Controller {
         }));
         
         // 5. Initialize Divisions
-        const divisions: Record<string, OrgChartNode> = {
+        /* Keyed by TeamType rather than string: Object.keys then yields real
+           enum members, so the teamType comparison below is type-checked and a
+           bad key fails to compile instead of silently matching no teams. */
+        const divisions: Partial<Record<TeamType, OrgChartNode>> = {
             [TeamType.PROJECT]: { id: "div_project", name: "Projects", type: "DIVISION", children: [], hasChildren: true },
             [TeamType.BOOTCAMP]: { id: "div_bootcamp", name: "Bootcamp", type: "DIVISION", children: [], hasChildren: true },
             [TeamType.CORPORATE]: { id: "div_corporate", name: "Corporate", type: "DIVISION", children: [], hasChildren: true },
@@ -819,7 +1089,7 @@ export class OrgController extends Controller {
         // 6. Pre-populate Divisions with Team Owners (Level 3)
         // We do this REGARDLESS of expandAll to ensure they are visible.
         // We check for "Roots" of each type.
-        for (const type of Object.keys(divisions)) 
+        for (const type of Object.keys(divisions) as TeamType[]) 
         {
             const divRoots = allTeams.filter(t =>
                 !t.flaggedForDeletion &&
@@ -916,7 +1186,7 @@ export class OrgController extends Controller {
     @Get("orgchart/node/{teamId}")
     @Tags("Team Management")
     @SuccessResponse(200)
-    //@Security("oidc")
+    @Security("oidc")
     async getOrgChartNode(@Path() teamId: string): Promise<OrgChartNode> {
         // Case A: Virtual Division ID (e.g. "div_project")
         // NOTE: With the logic above, we pre-populate divisions, so this might not be hit often
@@ -1097,6 +1367,14 @@ export class OrgController extends Controller {
         const authorizedUser = req.session.authorizedUser!;
         const invitorInfo = await this.authentikClient.getUserInfoFromEmail(authorizedUser.email)
         const teamInfo = req.bindle!.teamInfo;
+        const destination = await this.authentikClient.getGroupInfo(inviteReq.subteamPk, { includeParentInfo: true });
+        if (!teamInfo.attributes.peoplePortalCreation ||
+            !destination.attributes.peoplePortalCreation ||
+            teamInfo.attributes.flaggedForDeletion ||
+            destination.attributes.flaggedForDeletion ||
+            destination.parentPk !== teamInfo.pk) {
+            throw new CustomValidationError(400, "Invite destination must be an active subteam of the authorized team");
+        }
 
         /* Create New Invite */
         const createdInvite = await Invite.create({
@@ -1104,12 +1382,14 @@ export class OrgController extends Controller {
             inviteEmail: inviteReq.inviteeEmail,
             roleTitle: inviteReq.roleTitle,
             teamName: teamInfo.attributes.friendlyName,
+            teamPk: teamInfo.pk,
             subteamPk: inviteReq.subteamPk,
             inviterPk: invitorInfo.pk,
             expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000) /* 48 Hours */
         })
 
         /* Send an Email to the Invitee and the Invitor */
+        const onboardUrl = `${process.env.PEOPLEPORTAL_BASE_URL}/onboard/${createdInvite._id}`;
         await this.emailClient.send({
             to: inviteReq.inviteeEmail,
             cc: [invitorInfo.email],
@@ -1121,7 +1401,7 @@ export class OrgController extends Controller {
                 invitorName: invitorInfo.name,
                 teamName: teamInfo.attributes.friendlyName,
                 roleTitle: inviteReq.roleTitle,
-                onboardUrl: `${process.env.PEOPLEPORTAL_BASE_URL}/onboard/${createdInvite._id}`
+                onboardUrl
             }
         })
     }
@@ -1217,8 +1497,8 @@ export class OrgController extends Controller {
     @SuccessResponse(200)
     async getInviteInfo(@Path() inviteId: string): Promise<APITeamInviteGetResponse> {
         const invite = await Invite.findById(inviteId).lean<APITeamInviteGetResponse>().exec()
-        if (!invite)
-            throw new Error("Invalid Invite ID!")
+        if (!invite || !invite.teamPk || invite.expiresAt <= new Date())
+            throw new CustomValidationError(400, "Invalid or expired invite")
 
         return {
             ...invite,
@@ -1242,9 +1522,14 @@ export class OrgController extends Controller {
         /* Sanitize Request */
         req.major = capitalizeString(req.major);
 
+        const normalizedLinkedinUrl = normalizeLinkedInProfileUrl(req.linkedinUrl ?? "");
+        if (normalizedLinkedinUrl === null) {
+            throw new CustomValidationError(400, "Please enter a valid LinkedIn profile URL.");
+        }
+
         const invite = await Invite.findById(inviteId).exec()
-        if (!invite)
-            throw new Error("Invalid Invite ID")
+        if (!invite || !invite.teamPk || invite.expiresAt <= new Date())
+            throw new CustomValidationError(400, "Invalid or expired invite")
 
         /* Validate Password Complexity */
         if (req.password) {
@@ -1270,8 +1555,16 @@ export class OrgController extends Controller {
             throw new Error("User has not joined the Slack Workspace!")
 
         /* Check if Subteam is Valid and Isn't Archived */
-        const subteam = await this.authentikClient.getGroupInfo(invite.subteamPk)
+        const rootTeam = await this.authentikClient.getGroupInfo(invite.teamPk)
+        const subteam = await this.authentikClient.getGroupInfo(invite.subteamPk, { includeParentInfo: true })
         const isSubteamArchived = subteam.attributes.flaggedForDeletion
+        if (!rootTeam.attributes.peoplePortalCreation ||
+            !subteam.attributes.peoplePortalCreation ||
+            rootTeam.attributes.flaggedForDeletion ||
+            isSubteamArchived ||
+            subteam.parentPk !== invite.teamPk) {
+            throw new CustomValidationError(400, "Invite destination is no longer valid");
+        }
 
         /* Construct New Request */
         const createUserRequest: CreateUserRequest = {
@@ -1282,6 +1575,7 @@ export class OrgController extends Controller {
                 major: req.major,
                 expectedGrad: req.expectedGrad,
                 phoneNumber: req.phoneNumber,
+                linkedinUrl: normalizedLinkedinUrl,
                 roles: {}
             }
         }
@@ -1311,24 +1605,28 @@ export class OrgController extends Controller {
                 const ext = req.avatarKey.split('.').pop();
                 const newKey = `avatars/${userPk}/avatar.${ext}`;
 
-                // Server-Side Magic Number Validation
                 const allowedAvatars = [FILE_SIGNATURES.PNG, FILE_SIGNATURES.JPEG, FILE_SIGNATURES.GIF, FILE_SIGNATURES.WEBP];
                 const isValid = await validateS3FileSignature(req.avatarKey, allowedAvatars);
                 if (!isValid) {
-                    console.error(`Invalid avatar signature for ${req.avatarKey}`);
-                    // Delete the bad file
-                    try {
-                        await s3Client.send(new DeleteObjectCommand({
-                            Bucket: BUCKET_NAME,
-                            Key: req.avatarKey
-                        }));
-                    } catch (e) {
-                        console.error("Failed to delete invalid avatar", e);
-                    }
+                    console.error("Profile picture was not valid. Account created anyway.");
+                    await deleteTempAvatar(req.avatarKey);
+                    await invite.deleteOne();
+                    return;
+                }
 
-                    // Proceed without setting avatar
-                    console.error("Profile picture was not valid. Account created anyway.")
-                    await invite.deleteOne()
+                const imageBytes = await getS3ObjectBytes(req.avatarKey);
+                if (!imageBytes) {
+                    console.error("Failed to fetch avatar bytes. Account created anyway.");
+                    await deleteTempAvatar(req.avatarKey);
+                    await invite.deleteOne();
+                    return;
+                }
+
+                const faceCheckResult = await checkPhotoHasFace(imageBytes);
+                if (faceCheckResult.passed === false) {
+                    console.error("Avatar failed face check. Account created anyway.");
+                    await deleteTempAvatar(req.avatarKey);
+                    await invite.deleteOne();
                     return;
                 }
 
@@ -1341,6 +1639,10 @@ export class OrgController extends Controller {
                 await this.authentikClient.updateUserAttributes(parseInt(userPk as any), {
                     avatar: newKey
                 });
+
+                /* Second avatar write path; mirror the invalidate the profile-edit
+                   path does so the two stay symmetric. */
+                invalidateAvatarUrlCache(parseInt(userPk as any));
 
                 await s3Client.send(new DeleteObjectCommand({
                     Bucket: BUCKET_NAME,
@@ -1640,7 +1942,7 @@ export class OrgController extends Controller {
                 teamType: parentInfo.attributes.teamType,
                 seasonType: parentInfo.attributes.seasonType,
                 seasonYear: parentInfo.attributes.seasonYear,
-                description: body.description
+                description: body.description,
             }
         })
 
@@ -1787,6 +2089,8 @@ export class OrgController extends Controller {
         /* Santize Request */
         createTeamReq.friendlyName = validateTeamName(createTeamReq.friendlyName);
         createTeamReq.description = capitalizeString(createTeamReq.description);
+        createTeamReq.teamStartDate = createTeamReq.teamStartDate ?? new Date().toISOString().slice(0, 10);
+        this.validateTeamDateRange(createTeamReq.teamStartDate, createTeamReq.teamEndDate);
 
         /* Check for Authorized User */
         const authorizedUser = req.session.authorizedUser!;
@@ -1817,7 +2121,6 @@ export class OrgController extends Controller {
 
             if (execEmails.length < 1)
                 throw new CustomValidationError(500, "No Executive Board Members found. Please contact an Administrator.");
-
             /* Submit Request */
             const teamCreationRequest = await TeamCreationRequest.create({
                 requestorPk: authorizedUser.pk,
@@ -1893,7 +2196,7 @@ export class OrgController extends Controller {
                     errors.set(sharedResource.getResourceName(), e);
                 } else {
                     errors.set(sharedResource.getResourceName(), new Error(
-                        `Unknown Error: ${e ? e.toString() : ""}`
+                        `Unknown Error: ${describeUnknownError(e)}`
                     ));
                 }
             }
@@ -1924,8 +2227,23 @@ export class OrgController extends Controller {
             conf.description = capitalizeString(conf.description);
         }
 
-        /* Strictly restrict updates to only name and description to prevent attribute pollution */
-        await this.authentikClient.updateGroupInformation(teamId, conf);
+        if (conf.teamStartDate !== undefined || conf.teamEndDate !== undefined) {
+            const teamInfo = await this.authentikClient.getGroupInfo(teamId);
+            const effectiveStartDate = conf.teamStartDate ?? teamInfo.attributes.teamStartDate;
+            const effectiveEndDate = conf.teamEndDate ?? teamInfo.attributes.teamEndDate;
+
+            if (!effectiveStartDate || !effectiveEndDate) {
+                throw new CustomValidationError(400, "Both team start date and end date are required");
+            }
+
+            this.validateTeamDateRange(
+                effectiveStartDate,
+                effectiveEndDate,
+            );
+        }
+
+        /* Strictly restrict updates to allowed fields to prevent attribute pollution */
+        await this.authentikClient.updateGroupInformation(teamId, conf as Record<string, string | undefined>);
     }
 
     /**
@@ -1972,6 +2290,78 @@ export class OrgController extends Controller {
         // sync bindles
     }
 
+    /**
+     * Archives a root team. Archiving preserves all data but makes the team's
+     * Shared Resources read-only (Ex. Gitea repositories and Slack channels are
+     * archived). Each Shared Resource and Root Team Setting client is asked to
+     * archive its resources, and the team is stamped with an `archivedAt`
+     * timestamp so it surfaces as archived in the executive console.
+     *
+     * Only root teams may be archived, and the caller must pass the Executive
+     * Authorization Layer as a **Superuser** (`su:exclusive` scope).
+     *
+     * @param teamId Team ID
+     */
+    @Post("teams/{teamId}/archive")
+    @Tags("Team Management")
+    @SuccessResponse(200)
+    @Security("bindles", ["corp:subteamaccess"])
+    async archiveTeam(@Request() req: express.Request, @Path() teamId: string) {
+        const teamInfo = req.bindle!.teamInfo;
+
+        /* Archiving is a root-team, executive-only operation */
+        if (teamInfo.parentPk) {
+            throw new CustomValidationError(
+                400,
+                "Only root teams can be archived."
+            );
+        }
+
+        await executiveAuthVerify(
+            req, ["su:exclusive"],
+            true /* Skip OIDC Check as its done by Bindles Auth */
+        );
+
+        let errors: Map<string, Error> = new Map();
+        const recordError = (resourceName: string, e: unknown) => {
+            errors.set(resourceName, e instanceof Error ? e : new Error(
+                `Unknown Error: ${describeUnknownError(e)}`
+            ));
+        };
+
+        /* 1. Archive Shared Resources (Gitea repos, Slack channels, etc.) */
+        for (const sharedResource of this.sharedResources) {
+            try {
+                await sharedResource.archiveTeam(teamInfo, () => { /* progress not streamed */ });
+            } catch (e) {
+                recordError(sharedResource.getResourceName(), e);
+            }
+        }
+
+        /* 2. Archive Root Team Setting Resources (AWS, etc.) */
+        for (const settingResource of Object.values(ENABLED_TEAMSETTING_RESOURCES)) {
+            try {
+                await settingResource.archiveTeam(teamInfo);
+            } catch (e) {
+                recordError(settingResource.getResourceName(), e);
+            }
+        }
+
+        if (errors.size > 0)
+            console.error("[OrgController] Archive completed with errors:", errors);
+
+        /* 3. Stamp the team as archived */
+        const actorEmail = req.session.authorizedUser?.email;
+        let archivedBy: string | undefined;
+        if (actorEmail) {
+            try {
+                archivedBy = (await this.authentikClient.getUserInfoFromEmail(actorEmail)).pk;
+            } catch { /* Audit attribution is best-effort */ }
+        }
+
+        await this.authentikClient.archiveGroup(teamId, archivedBy);
+    }
+
     /* === HELPER ROUTINES === */
     private isGroupSubteam(group: GetGroupInfoResponse): boolean {
         return !!group.parentPk;
@@ -1983,10 +2373,22 @@ export class OrgController extends Controller {
         createTeamReq.friendlyName = validateTeamName(createTeamReq.friendlyName);
 
         /* Create the New Team */
-        const newTeam = await this.authentikClient.createNewTeam({ attributes: { ...createTeamReq } })
+        const newTeam = await this.authentikClient.createNewTeam({
+            attributes: {
+                friendlyName: createTeamReq.friendlyName,
+                teamType: createTeamReq.teamType,
+                seasonType: createTeamReq.seasonType,
+                seasonYear: createTeamReq.seasonYear,
+                description: createTeamReq.description,
+                teamStartDate: createTeamReq.teamStartDate ?? new Date().toISOString().slice(0, 10),
+                teamEndDate: createTeamReq.teamEndDate,
+            }
+        })
 
-        /* Add the Creator to Team Owners */
-        this.addTeamMemberWrapper({
+        /* Add the Creator to Team Owners. Awaited: unawaited, creation could
+           report success before the owner existed, and a failure vanished as
+           an unhandled rejection. */
+        await this.addTeamMemberWrapper({
             groupId: newTeam.pk,
             userPk: ownerPk,
             roleTitle: createTeamReq.requestorRole
@@ -2050,8 +2452,9 @@ export class OrgController extends Controller {
 
         const coreAdditionComplete = await this.authentikClient.addGroupMember(request)
 
-        /* Update User's Role Attribute */
-        this.authentikClient.updateUserAttributes(request.userPk, {
+        /* Update User's Role Attribute. Awaited so the role is persisted before
+           the caller is told the member was added. */
+        await this.authentikClient.updateUserAttributes(request.userPk, {
             roles: {
                 ...userInfo.attributes.roles,
                 [request.groupId]: request.roleTitle

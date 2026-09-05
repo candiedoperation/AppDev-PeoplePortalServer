@@ -18,7 +18,7 @@
 
 import axios from "axios"
 import log from "loglevel"
-import { AddGroupMemberRequest, AuthentikClientError, AuthentikServerVersion, CreateTeamRequest, CreateUserRequest, GetGroupInfoRequestOptions, GetGroupInfoResponse as GetGroupInfoResponse, GetTeamsListOptions as GetGroupsListOptions, GetTeamsListResponse as GetGroupsListResponse, GetTeamsForUsernameResponse, GetUserListOptions, GetUserListResponse, RemoveGroupMemberRequest, TeamAttributeDefinition, TeamInformationBrief, UserAttributeDefinition, UserInformationBrief, AuthentikFilterCursor, ServiceSeasonType, AuthentikClientErrorType, TeamType, UserInformationDetail, UserInformationPartial, TeamInformationDetail, GetTeamsListDetailResponse } from "./models"
+import { AddGroupMemberRequest, AuthentikClientError, AuthentikServerVersion, CreateTeamRequest, CreateUserRequest, GetGroupInfoRequestOptions, GetGroupInfoResponse as GetGroupInfoResponse, GetTeamsListOptions as GetGroupsListOptions, GetTeamsListResponse as GetGroupsListResponse, GetTeamsForUsernameResponse, GetUserListOptions, GetUserListResponse, RemoveGroupMemberRequest, TeamAttributeDefinition, TeamInformationBrief, UserAttributeDefinition, UserInformationBrief, AuthentikFilterCursor, ServiceSeasonType, AuthentikClientErrorType, TeamType, UserInformationDetail, UserInformationPartial, TeamInformationDetail, GetTeamsListDetailResponse, TeamMembershipBrief, GetTeamMembershipsResponse } from "./models"
 import { sanitizeGroupName } from "../../utils/strings"
 import { EnabledRootSettings } from "../../controllers/OrgController"
 import { BindleController, EnabledBindlePermissions } from "../../controllers/BindleController"
@@ -89,7 +89,9 @@ export class AuthentikClient {
                         teamType: TeamType.SERVICE,
                         seasonType: ServiceSeasonType.ROLLING,
                         seasonYear: new Date().getFullYear(),
-                        description: rootTeamConfig.description
+                        description: rootTeamConfig.description,
+                        teamStartDate: new Date().toISOString().slice(0, 10),
+                        teamEndDate: new Date().toISOString().slice(0, 10),
                     }
                 })
 
@@ -124,7 +126,9 @@ export class AuthentikClient {
                             teamType: TeamType.CORPORATE,
                             seasonType: ServiceSeasonType.ROLLING,
                             seasonYear: new Date().getFullYear(),
-                            description: subTeam.description
+                            description: subTeam.description,
+                            teamStartDate: new Date().toISOString().slice(0, 10),
+                            teamEndDate: new Date().toISOString().slice(0, 10),
                         }
                     })
                     subTeamPk = createdSubTeam.pk;
@@ -186,6 +190,38 @@ export class AuthentikClient {
         }
     }
 
+    public getFullUserList = async (): Promise<{ users: UserInformationBrief[], failedPages: number[] }> => {
+        const allUsers: UserInformationBrief[] = [];
+        const failedPages: number[] = [];
+
+        const firstPage = await this.getUserList({ page: 1 });
+
+        if (firstPage.pagination.total_pages <= 1) {
+            return { users: firstPage.users, failedPages: [] };
+        }
+
+        allUsers.push(...firstPage.users);
+        const totalPages = firstPage.pagination.total_pages;
+        const remainingPages = Array.from({ length: totalPages - 1 }, (_, i) => i + 2);
+
+
+        const results = await Promise.allSettled(
+            remainingPages.map(p => this.getUserList({ page: p }))
+        );
+
+        for (const [idx, result] of results.entries()) {
+            const page = remainingPages[idx]!;
+            if (result.status === "fulfilled") {
+                allUsers.push(...result.value.users);
+            } else {
+                log.error(AuthentikClient.TAG, `Failed to fetch page ${page}:`, result.reason);
+                failedPages.push(page);
+            }
+        }
+
+        return { users: allUsers, failedPages };
+    }
+
     public getUserList = async (options: GetUserListOptions): Promise<GetUserListResponse> => {
         var RequestConfig: any = {
             ...this.AxiosBaseConfig,
@@ -196,6 +232,7 @@ export class AuthentikClient {
                 path: 'peopleportal.atheesh.org/onboardeduser'
             }
         }
+        console.log(RequestConfig);
 
         /* Append Optional Parameters */
         if (options?.page)
@@ -260,6 +297,9 @@ export class AuthentikClient {
                     /* Safety Check */
                     if (!parentTeam) continue;
 
+                    /* Skip Archived Root Teams */
+                    if (parentTeam.attributes?.archivedAt) continue;
+
                     /* Add Parent to Map (Deduplicates) */
                     teamMap.set(parentTeam.pk, {
                         name: parentTeam.name,
@@ -268,6 +308,9 @@ export class AuthentikClient {
                         ...parentTeam.attributes
                     });
                 } else {
+                    /* Skip Archived Root Teams */
+                    if (group.attributes?.archivedAt) continue;
+
                     /* It's a Root Team */
                     teamMap.set(group.pk, {
                         name: group.name,
@@ -281,6 +324,48 @@ export class AuthentikClient {
             return {
                 teams: Array.from(teamMap.values())
             };
+        } catch (e) {
+            log.error(AuthentikClient.TAG, "Get Group List for User Request Failed with Error: ", e)
+            throw new AuthentikClientError(AuthentikClientErrorType.GROUPLIST_REQUEST_FAILED)
+        }
+    }
+
+    public getTeamMembershipsForUsername = async (username: string): Promise<GetTeamMembershipsResponse> => {
+        var RequestConfig: any = {
+            ...this.AxiosBaseConfig,
+            method: 'get',
+            url: '/api/v3/core/groups/',
+            params: {
+                include_users: false,
+                is_superuser: false,
+                include_parents: true, /* For Subteams, We return the Parent Team */
+                include_children: false, /* We don't need subteams */
+                members_by_username: username, /* Fetch Groups with Username as Member */
+                page_size: 1000,
+            }
+        }
+
+        try {
+            const res = await axios.request(RequestConfig)
+            const map = new Map<string, TeamMembershipBrief>();
+
+            for (const group of res.data.results) {
+                /* Filter by People Portal Creation */
+                if (!group.attributes?.peoplePortalCreation)
+                    continue;
+
+                const parent = group.parents_obj?.[0] ?? null;
+                map.set(group.pk, {                 // key = the membership group pk (matches roles keys)
+                    name: group.name,
+                    pk: group.pk,
+                    parent: parent?.pk ?? null,
+                    ...group.attributes,            // friendlyName, teamType, etc. of the SUBTEAM
+                    parentName: parent?.name,
+                    parentFriendlyName: parent?.attributes?.friendlyName,
+                });
+            }
+
+            return { memberships: Array.from(map.values()) };
         } catch (e) {
             log.error(AuthentikClient.TAG, "Get Group List for User Request Failed with Error: ", e)
             throw new AuthentikClientError(AuthentikClientErrorType.GROUPLIST_REQUEST_FAILED)
@@ -355,7 +440,8 @@ export class AuthentikClient {
 
                     /* Filter Logic */
                     const parentPk = entry.parent ?? entry.parents?.[0] ?? null;  /* 01-19-2026 (@atheesh): Filtering Patches to support Authentik v2025.12+ */
-                    const isMatch = entry.attributes.peoplePortalCreation && ((options.subgroupsOnly) ? parentPk : !parentPk);
+                    const notArchived = options.includeArchived || !entry.attributes.archivedAt;
+                    const isMatch = entry.attributes.peoplePortalCreation && notArchived && ((options.subgroupsOnly) ? parentPk : !parentPk);
 
                     if (isMatch) {
                         collectedTeams.push({
@@ -730,14 +816,32 @@ export class AuthentikClient {
     }
 
     /**
-     * Validates and updates group information (Friendly Name & Description).
+     * Marks a group as archived by stamping an `archivedAt` timestamp (and
+     * optionally the archiving executive). Internally calls updateGroupAttributes.
+     *
+     * @param teamId Target Team ID
+     * @param archivedBy Optional User PK of the executive performing the archive
+     * @returns True if update was successful
+     */
+    public archiveGroup = async (teamId: string, archivedBy?: string): Promise<boolean> => {
+        return await this.updateGroupAttributes(
+            teamId,
+            {
+                archivedAt: new Date().toISOString(),
+                ...(archivedBy !== undefined && { archivedBy })
+            }
+        )
+    }
+
+    /**
+     * Validates and updates group information (Friendly Name, Description, Team Dates).
      * 
      * @param teamId Target Team ID
      * @param conf Configuration object containing potential updates
      */
     public updateGroupInformation = async (teamId: string, conf: { [key: string]: string | undefined }) => {
-        /* Strictly restrict updates to only name and description to prevent attribute pollution */
-        const allowedFields = ["friendlyName", "description"];
+        /* Strictly restrict updates to allowed fields to prevent attribute pollution */
+        const allowedFields = ["friendlyName", "description", "teamStartDate", "teamEndDate"];
         const filteredConf: any = {};
 
         for (const key of allowedFields) {

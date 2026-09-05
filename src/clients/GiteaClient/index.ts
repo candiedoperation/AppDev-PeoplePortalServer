@@ -124,6 +124,48 @@ export class GiteaClient implements SharedResourceClient {
     }
 
     /**
+     * Archives the team's Gitea organization by marking every repository as
+     * archived (read-only). Repository data is preserved; only write access is
+     * revoked. Reports progress per repository through the callback.
+     *
+     * @param org Team Information
+     * @param callback Progress Reporting Callback
+     */
+    public async archiveTeam(org: GetGroupInfoResponse, callback: (updatedResourceCount: number, status: string) => void): Promise<boolean> {
+        let repositories: GiteaRepository[]
+        try {
+            repositories = await this.getOrgRepositories(org.name)
+        } catch (error: any) {
+            /* No organization (and therefore no repos) to archive */
+            if (error instanceof GiteaClientResourceNotExists)
+                return true
+
+            throw error
+        }
+
+        for (const repository of repositories) {
+            try {
+                var ArchiveRepoRequestConfig: any = {
+                    ...this.GiteaBaseConfig,
+                    method: 'patch',
+                    url: `/api/v1/repos/${org.name}/${repository.name}`,
+                    data: { archived: true }
+                };
+
+                await axios.request(ArchiveRepoRequestConfig);
+                callback(1, "Git Repository Archived: " + repository.name);
+            } catch (error: any) {
+                if (!(error instanceof GiteaClientResourceNotExists)) {
+                    callback(0, "Git Repository Archival Failed for " + repository.name);
+                    console.error(`[GiteaClient] Failed to archive repository ${repository.name}:`, error.message);
+                }
+            }
+        }
+
+        return true
+    }
+
+    /**
      * Creates a team if doesn't exist and syncs the team members. Translates Bindle Permissions
      * to the Organization's Rules.
      * 
