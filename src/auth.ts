@@ -25,6 +25,7 @@ import { ENABLED_SERVICE_TEAM_NAMES } from "./utils/services";
 import { ResourceAccessError } from "./utils/errors";
 import { formatBindleAccessError } from "./utils/strings";
 import { ConstraintViolationException } from "@aws-sdk/client-organizations";
+import { hasAdminAuthority } from './config';
 
 export async function NativeExpressOIDCAuthPort(
     req: express.Request,
@@ -170,11 +171,8 @@ export async function executiveAuthVerify(
     try {
         const userTeams = await authentikClient.getRootTeamsForUsername(authorizedUser.username);
 
-        /* Check if any of the teams are EXECBOARD and NOT Flagged for Deletion */
-        const isExecutive = userTeams.teams.some(team =>
-            team.name === "ExecutiveBoard" &&
-            !team.flaggedForDeletion
-        );
+        /* Any team carrying admin authority, not flagged for deletion */
+        const isExecutive = hasAdminAuthority(userTeams.teams);
 
         if (isExecutive)
             return Promise.resolve(true);
@@ -250,11 +248,8 @@ export async function eventsAuthVerify(
 
         /* If enabled, a user in exec can bypass permission. */
         if (allowExecOverride) {
-            /* Check if any of the teams are EXECBOARD and NOT Flagged for Deletion */
-            const isExecutive = userTeams.teams.some(team =>
-                team.name === "ExecutiveBoard" &&
-                !team.flaggedForDeletion
-            );
+            /* Any team carrying admin authority, not flagged for deletion */
+            const isExecutive = hasAdminAuthority(userTeams.teams);
 
             if (isExecutive)
                 return Promise.resolve(true);

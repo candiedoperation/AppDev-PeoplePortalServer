@@ -94,6 +94,22 @@ export const ENABLED_SERVICE_TEAMS: Record<string, ServiceTeamConfig> = {
       },
     ]
   },
+  TechOps: {
+    friendlyName: "Technical Operations",
+    description: "The Team Responsible for People Portal and Club Infrastructure",
+    subteams: [
+      {
+        uniqueName: "TechOpsMembers",
+        friendlyName: "Current Tech Ops",
+        description: "The Current Technical Operations Team"
+      },
+      {
+        uniqueName: "TechOpsAlumni",
+        friendlyName: "Previous Tech Ops",
+        description: "The Previous Technical Operations Team"
+      },
+    ]
+  },
   Events: {
     friendlyName: "Event Management Team",
     description: "Team of Members able to Create, Manage, and Delete Events",
@@ -199,3 +215,22 @@ export const TEAM_TYPE_CONFIGS: Partial<Record<TeamType, TeamTypeConfig>> = {
     ]
   }
 }
+
+/**
+ * Teams whose members hold organisation-wide administrative authority: the
+ * override the Executive Authorization Layer applies, and visibility of
+ * exec-scoped events.
+ *
+ * A named set rather than a string literal because the check appeared in five
+ * places across auth.ts and EventController, and a sixth would have been easy
+ * to miss. Membership of ANY of these grants the authority.
+ */
+export const ADMIN_AUTHORITY_TEAMS: ReadonlySet<string> = new Set([
+  "ExecutiveBoard",
+  "TechOps",
+]);
+
+/** Whether a user's root teams include one that confers admin authority. */
+export const hasAdminAuthority = (
+  teams: { name: string; flaggedForDeletion?: boolean }[]
+): boolean => teams.some(team => ADMIN_AUTHORITY_TEAMS.has(team.name) && !team.flaggedForDeletion);

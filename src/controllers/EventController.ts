@@ -20,7 +20,7 @@ import { Route, Request, Controller, Get, SuccessResponse, Post, Body, Tags, Sec
 import { EmailClient } from "../clients/EmailClient";
 import { SlackClient } from "../clients/SlackClient";
 import { AuthentikClient } from "../clients/AuthentikClient";
-import { ENABLED_SHARED_RESOURCES } from "../config";
+import { ENABLED_SHARED_RESOURCES, hasAdminAuthority } from '../config';
 import * as express from 'express';
 import { CustomValidationError, ResourceAccessError } from "../utils/errors";
 import { Event, IEvent } from "../models/Event";
@@ -152,9 +152,7 @@ export class EventController extends Controller {
         } else if (!req.session.authorizedUser?.is_superuser) {
             try {
                 const userTeams = await this.authentikClient.getRootTeamsForUsername(req.session.authorizedUser!.username);
-                if (!userTeams.teams.some(team =>
-                    team.name === "ExecutiveBoard" && !team.flaggedForDeletion
-                )) {
+                if (!hasAdminAuthority(userTeams.teams)) {
                     scopes = ["public", "internal"];
                 }
             } catch (error) {
@@ -211,9 +209,7 @@ export class EventController extends Controller {
         } else if (!req.session.authorizedUser?.is_superuser) {
             try {
                 const userTeams = await this.authentikClient.getRootTeamsForUsername(req.session.authorizedUser!.username);
-                if (!userTeams.teams.some(team =>
-                    team.name === "ExecutiveBoard" && !team.flaggedForDeletion
-                )) {
+                if (!hasAdminAuthority(userTeams.teams)) {
                     query = query.where("scope").ne("exec");
                 }
             } catch (error) {
@@ -747,10 +743,7 @@ export class EventController extends Controller {
                 } else {
                     try {
                         const userTeams = await this.authentikClient.getRootTeamsForUsername(req.session.authorizedUser!.username);
-                        authorized = userTeams.teams.some(team =>
-                            team.name === "ExecutiveBoard" &&
-                            !team.flaggedForDeletion
-                        );
+                        authorized = hasAdminAuthority(userTeams.teams);
                     } catch (error) {
                         throw new ResourceAccessError(500, "Failed to get team membership."); 
                     }
