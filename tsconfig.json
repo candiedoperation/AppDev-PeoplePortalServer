@@ -1,14 +1,11 @@
 {
-  // Visit https://aka.ms/tsconfig to read more about this file
   "compilerOptions": {
-    // File Layout
     "rootDir": "./src",
     "outDir": "./dist",
     "typeRoots": [
       "./node_modules/@types",
       "./src/types"
     ],
-    // Environment Settings
     "module": "commonjs",
     "target": "esnext",
     "lib": [
@@ -18,11 +15,9 @@
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
     "resolveJsonModule": true,
-    // Other Outputs
     "sourceMap": true,
     "declaration": true,
     "declarationMap": true,
-    // Stricter Typechecking Options
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
     "strict": true,
@@ -35,5 +30,11 @@
   },
   "ts-node": {
     "files": true
-  }
+  },
+  "exclude": [
+    "dist",
+    "node_modules",
+    "scripts",
+    "test"
+  ]
 }

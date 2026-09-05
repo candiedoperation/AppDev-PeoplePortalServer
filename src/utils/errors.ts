@@ -39,3 +39,23 @@ export class SharedResourcesError extends Error {
         Object.setPrototypeOf(this, SharedResourcesError.prototype);
     }
 }
+/**
+ * Renders an unknown thrown value as something a human can read.
+ *
+ * `String(e)` and `e.toString()` both yield "[object Object]" for a plain
+ * object, which is how a rejected API response used to reach the logs with its
+ * contents erased. Errors keep their message; anything else is serialised.
+ */
+export function describeUnknownError(e: unknown): string {
+    if (e instanceof Error) return e.message;
+    if (typeof e === "string") return e;
+    if (e === null || e === undefined) return "";
+    try {
+        const serialized = JSON.stringify(e);
+        /* JSON.stringify returns undefined for functions and symbols. */
+        return serialized ?? Object.prototype.toString.call(e);
+    } catch {
+        /* Circular references, or a throwing toJSON. */
+        return Object.prototype.toString.call(e);
+    }
+}

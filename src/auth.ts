@@ -200,15 +200,19 @@ export async function eventsAuthVerify(
     scopes?: string[],
     skipOidcCheck?: boolean
 ): Promise<boolean> {
+    /* tsoa hands every request the SAME scopes array instance for a given route,
+       so mutating it here (the previous scopes.shift()) permanently stripped the
+       flag after one request and silently re-enabled the exec override for all
+       later callers. Derive a local copy instead and never touch the argument. */
     let allowExecOverride = true;
+    let effectiveScopes = scopes;
     if (scopes && scopes[0] === "NoExecOverride") {
         allowExecOverride = false;
-        scopes.shift();
+        effectiveScopes = scopes.slice(1);
     }
-    
 
     if (!skipOidcCheck) {
-        const isAuthenticated = await oidcAuthVerify(request, scopes);
+        const isAuthenticated = await oidcAuthVerify(request, effectiveScopes);
         if (!isAuthenticated)
             return Promise.reject(new ResourceAccessError(401, "OIDC Authentication Failed!"));
     }
@@ -224,7 +228,7 @@ export async function eventsAuthVerify(
         return Promise.resolve(true);
 
     /* 2. Superuser Exclusive Scope Check */
-    if (allowExecOverride && scopes && scopes.includes("su:exclusive")) {
+    if (allowExecOverride && effectiveScopes && effectiveScopes.includes("su:exclusive")) {
         /* We already know they are NOT a superuser here */
         return Promise.reject(new ResourceAccessError(403, "This action is restricted to Superusers only!"));
     }

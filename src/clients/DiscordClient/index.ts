@@ -37,7 +37,7 @@ export class DiscordClient implements SharedResourceClient {
 
     constructor() {
         if (!process.env.PEOPLEPORTAL_DISCORD_BOT_TOKEN) {
-            throw new Error("PEPOLEPORTAL_DISCORD_BOT_TOKEN is undefined");
+            throw new Error("PEOPLEPORTAL_DISCORD_BOT_TOKEN is undefined");
         }
         if (!process.env.PEOPLEPORTAL_DISCORD_SERVER_ID) {
             throw new Error("PEOPLEPORTAL_DISCORD_SERVER_ID is undefined");
@@ -47,11 +47,26 @@ export class DiscordClient implements SharedResourceClient {
 
         this.discordClient = new Client({ intents: DiscordClient.INTENTS });
         this.discordClient.on(Events.ClientReady, () => this.isReady = true);
-        this.discordClient.login(process.env.PEOPLEPORTAL_DISCORD_BOT_TOKEN);
+        /* login() is async and rejects on a bad/expired token. Unhandled, that
+           rejection killed the process at import time, before Express ever
+           listened, turning a Discord credential problem into a full outage.
+           Degrade to a disabled Discord integration instead. */
+        this.discordClient.login(process.env.PEOPLEPORTAL_DISCORD_BOT_TOKEN)
+            .catch((e) => {
+                console.error("DiscordClient: login failed, Discord integration disabled:", e?.message ?? e);
+            });
     }
 
     async init(): Promise<void> {
-        return this.waitForReady();
+        /* waitForReady() rejects after 15s when the gateway never connects. That
+           rejection used to propagate out of the startup loop and kill the
+           process. A Discord outage should disable Discord, not People Portal;
+           callers already gate on isReady. */
+        try {
+            await this.waitForReady();
+        } catch (e: any) {
+            console.error(`${DiscordClient.TAG}: not ready, integration disabled:`, e?.message ?? e);
+        }
     }
 
     waitForReady(): Promise<void> {
@@ -85,6 +100,11 @@ export class DiscordClient implements SharedResourceClient {
 
     // Implement later when needed.
     async handleOrgBindleSync(org: GetGroupInfoResponse, callback: (updatedResourceCount: number, status: string) => void): Promise<boolean> {
+        return Promise.resolve(true);
+    }
+
+    async archiveTeam(org: GetGroupInfoResponse, callback: (updatedResourceCount: number, status: string) => void): Promise<boolean> {
+        // TODO: Implement Discord channel archival
         return Promise.resolve(true);
     }
 
