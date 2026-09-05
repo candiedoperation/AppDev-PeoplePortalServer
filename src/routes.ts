@@ -166,6 +166,8 @@ const models: TsoaRoute.Models = {
             "seasonYear": {"dataType":"double","required":true},
             "peoplePortalCreation": {"dataType":"boolean"},
             "flaggedForDeletion": {"dataType":"boolean"},
+            "archivedAt": {"dataType":"string"},
+            "archivedBy": {"dataType":"string"},
             "description": {"dataType":"string","required":true},
             "rootTeamSettings": {"dataType":"nestedObjectLiteral","nestedProperties":{},"additionalProperties":{"ref":"EnabledRootSettings"},"required":true},
             "bindlePermissions": {"dataType":"nestedObjectLiteral","nestedProperties":{},"additionalProperties":{"ref":"EnabledBindlePermissions"},"required":true},
@@ -263,6 +265,37 @@ const models: TsoaRoute.Models = {
         "additionalProperties": false,
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "TeamMembershipBrief": {
+        "dataType": "refObject",
+        "properties": {
+            "friendlyName": {"dataType":"string","required":true},
+            "teamType": {"ref":"TeamType","required":true},
+            "seasonType": {"dataType":"union","subSchemas":[{"ref":"SeasonType"},{"ref":"ServiceSeasonType"}],"required":true},
+            "seasonYear": {"dataType":"double","required":true},
+            "peoplePortalCreation": {"dataType":"boolean"},
+            "flaggedForDeletion": {"dataType":"boolean"},
+            "archivedAt": {"dataType":"string"},
+            "archivedBy": {"dataType":"string"},
+            "description": {"dataType":"string","required":true},
+            "rootTeamSettings": {"dataType":"nestedObjectLiteral","nestedProperties":{},"additionalProperties":{"ref":"EnabledRootSettings"},"required":true},
+            "bindlePermissions": {"dataType":"nestedObjectLiteral","nestedProperties":{},"additionalProperties":{"ref":"EnabledBindlePermissions"},"required":true},
+            "parent": {"dataType":"union","subSchemas":[{"dataType":"string"},{"dataType":"enum","enums":[null]}],"required":true},
+            "name": {"dataType":"string","required":true},
+            "pk": {"dataType":"string","required":true},
+            "parentName": {"dataType":"string"},
+            "parentFriendlyName": {"dataType":"string"},
+        },
+        "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "GetTeamMembershipsResponse": {
+        "dataType": "refObject",
+        "properties": {
+            "memberships": {"dataType":"array","array":{"dataType":"refObject","ref":"TeamMembershipBrief"},"required":true},
+        },
+        "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
     "RootTeamSettingInfo": {
         "dataType": "refObject",
         "properties": {
@@ -294,6 +327,7 @@ const models: TsoaRoute.Models = {
             "search": {"dataType":"string"},
             "subgroupsOnly": {"dataType":"boolean"},
             "includeUsers": {"dataType":"boolean"},
+            "includeArchived": {"dataType":"boolean","default":false},
             "limit": {"dataType":"double","default":20},
             "cursor": {"dataType":"string"},
         },
@@ -398,6 +432,8 @@ const models: TsoaRoute.Models = {
             "seasonYear": {"dataType":"double","required":true},
             "peoplePortalCreation": {"dataType":"boolean"},
             "flaggedForDeletion": {"dataType":"boolean"},
+            "archivedAt": {"dataType":"string"},
+            "archivedBy": {"dataType":"string"},
             "description": {"dataType":"string","required":true},
             "rootTeamSettings": {"dataType":"nestedObjectLiteral","nestedProperties":{},"additionalProperties":{"ref":"EnabledRootSettings"},"required":true},
             "bindlePermissions": {"dataType":"nestedObjectLiteral","nestedProperties":{},"additionalProperties":{"ref":"EnabledBindlePermissions"},"required":true},
@@ -667,7 +703,7 @@ const models: TsoaRoute.Models = {
         "additionalProperties": {"dataType":"union","subSchemas":[{"ref":"JsonValue"},{"dataType":"undefined"}]},
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-    "UserInfoResponse": {
+    "CorpUserInfoResponse": {
         "dataType": "refObject",
         "properties": {
             "sub": {"dataType":"string","required":true},
@@ -689,8 +725,10 @@ const models: TsoaRoute.Models = {
             "phone_number": {"dataType":"string"},
             "updated_at": {"dataType":"double"},
             "address": {"ref":"UserInfoAddress"},
+            "avatar": {"dataType":"string","required":true},
+            "isExecutive": {"dataType":"boolean","required":true},
         },
-        "additionalProperties": {"dataType":"union","subSchemas":[{"ref":"JsonValue"},{"dataType":"undefined"}]},
+        "additionalProperties": false,
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
     "OtpInitRequest": {
@@ -1167,6 +1205,37 @@ export function RegisterRoutes(app: Router) {
 
               await templateService.apiHandler({
                 methodName: 'getUserRootTeams',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsOrgController_getUserTeamMemberships: Record<string, TsoaRoute.ParameterSchema> = {
+                username: {"in":"path","name":"username","required":true,"dataType":"string"},
+        };
+        app.get('/api/org/people/:username/memberships',
+            authenticateMiddleware([{"oidc":[]}]),
+            ...(fetchMiddlewares<RequestHandler>(OrgController)),
+            ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.getUserTeamMemberships)),
+
+            async function OrgController_getUserTeamMemberships(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsOrgController_getUserTeamMemberships, request, response });
+
+                const controller = new OrgController();
+
+              await templateService.apiHandler({
+                methodName: 'getUserTeamMemberships',
                 controller,
                 response,
                 next,
@@ -1985,6 +2054,38 @@ export function RegisterRoutes(app: Router) {
 
               await templateService.apiHandler({
                 methodName: 'deleteTeam',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsOrgController_archiveTeam: Record<string, TsoaRoute.ParameterSchema> = {
+                req: {"in":"request","name":"req","required":true,"dataType":"object"},
+                teamId: {"in":"path","name":"teamId","required":true,"dataType":"string"},
+        };
+        app.post('/api/org/teams/:teamId/archive',
+            authenticateMiddleware([{"bindles":["corp:subteamaccess"]}]),
+            ...(fetchMiddlewares<RequestHandler>(OrgController)),
+            ...(fetchMiddlewares<RequestHandler>(OrgController.prototype.archiveTeam)),
+
+            async function OrgController_archiveTeam(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsOrgController_archiveTeam, request, response });
+
+                const controller = new OrgController();
+
+              await templateService.apiHandler({
+                methodName: 'archiveTeam',
                 controller,
                 response,
                 next,

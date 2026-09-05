@@ -27,6 +27,12 @@ import { generateSecureRandomString, capitalizeString } from '../utils/strings';
 import { AuthentikClient } from '../clients/AuthentikClient';
 import { EmailClient } from '../clients/EmailClient';
 import { signAvatarUrl } from '../utils/avatars';
+import { executiveAuthVerify } from '../auth';
+
+export interface CorpUserInfoResponse extends UserInfoResponse {
+    avatar: string;
+    isExecutive: boolean;
+}
 
 interface OtpInitRequest {
     email: string;
@@ -59,7 +65,7 @@ export class AuthController extends Controller {
     @Tags("Core Authentication")
     @Security("oidc")
     @SuccessResponse(200)
-    async getUserInfo(@Request() req: express.Request): Promise<UserInfoResponse> {
+    async getUserInfo(@Request() req: express.Request): Promise<CorpUserInfoResponse> {
         if (!req.session.accessToken || !req.session.authorizedUser)
             throw new Error("Unauthorized")
 
@@ -69,9 +75,17 @@ export class AuthController extends Controller {
         const avatarKey = (userInfo as any).attributes?.avatar
         const avatarUrl = await signAvatarUrl(req.session.authorizedUser.pk, avatarKey)
 
+        let isExecutive = false
+        try {
+            isExecutive = await executiveAuthVerify(req, [], true)
+        } catch {
+            isExecutive = false
+        }
+
         return {
             ...userInfo,
-            avatar: avatarUrl
+            avatar: avatarUrl,
+            isExecutive
         }
     }
 

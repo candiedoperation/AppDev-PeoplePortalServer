@@ -40,8 +40,14 @@ export interface TeamAttributeDefinition {
     teamType: TeamType,
     seasonType: SeasonType | ServiceSeasonType,
     seasonYear: number,
+    teamStartDate?: string,
+    teamEndDate?: string,
     peoplePortalCreation?: boolean,
     flaggedForDeletion?: boolean,
+    /* ISO timestamp set when the team is archived; absent means active */
+    archivedAt?: string,
+    /* User PK of the executive who archived the team */
+    archivedBy?: string,
     description: string,
     rootTeamSettings: {
         /* The key is the setting name (Ex. AwsAccount, AppleDevAccount, etc.) */
@@ -60,6 +66,7 @@ export interface UserAttributeDefinition {
     major: string,
     expectedGrad: Date,
     phoneNumber: string,
+    linkedinUrl?: string,
     roles: {
         /* Org ID Mapped to Role Title */
         [key: string]: string
@@ -93,6 +100,8 @@ export interface GetUserListOptions {
 export interface GetTeamsListOptions {
     subgroupsOnly?: boolean,
     includeUsers?: boolean,
+    /* When false (default), teams flagged with `archivedAt` are excluded */
+    includeArchived?: boolean,
     search?: string,
     limit?: number,
     cursor?: string
@@ -115,6 +124,15 @@ export interface TeamInformationDetail extends TeamInformationBrief {
     parent_obj?: TeamInformationBrief,
     subteamPkList: string[],
     subteams: TeamInformationBrief[]
+}
+
+export interface TeamMembershipBrief extends TeamInformationBrief {
+    parentName?: string,
+    parentFriendlyName?: string,
+}
+
+export interface GetTeamMembershipsResponse {
+    memberships: TeamMembershipBrief[]
 }
 
 export interface GetTeamsListResponse {
@@ -166,6 +184,7 @@ export interface CreateUserRequest {
         major: string;
         expectedGrad: Date;
         phoneNumber: string;
+        linkedinUrl?: string;
         roles: { [key: string]: string }
     }
 }
@@ -180,7 +199,10 @@ export interface CreateTeamRequest {
         teamType: TeamType,
         seasonType: SeasonType | ServiceSeasonType,
         seasonYear: number,
-        description: string
+        description: string,
+        /* Optional: only top-level teams carry meeting dates; sub-teams omit them */
+        teamStartDate?: string,
+        teamEndDate?: string,
     }
 }
 
