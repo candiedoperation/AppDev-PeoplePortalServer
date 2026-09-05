@@ -35,6 +35,7 @@ import { AuthentikClient } from "./clients/AuthentikClient";
 import { CustomValidationError, ResourceAccessError } from "./utils/errors";
 import { ENABLED_SHARED_RESOURCES } from "./config";
 import log from 'loglevel';
+import { agendaClient } from './clients/AgendaClient';
 
 log.setLevel("info")
 
@@ -174,4 +175,7 @@ app.listen(PORT, async () => {
   /* Validate Database Connection */
   await mongoose.connect(process.env.PEOPLEPORTAL_MONGO_URL!)
   console.log(`Server running at http://localhost:${PORT}`);
+
+  // Agenda Client Singleton
+  await agendaClient.initialize();
 });

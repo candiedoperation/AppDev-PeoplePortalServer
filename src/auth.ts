@@ -24,6 +24,7 @@ import { AuthentikClient } from "./clients/AuthentikClient";
 import { ENABLED_SERVICE_TEAM_NAMES } from "./utils/services";
 import { ResourceAccessError } from "./utils/errors";
 import { formatBindleAccessError } from "./utils/strings";
+import { ConstraintViolationException } from "@aws-sdk/client-organizations";
 
 export async function NativeExpressOIDCAuthPort(
     req: express.Request,
@@ -53,6 +54,9 @@ export async function expressAuthentication(
 
         else if (securityName == "bindles")
             return await bindlesAuthVerify(request, scopes);
+
+        else if (securityName == "events")
+            return await eventsAuthVerify(request, scopes);
 
         else if (securityName == "executive")
             return await executiveAuthVerify(request, scopes);
@@ -174,6 +178,84 @@ export async function executiveAuthVerify(
 
         if (isExecutive)
             return Promise.resolve(true);
+
+    } catch (e) {
+        /* Failed to Fetch Root Teams */
+        return Promise.reject(e);
+    }
+
+    /* Neither Conditions Work! */
+    return Promise.reject(new ResourceAccessError(403, "You must be an Executive Board Member or a Superuser to perform this action!"));
+}
+
+/**
+ * 
+ * 
+ * @param request Express Request Object
+ * @param scopes Array of Scopes
+ * @returns User Authorization Status (Boolean)
+ */
+export async function eventsAuthVerify(
+    request: express.Request,
+    scopes?: string[],
+    skipOidcCheck?: boolean
+): Promise<boolean> {
+    let allowExecOverride = true;
+    if (scopes && scopes[0] === "NoExecOverride") {
+        allowExecOverride = false;
+        scopes.shift();
+    }
+    
+
+    if (!skipOidcCheck) {
+        const isAuthenticated = await oidcAuthVerify(request, scopes);
+        if (!isAuthenticated)
+            return Promise.reject(new ResourceAccessError(401, "OIDC Authentication Failed!"));
+    }
+
+    if (!request.session.authorizedUser)
+        return Promise.reject(new ResourceAccessError(401, "Failed to Fetch OIDC User Information!"));
+
+    /* Fetch User Data */
+    const authorizedUser: AuthorizedUser = request.session.authorizedUser;
+
+    /* Superusers are implicitly Executives, Check Scope */
+    if (allowExecOverride && authorizedUser.is_superuser)
+        return Promise.resolve(true);
+
+    /* 2. Superuser Exclusive Scope Check */
+    if (allowExecOverride && scopes && scopes.includes("su:exclusive")) {
+        /* We already know they are NOT a superuser here */
+        return Promise.reject(new ResourceAccessError(403, "This action is restricted to Superusers only!"));
+    }
+
+    /* 3. Check for Executive Board Membership */
+    /* We fetch the Root Teams for the user */
+    const authentikClient = new AuthentikClient();
+    try {
+        const userTeams = await authentikClient.getRootTeamsForUsername(authorizedUser.username);
+
+        /* Check if any of the teams are EVENTS and NOT Flagged for Deletion */
+        const inEventsTeam = userTeams.teams.some(team =>
+            team.name === "Events" &&
+            !team.flaggedForDeletion
+        );
+
+        if (inEventsTeam)
+            return Promise.resolve(true);
+
+        /* If enabled, a user in exec can bypass permission. */
+        if (allowExecOverride) {
+            /* Check if any of the teams are EXECBOARD and NOT Flagged for Deletion */
+            const isExecutive = userTeams.teams.some(team =>
+                team.name === "ExecutiveBoard" &&
+                !team.flaggedForDeletion
+            );
+
+            if (isExecutive)
+                return Promise.resolve(true);
+        }
+        
 
     } catch (e) {
         /* Failed to Fetch Root Teams */

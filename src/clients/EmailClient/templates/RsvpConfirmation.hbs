@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8" />
+    <title>App Dev Event RSVP Confirmation</title>
+</head>
+{{> header}}
+
+<body style="font-family: Arial, sans-serif; color: #333;">
+    <p>We've received your RSVP for the {{eventName}} event.</p>
+    <p>You have chosen to <b>{{action}}</b> your attendance for the event.</p>
+    <p>You may update your RSVP up until the start of the event.</p>
+    <ul>
+        <li><b>Event Name:</b> {{eventName}}</li>
+        <li><b>Description:</b> {{eventDescription}}</li>
+        <li><b>Start Time:</b> {{startTime}}</li>
+        <li><b>End Time:</b> {{endTime}}</li>
+        <li><b>Location:</b> {{eventLocation}}</li>
+    </ul>
+    <a href="{{googleCalendarLink}}">Add to Google Calendar</a>
+</body>
+{{> footer}}
+
+</html>

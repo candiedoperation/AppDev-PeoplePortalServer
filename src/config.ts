@@ -24,6 +24,7 @@ import { AppleAccountClient } from "./clients/AppleAccountClient";
 import { PeoplePortalClient } from "./clients/PeoplePortalClient";
 import { EnabledBindlePermissions } from "./controllers/BindleController";
 import { TeamType } from "./clients/AuthentikClient/models";
+import { DiscordClient } from "./clients/DiscordClient";
 
 /**
  * This interface helps define the default configuration that needs to be applied
@@ -63,10 +64,11 @@ export interface ServiceTeamConfig {
 
 /* Define Enabled Shared Resources Here */
 export const ENABLED_SHARED_RESOURCES: { [key: string]: SharedResourceClient } = {
-  appleAccountClient: new AppleAccountClient(),
-  giteaClient: new GiteaClient(),
+  // appleAccountClient: new AppleAccountClient(),
+  // giteaClient: new GiteaClient(),
   peoplePortalClient: new PeoplePortalClient(),
   slackClient: new SlackClient(),
+  discordClient: new DiscordClient(),
 }
 
 /* Define Enabled Root Team Setting Resources Here */
@@ -91,7 +93,23 @@ export const ENABLED_SERVICE_TEAMS: Record<string, ServiceTeamConfig> = {
         description: "The Previous Presidents and Club Executives"
       },
     ]
-  }
+  },
+  Events: {
+    friendlyName: "Event Management Team",
+    description: "Team of Members able to Create, Manage, and Delete Events",
+    subteams: [
+      {
+        uniqueName: "EventsTeamMembers",
+        friendlyName: "Events Team Members",
+        description: "Current members of the events team.",
+        bindles: {
+          "PeoplePortalClient": {
+            "corp:eventmgmt": true,
+          },
+        }
+      },
+    ]
+  },
 }
 
 /* Define Team Type Templates Here */

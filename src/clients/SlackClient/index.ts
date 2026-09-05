@@ -86,6 +86,69 @@ export class SlackClient implements SharedResourceClient {
         return this.slackInviteUrl;
     }
 
+    /**
+     * Send a DM to a slack user via their email. Returns true if DM
+     * was successfully sent, and false otherwise.
+     */
+    async sendPrivateMessage(email: string, message: string): Promise<boolean> {
+        try {
+            const slackUser = await this.executeWithRateLimitRetry(() => this.slackClient.users.lookupByEmail({ email }));
+            const userId = slackUser.user?.id;
+            if (userId) {
+                const result = await this.executeWithRateLimitRetry(() => this.slackClient.chat.postMessage({
+                    channel: userId,
+                    text: message
+                })); 
+                console.log("Message sent: ", result.ts);
+                return true;
+            }         
+        } catch (error) {
+            console.error(`Could not send slack message to user with email ${email}`, error);
+        }
+
+        return false;
+    }
+
+    async sendMessageInChannel(channelId: string, message: string) {
+        try {
+            const result = await this.executeWithRateLimitRetry(() => this.slackClient.chat.postMessage({
+                channel: channelId,
+                text: message
+            })); 
+            console.log("Message sent: ", result.ts);
+            return true;
+                    
+        } catch (error) {
+            console.error(`Could not send slack message to channel id ${channelId}`, error);
+        }
+
+        return false;
+    }
+
+    // Returns channel information from channelName.
+    // Returns null if could not get channel.
+    async getChannelFromName(channelName: string) {
+        try {
+            const response = await this.executeWithRateLimitRetry(() => this.slackClient.conversations.list({
+                types: "public_channel,private_channel",
+            }));
+
+            if (!response.channels) {
+                return null;
+            }
+            
+            for (const channel of response.channels) {
+                if (channel.name === channelName) {
+                    return channel;
+                }
+            }
+        } catch (error) {
+            console.error("Error fetching Slack channels:", error);
+        }
+
+        return null;
+    }
+
     async handleOrgBindleSync(org: GetGroupInfoResponse, callback: (updatedResourceCount: number, status: string) => void): Promise<boolean> {
         log.info(`[SlackClient] handleOrgBindleSync started for org: ${org.name}`);
         log.info(`[SlackClient] Found ${org.subteams?.length ?? 0} subteams`);

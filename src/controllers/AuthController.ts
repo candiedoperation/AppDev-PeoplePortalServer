@@ -73,7 +73,7 @@ export class AuthController extends Controller {
 
         // Remap to CorpUserInfo and sign avatar URL
         const avatarKey = (userInfo as any).attributes?.avatar
-        const avatarUrl = await signAvatarUrl(req.session.authorizedUser.pk, avatarKey)
+        const avatarUrl = await signAvatarUrl(req.session.authorizedUser.pk ?? req.session.authorizedUser.sub, avatarKey)
 
         let isExecutive = false
         try {
