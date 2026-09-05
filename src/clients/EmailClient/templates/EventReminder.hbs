@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8" />
+    <title>{{relativeTime}} Reminder for {{eventName}}</title>
+</head>
+{{> header}}
+
+<body style="font-family: Arial, sans-serif; color: #333;">
+    <p>This is a reminder that the <b>{{eventName}}</b> event is at <b>{{startTime}}</b></p>
+    <p>You are receiving this message because you have accepted your invitation to this event.</p>
+    <p>If you need to update your RSVP, please do so <a href="{{inviteLink}}">here</a>.</p>
+    <p><b>Event Details: </b></p>
+    <ul>
+        <li><b>Event Name:</b> {{eventName}}</li>
+        <li><b>Description:</b> {{eventDescription}}</li>
+        <li><b>Start Time:</b> {{startTime}}</li>
+        <li><b>End Time:</b> {{endTime}}</li>
+        <li><b>Location:</b> {{eventLocation}}</li>
+    </ul>
+    <a href="{{googleCalendarLink}}">Add to Google Calendar</a>
+</body>
+{{> footer}}
+
+</html>

@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8" />
+    <title>App Dev Event Cancelled - {{eventName}}</title>
+</head>
+{{> header}}
+
+<body style="font-family: Arial, sans-serif; color: #333;">
+    <p>The <b>{{eventName}}</b> event from {{startTime}} to {{endTime}} has been <b>cancelled</b>.</p>
+    {{#if reason}}
+        <p>The event was cancelled due to the following reason:</p>
+        <p>{{reason}}</p>
+    {{/if}}
+
+    We apologize for any inconvenience this may have caused.
+</body>
+{{> footer}}
+
+</html>
