@@ -89,7 +89,9 @@ export class AuthentikClient {
                         teamType: TeamType.SERVICE,
                         seasonType: ServiceSeasonType.ROLLING,
                         seasonYear: new Date().getFullYear(),
-                        description: rootTeamConfig.description
+                        description: rootTeamConfig.description,
+                        teamStartDate: new Date().toISOString().slice(0, 10),
+                        teamEndDate: new Date().toISOString().slice(0, 10),
                     }
                 })
 
@@ -124,7 +126,9 @@ export class AuthentikClient {
                             teamType: TeamType.CORPORATE,
                             seasonType: ServiceSeasonType.ROLLING,
                             seasonYear: new Date().getFullYear(),
-                            description: subTeam.description
+                            description: subTeam.description,
+                            teamStartDate: new Date().toISOString().slice(0, 10),
+                            teamEndDate: new Date().toISOString().slice(0, 10),
                         }
                     })
                     subTeamPk = createdSubTeam.pk;
@@ -182,6 +186,12 @@ export class AuthentikClient {
             };
         } catch (e) {
             log.error(AuthentikClient.TAG, "User Info Request Failed with Error: ", e)
+
+            /* Translate an Authentik 404 (Unknown User PK) so Callers can Distinguish
+               a Missing User from an IdP/Transport Failure (Mirrors getGroupInfo) */
+            if (axios.isAxiosError(e) && e.response?.status === 404 && e.response?.headers['x-powered-by'] === 'authentik')
+                throw new AuthentikClientError(AuthentikClientErrorType.USER_NOT_FOUND)
+
             throw new AuthentikClientError(AuthentikClientErrorType.USERINFO_REQUEST_FAILED)
         }
     }
@@ -439,7 +449,9 @@ export class AuthentikClient {
         var RequestConfig: any = {
             ...this.AxiosBaseConfig,
             method: 'get',
-            url: `/api/v3/core/groups/${teamId}/`,
+            /* Encode the Caller-Supplied ID: A Path-Traversal Payload (e.g. "../tokens/x")
+               Must Not Redirect the Admin Token to Arbitrary Authentik Endpoints */
+            url: `/api/v3/core/groups/${encodeURIComponent(teamId)}/`,
             params: {
                 /* Avoid Breaking Changes of Including Request Options, Default to True */
                 include_users: options?.includeUsers ?? true,
@@ -468,7 +480,8 @@ export class AuthentikClient {
                 parentPk: res.data.parent ?? res.data.parents?.[0] ?? null, /* People Portal Legacy Single Parent Patch */
                 parentInfo: res.data.parents_obj ? res.data.parents_obj[0] : null, /* Authentik 2025.12+ Only */
                 attributes: res.data.attributes,
-                users: res.data.users_obj.map((user: any) => ({
+                /* Authentik Omits users_obj when include_users=false */
+                users: (res.data.users_obj ?? []).map((user: any) => ({
                     pk: user.pk,
                     username: user.username,
                     name: user.name,
@@ -566,14 +579,14 @@ export class AuthentikClient {
     }
 
     /**
-     * Validates and updates group information (Friendly Name & Description).
+     * Validates and updates group information (Friendly Name, Description, Team Dates).
      * 
      * @param teamId Target Team ID
      * @param conf Configuration object containing potential updates
      */
     public updateGroupInformation = async (teamId: string, conf: { [key: string]: string | undefined }) => {
-        /* Strictly restrict updates to only name and description to prevent attribute pollution */
-        const allowedFields = ["friendlyName", "description"];
+        /* Strictly restrict updates to allowed fields to prevent attribute pollution */
+        const allowedFields = ["friendlyName", "description", "teamStartDate", "teamEndDate"];
         const filteredConf: any = {};
 
         for (const key of allowedFields) {

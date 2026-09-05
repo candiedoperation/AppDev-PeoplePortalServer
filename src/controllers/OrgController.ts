@@ -72,6 +72,8 @@ export interface APICreateTeamRequest {
     seasonType: SeasonType,
     seasonYear: number,
     description: string,
+    teamStartDate?: string,
+    teamEndDate: string,
     requestorRole: string
 }
 
@@ -80,8 +82,8 @@ interface APIUpdateTeamRequest {
     friendlyName?: string,
     /** @minLength 1 */
     description?: string,
-    /** @minLength 1 */
-    [key: string]: string
+    teamStartDate?: string,
+    teamEndDate?: string,
 }
 
 interface APITeamInfoResponse {
@@ -199,6 +201,23 @@ export class OrgController extends Controller {
         for (const teamSettingResource of Object.values(ENABLED_TEAMSETTING_RESOURCES)) {
             const resourceName = teamSettingResource.getResourceName()
             this.teamSettingList[resourceName] = teamSettingResource.getSupportedSettings()
+        }
+    }
+
+    private validateTeamDateRange(startDate: string, endDate: string) {
+        const parsedStart = new Date(startDate);
+        const parsedEnd = new Date(endDate);
+
+        if (Number.isNaN(parsedStart.getTime())) {
+            throw new CustomValidationError(400, "Invalid team start date");
+        }
+
+        if (Number.isNaN(parsedEnd.getTime())) {
+            throw new CustomValidationError(400, "Invalid team end date");
+        }
+
+        if (parsedStart > parsedEnd) {
+            throw new CustomValidationError(400, "Team start date must be on or before team end date");
         }
     }
 
@@ -1186,7 +1205,7 @@ export class OrgController extends Controller {
                 teamType: parentInfo.attributes.teamType,
                 seasonType: parentInfo.attributes.seasonType,
                 seasonYear: parentInfo.attributes.seasonYear,
-                description: body.description
+                description: body.description,
             }
         })
 
@@ -1333,6 +1352,8 @@ export class OrgController extends Controller {
         /* Santize Request */
         createTeamReq.friendlyName = validateTeamName(createTeamReq.friendlyName);
         createTeamReq.description = capitalizeString(createTeamReq.description);
+        createTeamReq.teamStartDate = createTeamReq.teamStartDate ?? new Date().toISOString().slice(0, 10);
+        this.validateTeamDateRange(createTeamReq.teamStartDate, createTeamReq.teamEndDate);
 
         /* Check for Authorized User */
         const authorizedUser = req.session.authorizedUser!;
@@ -1470,8 +1491,23 @@ export class OrgController extends Controller {
             conf.description = capitalizeString(conf.description);
         }
 
-        /* Strictly restrict updates to only name and description to prevent attribute pollution */
-        await this.authentikClient.updateGroupInformation(teamId, conf);
+        if (conf.teamStartDate !== undefined || conf.teamEndDate !== undefined) {
+            const teamInfo = await this.authentikClient.getGroupInfo(teamId);
+            const effectiveStartDate = conf.teamStartDate ?? teamInfo.attributes.teamStartDate;
+            const effectiveEndDate = conf.teamEndDate ?? teamInfo.attributes.teamEndDate;
+
+            if (!effectiveStartDate || !effectiveEndDate) {
+                throw new CustomValidationError(400, "Both team start date and end date are required");
+            }
+
+            this.validateTeamDateRange(
+                effectiveStartDate,
+                effectiveEndDate,
+            );
+        }
+
+        /* Strictly restrict updates to allowed fields to prevent attribute pollution */
+        await this.authentikClient.updateGroupInformation(teamId, conf as Record<string, string | undefined>);
     }
 
     /**
@@ -1529,7 +1565,17 @@ export class OrgController extends Controller {
         createTeamReq.friendlyName = validateTeamName(createTeamReq.friendlyName);
 
         /* Create the New Team */
-        const newTeam = await this.authentikClient.createNewTeam({ attributes: { ...createTeamReq } })
+        const newTeam = await this.authentikClient.createNewTeam({
+            attributes: {
+                friendlyName: createTeamReq.friendlyName,
+                teamType: createTeamReq.teamType,
+                seasonType: createTeamReq.seasonType,
+                seasonYear: createTeamReq.seasonYear,
+                description: createTeamReq.description,
+                teamStartDate: createTeamReq.teamStartDate ?? new Date().toISOString().slice(0, 10),
+                teamEndDate: createTeamReq.teamEndDate,
+            }
+        })
 
         /* Add the Creator to Team Owners */
         this.addTeamMemberWrapper({

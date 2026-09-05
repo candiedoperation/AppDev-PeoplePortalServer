@@ -40,6 +40,8 @@ export interface TeamAttributeDefinition {
     teamType: TeamType,
     seasonType: SeasonType | ServiceSeasonType,
     seasonYear: number,
+    teamStartDate?: string,
+    teamEndDate?: string,
     peoplePortalCreation?: boolean,
     flaggedForDeletion?: boolean,
     description: string,
@@ -167,7 +169,10 @@ export interface CreateTeamRequest {
         teamType: TeamType,
         seasonType: SeasonType | ServiceSeasonType,
         seasonYear: number,
-        description: string
+        description: string,
+        /* Optional: only top-level teams carry meeting dates; sub-teams omit them */
+        teamStartDate?: string,
+        teamEndDate?: string,
     }
 }
 
