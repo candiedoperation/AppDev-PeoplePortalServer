@@ -4,3 +4,8 @@ dist/
 node_modules/
 docs/site/
 docs/.venv/
+.DS_Store
+**/.DS_Store
+
+# committed test stubs, no secrets
+!.env.test

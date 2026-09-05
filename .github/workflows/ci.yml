@@ -35,6 +35,7 @@ jobs:
           path: |
             dist/
             package*.json
+            pfp-face-check/
           retention-days: 1
 
   notify-deploy:

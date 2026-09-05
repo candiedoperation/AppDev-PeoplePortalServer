@@ -20,7 +20,21 @@ import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { s3Client, BUCKET_NAME } from "../clients/AWSClient/S3Client";
 
-const avatarUrlCache = new Map<string, { url: string, expiresAt: number }>();
+/* The signed URL is derived from avatarKey, so the key must be part of the
+   cache entry. Caching on pk alone returned the previous avatar's URL for a
+   full day after any change, which is why an explicit invalidate helper was
+   needed at every write site. Comparing avatarKey makes a stale hit impossible
+   and leaves invalidateAvatarUrlCache as belt-and-braces. */
+const avatarUrlCache = new Map<string, { url: string, avatarKey: string, expiresAt: number }>();
+
+/* The cached entry must die before the URL it holds. Signing happens first and
+   the entry is stored after, so an equal TTL always outlives its own URL. */
+const SIGNED_URL_TTL_SECONDS = 86400;
+const CACHE_TTL_SECONDS = SIGNED_URL_TTL_SECONDS - 3600;
+
+export function invalidateAvatarUrlCache(userPk: string | number): void {
+    avatarUrlCache.delete(userPk.toString());
+}
 
 /**
  * Generates a pre-signed URL for downloading a user's avatar.
@@ -37,7 +51,7 @@ export async function signAvatarUrl(userPk: string | number | undefined, avatarK
     if (!avatarKey) return "";
 
     const cached = avatarUrlCache.get(pk);
-    if (cached && cached.expiresAt > Date.now()) {
+    if (cached && cached.avatarKey === avatarKey && cached.expiresAt > Date.now()) {
         return cached.url;
     }
 
@@ -47,11 +61,12 @@ export async function signAvatarUrl(userPk: string | number | undefined, avatarK
             Key: avatarKey,
         });
 
-        const url = await getSignedUrl(s3Client, command, { expiresIn: 86400 });
+        const url = await getSignedUrl(s3Client, command, { expiresIn: SIGNED_URL_TTL_SECONDS });
 
         avatarUrlCache.set(pk, {
             url: url,
-            expiresAt: Date.now() + 86400 * 1000 // 24 hours
+            avatarKey: avatarKey,
+            expiresAt: Date.now() + CACHE_TTL_SECONDS * 1000
         });
 
         return url;
