@@ -4,7 +4,7 @@ const test = require("node:test");
 const {
   authenticateGiteaWebhook,
   isGiteaWebhookAuthorized,
-} = require("../dist/utils/gitea-webhook-auth.js");
+} = require("../../dist/utils/gitea-webhook-auth.js");
 
 const VALID_SECRET = "0123456789abcdef0123456789abcdef";
 
