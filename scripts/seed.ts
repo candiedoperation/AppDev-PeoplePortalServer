@@ -121,17 +121,22 @@ interface SeedMember {
 
 /* Members are onboarded through the real invite flow, so each one exercises
    invite creation, invite acceptance, Authentik user creation and subteam
-   membership. Names are obviously fictional so nobody mistakes seed data for
-   a real member. */
+   membership.
+
+   Addresses must end in @terpmail.umd.edu: both OrgController.createInvite and
+   AuthentikClient reject anything else, and the username is derived by
+   stripping that domain. Every local part is prefixed "seed-" so these can
+   never collide with a real student, and outbound mail is inert locally
+   (PEOPLEPORTAL_SMTP_HOST=localhost:1025 with nothing listening). */
 const MEMBERS: Record<string, SeedMember[]> = {
     "Web Dev": [
-        { name: "Ada Lovelace", email: "ada.lovelace@example.invalid", roleTitle: "Software Engineer", subteam: "Frontend" },
-        { name: "Grace Hopper", email: "grace.hopper@example.invalid", roleTitle: "Software Engineer", subteam: "Backend" },
-        { name: "Alan Turing", email: "alan.turing@example.invalid", roleTitle: "Tech Lead", subteam: "Backend" },
+        { name: "Ada Lovelace", email: "seed-ada-lovelace@terpmail.umd.edu", roleTitle: "Software Engineer", subteam: "Frontend" },
+        { name: "Grace Hopper", email: "seed-grace-hopper@terpmail.umd.edu", roleTitle: "Software Engineer", subteam: "Backend" },
+        { name: "Alan Turing", email: "seed-alan-turing@terpmail.umd.edu", roleTitle: "Tech Lead", subteam: "Backend" },
     ],
     "ML Bootcamp": [
-        { name: "Katherine Johnson", email: "katherine.johnson@example.invalid", roleTitle: "Learner", subteam: "Core" },
-        { name: "Barbara Liskov", email: "barbara.liskov@example.invalid", roleTitle: "Educator", subteam: "Core" },
+        { name: "Katherine Johnson", email: "seed-katherine-johnson@terpmail.umd.edu", roleTitle: "Learner", subteam: "Core" },
+        { name: "Barbara Liskov", email: "seed-barbara-liskov@terpmail.umd.edu", roleTitle: "Educator", subteam: "Core" },
     ],
 };
 
@@ -155,6 +160,7 @@ const EVENTS = [
 
 let created = 0;
 let skipped = 0;
+let placedDirectly = 0;
 
 /**
  * A password that satisfies the accept-invite rules: at least 12 characters
@@ -166,19 +172,61 @@ function seedPassword(seed: string): string {
 }
 
 /**
+ * Creates the directory record for a seeded member.
+ *
+ * Authentik owns users, so its admin API is the right tool here; People
+ * Portal's own API has no endpoint that creates a user outside the invite
+ * flow. No password is set: these are fixtures meant to populate rosters, not
+ * accounts anyone signs in as, and a directory entry without credentials
+ * cannot authenticate.
+ */
+async function ensureDirectoryUser(member: SeedMember): Promise<number | null> {
+    const base = process.env.PEOPLEPORTAL_AUTHENTIK_ENDPOINT!;
+    const token = process.env.PEOPLEPORTAL_AUTHENTIK_TOKEN!;
+    const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+    const username = member.email.replace("@terpmail.umd.edu", "");
+
+    const found = await fetch(`${base}/api/v3/core/users/?username=${encodeURIComponent(username)}`, { headers })
+        .then((r) => r.json() as Promise<any>)
+        .catch(() => null);
+    if (found?.results?.length) return found.results[0].pk as number;
+
+    const made = await fetch(`${base}/api/v3/core/users/`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+            username,
+            name: member.name,
+            email: member.email,
+            is_active: true,
+            type: "internal",
+            attributes: { major: "Computer Science", expectedGrad: "2028-05" },
+        }),
+    });
+    if (!made.ok) return null;
+    return ((await made.json()) as any).pk as number;
+}
+
+/**
  * Onboards one member through the real flow: create an invite, then accept it.
  *
  * The invite id is read from Mongo rather than the response, because
  * POST /teams/{id}/externalinvite returns void and only sends the id out by
  * email. That lookup is the single place this script touches the database
  * directly; both state changes still go through the API.
+ *
+ * Falls back to creating the directory record and calling
+ * POST /teams/{id}/addmember when acceptance is refused, which it is whenever
+ * Slack is unavailable: acceptInvite hard-requires the invitee to already be
+ * in the Slack workspace and throws rather than degrading, so a placeholder
+ * token blocks onboarding entirely.
  */
 async function onboardMember(
     teamPk: string,
     member: SeedMember,
     subteamPk: string,
     lookupInviteId: (email: string) => Promise<string | null>
-): Promise<"created" | "exists" | "failed"> {
+): Promise<"created" | "placed" | "exists" | "failed"> {
     try {
         await api("POST", `/api/org/teams/${teamPk}/externalinvite`, {
             inviteeName: member.name,
@@ -195,14 +243,26 @@ async function onboardMember(
     const inviteId = await lookupInviteId(member.email);
     if (!inviteId) return "failed";
 
-    await api("PUT", `/api/org/invites/${inviteId}`, {
-        password: seedPassword(member.name),
-        major: "Computer Science",
-        expectedGrad: "2028-05",
-        phoneNumber: "+13015550100",
-    });
+    try {
+        await api("PUT", `/api/org/invites/${inviteId}`, {
+            password: seedPassword(member.name),
+            major: "Computer Science",
+            expectedGrad: "2028-05",
+            phoneNumber: "+13015550100",
+        });
+        return "created";
+    } catch (e: any) {
+        /* Slack is a hard dependency of acceptInvite; without a live workspace
+           no invite can ever be accepted. Place the member directly instead. */
+        const userPk = await ensureDirectoryUser(member);
+        if (!userPk) return "failed";
 
-    return "created";
+        await api("POST", `/api/org/teams/${subteamPk}/addmember`, {
+            userPk,
+            roleTitle: member.roleTitle,
+        });
+        return "placed";
+    }
 }
 
 async function api(method: string, route: string, body?: unknown): Promise<any> {
@@ -361,9 +421,11 @@ async function main(): Promise<void> {
                 const subteamPk = subteamPkByName.get(member.subteam) ?? teamPk;
                 try {
                     const outcome = await onboardMember(teamPk, member, subteamPk, lookupInviteId);
-                    if (outcome === "created") {
+                    if (outcome === "created" || outcome === "placed") {
                         created++;
-                        console.log(`  created  member    ${member.name.padEnd(20)} ${member.roleTitle} / ${member.subteam}`);
+                        if (outcome === "placed") placedDirectly++;
+                        const how = outcome === "placed" ? " (placed directly; Slack unavailable)" : "";
+                        console.log(`  created  member    ${member.name.padEnd(20)} ${member.roleTitle} / ${member.subteam}${how}`);
                     } else if (outcome === "exists") {
                         skipped++;
                         console.log(`  exists   member    ${member.name}`);
@@ -439,9 +501,14 @@ async function main(): Promise<void> {
     }
 
     console.log(`\n${created} created, ${skipped} skipped.`);
-    if (created > 0) {
-        console.log(`\nSeeded members sign in with the password pattern Seed-<Name>-2026!Portal`);
-        console.log(`e.g. ada.lovelace@example.invalid / ${seedPassword("Ada Lovelace")}`);
+    if (placedDirectly > 0) {
+        console.log(
+            `\n${placedDirectly} member(s) were placed directly because acceptInvite requires the\n` +
+            `invitee to already be in the Slack workspace and throws when Slack is\n` +
+            `unavailable. They have no password and cannot sign in; they exist to populate\n` +
+            `rosters. Point PEOPLEPORTAL_SLACK_BOT_TOKEN at a real workspace to exercise the\n` +
+            `full invite-and-accept path instead.`
+        );
     }
     await mongoose.disconnect().catch(() => { /* never connected */ });
 }
