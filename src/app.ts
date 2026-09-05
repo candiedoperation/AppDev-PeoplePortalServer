@@ -17,8 +17,8 @@
 */
 
 /* Configure ENV Variables before other imports */
-import dotenv from 'dotenv'
-dotenv.config()
+import { ENVIRONMENT, isProduction, loadEnvironmentFiles, assertRequiredEnvironment, envInt } from './config/environment'
+const loadedEnvFiles = loadEnvironmentFiles()
 
 import express, { Router, Request, Response, NextFunction } from "express"
 import cors from "cors"
@@ -36,14 +36,26 @@ import { CustomValidationError, ResourceAccessError } from "./utils/errors";
 import { ENABLED_SHARED_RESOURCES } from "./config";
 import log from 'loglevel';
 import { agendaClient } from './clients/AgendaClient';
+import { authenticateGiteaWebhook } from './utils/gitea-webhook-auth';
+import { describeUnknownError } from './utils/errors';
 
 log.setLevel("info")
 
-if (!process.env.PEOPLEPORTAL_TOKEN_SECRET)
+assertRequiredEnvironment()
+log.info(`Environment: ${ENVIRONMENT}${loadedEnvFiles.length ? ` (loaded ${loadedEnvFiles.join(', ')})` : ''}`)
+
+if (!process.env.PEOPLEPORTAL_TOKEN_SECRET) {
+  /* A generated secret changes on every boot, silently invalidating every
+     session. Fine locally, never acceptable in production. */
+  if (isProduction)
+    throw new Error("PEOPLEPORTAL_TOKEN_SECRET must be set in production")
+
   process.env.PEOPLEPORTAL_TOKEN_SECRET = generateSecureRandomString(16)
+  log.warn("PEOPLEPORTAL_TOKEN_SECRET is unset; generated an ephemeral one. Sessions will not survive a restart.")
+}
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = envInt('PORT', 3000);
 
 app.use(express.urlencoded({ extended: true }))
 app.use(express.json())
@@ -67,6 +79,8 @@ app.use(
 
 /* Register TSOA Routes */
 const ApiRouter = Router()
+ApiRouter.use("/api/webhook/git/repoevent", authenticateGiteaWebhook)
+ApiRouter.use("/api/webhook/git/commitevent", authenticateGiteaWebhook)
 ApiRouter.get("/api/docs/swagger.json", async (req, res) => {
   const doc = await import("../dist/swagger.json");
   res.json(doc.default || doc);
@@ -156,26 +170,67 @@ app.use(function errorHandler(
   next();
 });
 
-app.listen(PORT, async () => {
+/**
+ * Brings up everything the server needs before it can serve a real request.
+ *
+ * Kept as a named function rather than an inline async listen callback: Express
+ * expects `() => void` there, so an async callback returns a promise nobody
+ * holds and any rejection inside it becomes an unhandled rejection that kills
+ * the process. That is how a bad Discord token used to take the whole server
+ * down. Here the promise has an explicit owner and an explicit failure path.
+ */
+async function startup(): Promise<void> {
   /* Validate Connections */
   await OpenIdClient.init()
   //await AuthentikClient.validateAuthentikConnection()
 
-  /* Validate Service Team Creation */
-  const authentikClient = new AuthentikClient()
-  //await authentikClient.validateServiceExistance()
+  /* Validate Service Team Creation.
+     The app cannot function without its service teams: ExecutiveBoardMembers
+     backs the org chart and the executive layer, EventsTeamMembers backs event
+     management. Without them a fresh instance shows "Executive Board Not
+     Found" and nothing can fix it from the UI.
 
-  /* Initialize Shared Resource Clients */
+     This was commented out incidentally in an unrelated commit (7a97511,
+     "Updated Session Cookie Name", 2026-02-03), which is why fresh installs
+     have needed the groups created by hand. It is idempotent by design,
+     treating a duplicate group as success, so running it every boot is safe.
+     Isolated because a directory hiccup should degrade the org chart, not
+     stop the server from serving. */
+  const authentikClient = new AuthentikClient()
+  try {
+    await authentikClient.validateServiceExistance()
+  } catch (e: unknown) {
+    log.error("Service team validation failed; executive and events features may be unavailable:", describeUnknownError(e))
+  }
+
+  /* Initialize Shared Resource Clients. One integration failing to start must
+     not stop the server from serving, so each is isolated. */
   for (const client in ENABLED_SHARED_RESOURCES) {
-    console.log(`Initializing Shared Resource Client: ${client}`)
+    log.info(`Initializing Shared Resource Client: ${client}`)
     const clientInstance = ENABLED_SHARED_RESOURCES[client]!;
-    await clientInstance.init()
+    try {
+      await clientInstance.init()
+    } catch (e: unknown) {
+      log.error(`Failed to initialize shared resource client "${client}", continuing without it:`, describeUnknownError(e))
+    }
   }
 
   /* Validate Database Connection */
   await mongoose.connect(process.env.PEOPLEPORTAL_MONGO_URL!)
-  console.log(`Server running at http://localhost:${PORT}`);
+  log.info(`Server running at http://localhost:${PORT}`);
 
   // Agenda Client Singleton
   await agendaClient.initialize();
+}
+
+app.listen(PORT, () => {
+  startup().catch((e: unknown) => {
+    /* Reaching here means a dependency the server cannot serve without (OIDC
+       discovery, Redis, Mongo, the job scheduler) did not come up. Exit
+       deliberately with a readable reason rather than dying on an unhandled
+       rejection halfway through boot. */
+    log.error("Fatal error during startup:", describeUnknownError(e))
+    if (e instanceof Error && e.stack) log.error(e.stack)
+    process.exit(1)
+  })
 });

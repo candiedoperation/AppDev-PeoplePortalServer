@@ -33,6 +33,7 @@ import { s3Client, BUCKET_NAME } from "../clients/AWSClient/S3Client";
 import { Query } from "tsoa";
 import { EmailClient } from "../clients/EmailClient";
 import { OrgController } from "./OrgController";
+import { BindleController } from "./BindleController";
 import { AuthorizedUser } from "../clients/OpenIdClient";
 import { validateS3FileSignature, FILE_SIGNATURES } from '../utils/s3-validation';
 import MarkdownIt from "markdown-it";
@@ -742,13 +743,17 @@ export class ATSController extends Controller {
     @Security("bindles", ["corp:hiringaccess"])
     async getApplicantUrls(@Path() teamId: string, @Path() applicantId: string) {
         try {
+            const teamApplication = await Application.exists({ applicantId, teamPk: teamId });
+            if (!teamApplication) {
+                this.setStatus(404);
+                return { error: "NotFound", message: "Applicant not found" };
+            }
+
             const applicant = await Applicant.findById(applicantId);
             if (!applicant) {
                 this.setStatus(404);
                 return { error: "NotFound", message: "Applicant not found" };
             }
-
-            /* TODO: Verify that the applicant has applied to this team */
 
             const profile = applicant.profile || new Map<string, string>();
             let resumeDownloadUrl: string | undefined;
@@ -756,20 +761,13 @@ export class ATSController extends Controller {
             const resumeUrl = profile.get('resumeUrl');
             if (resumeUrl) {
                 try {
-                    // Check if it's an S3 key (simple heuristic or assume it is if stored internally)
-                    // The upload endpoint stores it as `resumes/${applicant._id}/${Date.now()}.${fileExtension}`
-                    // If it looks like a key, sign it.
-                    // If it's already a full URL (legacy?), just return it (though our new flow uses keys).
-
-                    // For now, we assume if it doesn't start with http, it's a key.
-                    if (!resumeUrl.startsWith('http')) {
+                    const expectedKey = `resumes/${applicant._id}.pdf`;
+                    if (path.posix.normalize(resumeUrl) === expectedKey && !resumeUrl.includes("..")) {
                         const command = new GetObjectCommand({
                             Bucket: BUCKET_NAME,
-                            Key: resumeUrl,
+                            Key: expectedKey,
                         });
                         resumeDownloadUrl = await getSignedUrl(s3Client, command, { expiresIn: 900 }); // 15 mins
-                    } else {
-                        resumeDownloadUrl = resumeUrl;
                     }
 
                 } catch (s3Error) {
@@ -827,7 +825,7 @@ export class ATSController extends Controller {
     @Put("applications/{teamId}/{applicationId}/stage")
     @Tags("Recruitment Actions")
     @SuccessResponse(200, "Stage updated")
-    @Security("oidc")
+    @Security("bindles", ["corp:hiringaccess"])
     async updateApplicationStage(
         @Request() req: express.Request,
         @Path() teamId: string,
@@ -837,11 +835,22 @@ export class ATSController extends Controller {
         try {
             const { stage, interviewLink, interviewGuidelines, hiredRole, hiredSubteamPk } = body;
 
+            if (!req.session?.authorizedUser) {
+                this.setStatus(401);
+                return { error: "Unauthorized", message: "Authenticated user not found" };
+            }
 
-            const application = await Application.findById(applicationId);
+            /* Always scope the lookup to the team in the route. */
+            const application = await Application.findOne({ _id: applicationId, teamPk: teamId });
             if (!application) {
                 this.setStatus(404);
                 return { error: "NotFound", message: "Application not found" };
+            }
+
+            const teamInfo = await this.getAuthorizedHiringTeam(req.session.authorizedUser, application.teamPk);
+            if (!teamInfo) {
+                this.setStatus(403);
+                return { error: "Forbidden", message: "You do not have hiring access to this team" };
             }
 
             const applicant = await Applicant.findById(application.applicantId);
@@ -891,6 +900,11 @@ export class ATSController extends Controller {
                     return { error: "BadRequest", message: "Hired Role and Subteam are required for Hired stage" };
                 }
 
+                if (!(await this.isValidHireDestination(teamInfo, hiredSubteamPk, hiredRole))) {
+                    this.setStatus(400);
+                    return { error: "BadRequest", message: "Hired role and subteam must belong to an active team destination" };
+                }
+
                 /* Add Hired Role and Hired Subteam PK to the Application */
                 application.hiredRole = hiredRole;
                 application.hiredSubteamPk = hiredSubteamPk;
@@ -908,7 +922,6 @@ export class ATSController extends Controller {
             await application.save();
 
             /* Get Parent Team Information and Handle Stage Specific Logic */
-            const teamInfo = await this.authentikClient.getGroupInfo(application.teamPk);
             if (stage === ApplicationStage.INTERVIEW) {
                 await this.emailClient.send({
                     to: applicant.email,
@@ -938,7 +951,7 @@ export class ATSController extends Controller {
                     }
                 })
             } else if (stage === ApplicationStage.HIRED) {
-                this.processHiredStageTransition(
+                await this.processHiredStageTransition(
                     req.session.authorizedUser!, teamInfo,
                     application, applicant
                 );
@@ -989,12 +1002,16 @@ export class ATSController extends Controller {
     @Security("bindles", ["corp:hiringaccess"])
     async getApplicantApplications(@Path() teamId: string, @Path() applicantId: string) {
         try {
+            const teamApplication = await Application.exists({ applicantId, teamPk: teamId });
+            if (!teamApplication) {
+                this.setStatus(404);
+                return { error: "NotFound", message: "Applicant not found" };
+            }
+
             const applications = await Application.find({ applicantId: applicantId })
                 .lean()
                 .sort({ appliedAt: -1 })
                 .exec();
-
-            /* verify applicant applied to this team (TODO) */
 
             const results = await Promise.all(applications.map(async (app: any) => {
                 let teamName = app.teamPk;
@@ -1215,45 +1232,34 @@ export class ATSController extends Controller {
             // 8. Check for duplicate application
             const applicant = await Applicant.findOne({ email: userEmail }).exec();
 
-            if (applicant) {
-                const existingApp = await Application.findOne({
-                    applicantId: applicant._id,
-                    teamPk: teamPk
-                }).exec();
-
-                if (existingApp) {
-                    this.setStatus(409);
-                    return {
-                        error: "DuplicateApplication",
-                        message: "You have already applied to this team."
-                    };
-                }
+            if (!applicant) {
+                this.setStatus(404);
+                return { error: "ApplicantNotFound", message: "Applicant profile not found." };
             }
 
-            // 9. Create/update applicant
-            const updatedApplicant = await Applicant.findOneAndUpdate(
-                { email: userEmail },
-                {
-                    $set: {
-                        email: userEmail,
-                        fullName: request.session.tempsession?.user?.name || userEmail.split('@')[0],
-                        profile: new Map(Object.entries(profile)),
-                        updatedAt: new Date()
-                    }
-                },
-                { upsert: true, new: true, setDefaultsOnInsert: true }
-            ).exec();
+            const existingApp = await Application.findOne({
+                applicantId: applicant._id,
+                teamPk: teamPk
+            }).exec();
 
-            // 9.1 Validate Resume Signature
+            if (existingApp) {
+                this.setStatus(409);
+                return {
+                    error: "DuplicateApplication",
+                    message: "You have already applied to this team."
+                };
+            }
+
+            // 9. Validate the server-issued resume key before persisting profile changes.
             try {
+                const expectedResumeKey = `resumes/${applicant._id}.pdf`;
+                if (path.posix.normalize(profile.resumeUrl) !== expectedResumeKey || profile.resumeUrl.includes("..")) {
+                    this.setStatus(400);
+                    return { error: "InvalidResumeKey", message: "Invalid resume upload." };
+                }
+
                 const isValidSignature = await validateS3FileSignature(profile.resumeUrl, [FILE_SIGNATURES.PDF]);
                 if (!isValidSignature) {
-                    // Delete invalid file
-                    await s3Client.send(new DeleteObjectCommand({
-                        Bucket: BUCKET_NAME,
-                        Key: profile.resumeUrl
-                    })).catch(e => console.error("Failed to delete invalid resume", e));
-
                     this.setStatus(400);
                     return { error: "InvalidFileSignature", message: "The uploaded file is not a valid PDF." };
                 }
@@ -1261,6 +1267,23 @@ export class ATSController extends Controller {
                 console.error("Failed to validate resume", e);
                 this.setStatus(500);
                 return { error: "FileProcessingError", message: "Failed to process resume file." };
+            }
+
+            // 9.1 Update the already authenticated applicant.
+            const updatedApplicant = await Applicant.findByIdAndUpdate(
+                applicant._id,
+                {
+                    $set: {
+                        fullName: request.session.tempsession?.user?.name || userEmail.split('@')[0],
+                        profile: new Map(Object.entries(profile)),
+                        updatedAt: new Date()
+                    }
+                },
+                { new: true }
+            ).exec();
+            if (!updatedApplicant) {
+                this.setStatus(404);
+                return { error: "ApplicantNotFound", message: "Applicant profile not found." };
             }
 
             // 9.5 Check Previous App Dev History, if exists!
@@ -1339,14 +1362,14 @@ export class ATSController extends Controller {
 
             // Immediate Signature Validation for new Resume Uploads
             if (body.resumeUrl && body.resumeUrl !== currentProfile.resumeUrl) {
+                const expectedKey = `resumes/${applicant._id}.pdf`;
+                if (path.posix.normalize(body.resumeUrl) !== expectedKey || body.resumeUrl.includes("..")) {
+                    this.setStatus(400);
+                    return { error: "InvalidResumeKey", message: "Invalid resume upload." };
+                }
+
                 const isValid = await validateS3FileSignature(body.resumeUrl, [FILE_SIGNATURES.PDF]);
                 if (!isValid) {
-                    // Cleanup invalid file
-                    await s3Client.send(new DeleteObjectCommand({
-                        Bucket: BUCKET_NAME,
-                        Key: body.resumeUrl
-                    })).catch(e => console.error("Failed to delete invalid resume", e));
-
                     this.setStatus(400);
                     return { error: "InvalidFileSignature", message: "The uploaded file is not a valid PDF." };
                 }
@@ -1374,26 +1397,23 @@ export class ATSController extends Controller {
     }
 
     /* ==== APPLICATION STAGE CHANGE EMAIL HELPERS ==== */
-    async processHiredStageTransition(authorizedUser: AuthorizedUser, teamInfo: GetGroupInfoResponse, application: IApplication, applicant: IApplicant) {
+    async processHiredStageTransition(authorizedUser: AuthorizedUser, teamInfo: GetGroupInfoResponse, application: IApplication, applicant: IApplicant): Promise<void> {
+        /* This helper is callable independently of tsoa middleware. Re-check the
+         * authorization and destination immediately before changing membership or
+         * creating an invite so direct controller calls cannot bypass ATS policy. */
+        const authorizedTeam = await this.getAuthorizedHiringTeam(authorizedUser, application.teamPk);
+        if (!authorizedTeam || !application.hiredRole || !application.hiredSubteamPk ||
+            !(await this.isValidHireDestination(authorizedTeam, application.hiredSubteamPk, application.hiredRole))) {
+            throw new Error("Unauthorized hired-stage transition");
+        }
+
+        teamInfo = authorizedTeam;
         /* If Applicant is an internal member, we do not send onboard invites! */
         const applicantEmail = applicant.email;
-        this.authentikClient.getUserInfoFromEmail(applicantEmail).then(async (user: UserInformationBrief) => {
-            /* We didn't fail so, Add the Member to the Team & Send Email */
-            await this.orgController.addTeamMember(application.hiredSubteamPk!, { userPk: +user.pk, roleTitle: application.hiredRole! });
-            await this.emailClient.send({
-                to: applicantEmail,
-                cc: [authorizedUser.email],
-                replyTo: [authorizedUser.email],
-                subject: `Congrats! You're accepted to ${teamInfo.attributes.friendlyName}`,
-                templateName: "RecruitExistingMemberAcceptance",
-                templateVars: {
-                    inviteeName: applicant.fullName,
-                    invitorName: authorizedUser.name,
-                    teamName: teamInfo.attributes.friendlyName,
-                    roleTitle: application.hiredRole!,
-                }
-            })
-        }).catch(async () => {
+        let user: UserInformationBrief;
+        try {
+            user = await this.authentikClient.getUserInfoFromEmail(applicantEmail);
+        } catch (_) {
             /* Onboard the User */
             await this.orgController.createInvite(
                 {
@@ -1409,8 +1429,50 @@ export class ATSController extends Controller {
                     roleTitle: application.hiredRole!,
                     subteamPk: application.hiredSubteamPk!
                 }
-            )
-        })
+            );
+            return;
+        }
+
+        /* Do not convert downstream membership/email failures into external invites. */
+        await this.orgController.addTeamMember(application.hiredSubteamPk!, { userPk: +user.pk, roleTitle: application.hiredRole! });
+        await this.emailClient.send({
+            to: applicantEmail,
+            cc: [authorizedUser.email],
+            replyTo: [authorizedUser.email],
+            subject: `Congrats! You're accepted to ${teamInfo.attributes.friendlyName}`,
+            templateName: "RecruitExistingMemberAcceptance",
+            templateVars: {
+                inviteeName: applicant.fullName,
+                invitorName: authorizedUser.name,
+                teamName: teamInfo.attributes.friendlyName,
+                roleTitle: application.hiredRole!,
+            }
+        });
+    }
+
+    /** Team-scoped ATS authorization: root owner or effective hiring bindle. */
+    private async getAuthorizedHiringTeam(authorizedUser: AuthorizedUser, teamPk: string): Promise<GetGroupInfoResponse | null> {
+        const teamInfo = await this.authentikClient.getGroupInfo(teamPk);
+        if (!teamInfo.attributes.peoplePortalCreation || teamInfo.attributes.flaggedForDeletion) return null;
+        if (authorizedUser.is_superuser) return teamInfo;
+
+        const isOwner = authorizedUser.groups.includes(teamInfo.name);
+        const permissions = BindleController.getEffectivePermissionSet(teamInfo, authorizedUser.groups);
+        return isOwner || permissions.has("corp:hiringaccess") ? teamInfo : null;
+    }
+
+    /** A hire may only target a live subteam under the application's root team,
+     * and the role must be configured for that exact destination. */
+    private async isValidHireDestination(teamInfo: GetGroupInfoResponse, subteamPk: string, role: string): Promise<boolean> {
+        if (teamInfo.attributes.flaggedForDeletion || !teamInfo.subteamPkList.includes(subteamPk)) return false;
+
+        const destination = await this.authentikClient.getGroupInfo(subteamPk, { includeParentInfo: true });
+        if (!destination.attributes.peoplePortalCreation ||
+            destination.parentPk !== teamInfo.pk ||
+            destination.attributes.flaggedForDeletion) return false;
+
+        const config = await SubteamConfig.findOne({ subteamPk }).lean().exec();
+        return !!config && config.roles.includes(role);
     }
 
     /* === HELPER METHODS === */

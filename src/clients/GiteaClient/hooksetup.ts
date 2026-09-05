@@ -1,5 +1,6 @@
 import axios from "axios";
 import log from "loglevel";
+import { getGiteaWebhookAuthorizationHeader } from "../../utils/gitea-webhook-auth";
 
 export interface GiteaHookConfiguration {
     url: string,
@@ -8,6 +9,7 @@ export interface GiteaHookConfiguration {
 }
 
 export interface GiteaHookDefinition {
+    id?: number,
     type?: string,
     active?: boolean,
     events: string[],
@@ -18,37 +20,44 @@ export interface GiteaHookDefinition {
 
 export class GiteaHookSetup {
     private static readonly TAG = "GiteaHookSetup"
-    private static readonly GITEA_ADMINHOOKS_CONFIG: { [key: string]: GiteaHookDefinition } = {
-        "people-portal-repohook": {
-            events: ["repository"],
-            config: {
-                url: `${process.env.PEOPLEPORTAL_WEBHOOK_URL}/api/webhook/git/repoevent`,
-                content_type: 'json',
 
-                /* Fails if true instead of 'true'. Undocumented API: https://github.com/go-gitea/gitea/pull/33180 */
-                is_system_webhook: "true",
-            }
-        },
+    private static getAdminHooksConfig(): { [key: string]: GiteaHookDefinition } {
+        const authorizationHeader = getGiteaWebhookAuthorizationHeader();
+        return {
+            "people-portal-repohook": {
+                events: ["repository"],
+                authorization_header: authorizationHeader,
+                config: {
+                    url: `${process.env.PEOPLEPORTAL_WEBHOOK_URL}/api/webhook/git/repoevent`,
+                    content_type: 'json',
 
-        "people-portal-commithook": {
-            events: ["push"],
-            branch_filter: "main",
-            config: {
-                url: `${process.env.PEOPLEPORTAL_WEBHOOK_URL}/api/webhook/git/commitevent`,
-                content_type: 'json',
-                is_system_webhook: "true",
+                    /* Fails if true instead of 'true'. Undocumented API: https://github.com/go-gitea/gitea/pull/33180 */
+                    is_system_webhook: "true",
+                }
+            },
+
+            "people-portal-commithook": {
+                events: ["push"],
+                branch_filter: "main",
+                authorization_header: authorizationHeader,
+                config: {
+                    url: `${process.env.PEOPLEPORTAL_WEBHOOK_URL}/api/webhook/git/commitevent`,
+                    content_type: 'json',
+                    is_system_webhook: "true",
+                }
             }
-        }
+        };
     }
 
     /**
      * Fetches the list of currently configured hooks and adds new People Portal
-     * hooks if it doesn't exist. We do not update existing hooks and assume
-     * that the previous People Portal created hooks are still valid.
+     * hooks if it doesn't exist, and repairs the authorization header on
+     * existing People Portal hooks.
      * 
      * @param giteaBaseConfig Gitea Base Request Configuration
      */
     public static async setupHooks(giteaBaseConfig: any) {
+        const adminHooksConfig = this.getAdminHooksConfig();
         /* Get List of Hooks */
         var getHooksRequestConfig = {
             ...giteaBaseConfig,
@@ -65,10 +74,27 @@ export class GiteaHookSetup {
 
         for (const hook of hooksResponse.data as GiteaHookDefinition[]) {
             existingHooks.add(hook.config.url)
+
+            const expectedHook = Object.values(adminHooksConfig)
+                .find((hookInfo) => hookInfo.config.url === hook.config.url);
+            if (expectedHook && hook.id !== undefined) {
+                /* Gitea does not return the configured secret. Reapply the
+                 * definition so existing hooks receive secret rotations too. */
+                await axios.request({
+                    ...giteaBaseConfig,
+                    method: 'patch',
+                    url: `/api/v1/admin/hooks/${hook.id}`,
+                    data: {
+                        type: "gitea",
+                        active: true,
+                        ...expectedHook
+                    }
+                });
+            }
         }
 
-        for (const hookName in this.GITEA_ADMINHOOKS_CONFIG) {
-            var hookInfo = this.GITEA_ADMINHOOKS_CONFIG[hookName]!;
+        for (const hookName in adminHooksConfig) {
+            var hookInfo = adminHooksConfig[hookName]!;
             if (existingHooks.has(hookInfo.config.url))
                 continue; /* We Skip if empty too as it doesn't matter! */
 
@@ -89,6 +115,6 @@ export class GiteaHookSetup {
         }
 
         /* Log */
-        log.info(this.TAG, `Hooks Setup Complete: ${Object.keys(this.GITEA_ADMINHOOKS_CONFIG).join(", ")}`);
+        log.info(this.TAG, `Hooks Setup Complete: ${Object.keys(adminHooksConfig).join(", ")}`);
     }
 }

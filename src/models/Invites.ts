@@ -23,6 +23,7 @@ export interface IInvite extends Document {
   inviteEmail: string;
   roleTitle: string;
   teamName: string;
+  teamPk: string;
   subteamPk: string;
   inviterPk: number;
   expiresAt: Date;
@@ -46,6 +47,10 @@ const inviteSchema = new Schema<IInvite>({
     required: true,
   },
   teamName: {
+    type: String,
+    required: true,
+  },
+  teamPk: {
     type: String,
     required: true,
   },

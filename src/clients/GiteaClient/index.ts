@@ -569,6 +569,16 @@ export class GiteaClient implements SharedResourceClient {
     }
 
     /* Repository Management */
+    public async getRepository(owner: string, repo: string): Promise<GiteaRepository> {
+        const response = await axios.request({
+            ...this.GiteaBaseConfig,
+            method: 'get',
+            url: `/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`
+        });
+
+        return response.data as GiteaRepository;
+    }
+
     public async deleteRepository(owner: string, repo: string) {
         var RequestConfig: any = {
             ...this.GiteaBaseConfig,
