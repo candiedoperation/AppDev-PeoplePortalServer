@@ -13,6 +13,12 @@
         "flow": "implicit",
         "authorizationUrl": "/api/auth/login",
         "scopes": {}
+      },
+      "horizons": {
+        "type": "apiKey",
+        "name": "Authorization",
+        "in": "header",
+        "description": "AppDev Horizons service key. Send as: Authorization: Bearer <HORIZONS_API_KEY>"
       }
     },
     "name": "People Portal Server",
