@@ -225,9 +225,12 @@ export class ATSController extends Controller {
 
         // 3. Generate Presigned GET URL
         try {
+            /* Sign the string that was validated. Signing the raw `key` while
+               checking `normalizedKey` lets the two diverge, which is the shape
+               every path-traversal bug takes even when S3 happens to be literal. */
             const command = new GetObjectCommand({
                 Bucket: BUCKET_NAME,
-                Key: key,
+                Key: normalizedKey,
             });
 
             const downloadUrl = await getSignedUrl(s3Client, command, { expiresIn: 900 }); // 15 minutes
@@ -937,19 +940,12 @@ export class ATSController extends Controller {
                         interviewGuidelines: interviewGuidelines
                     }
                 })
-            } else if (stage === ApplicationStage.POTENTIAL_HIRE) {
-                await this.emailClient.send({
-                    to: applicant.email,
-                    cc: [req.session.authorizedUser!.email],
-                    replyTo: [req.session.authorizedUser!.email],
-                    subject: `Waitlisted for ${teamInfo.attributes.friendlyName}`,
-                    templateName: "RecruitPotentialHireInfo",
-                    templateVars: {
-                        applicantName: applicant.fullName,
-                        teamName: teamInfo.attributes.friendlyName,
-                        contactName: req.session.authorizedUser!.name
-                    }
-                })
+            /* Potential Hire deliberately notifies nobody. It is an internal
+               grouping the recruiting team uses while deciding, and the old
+               "Waitlisted for ..." mail told applicants they had been passed
+               over before that was true. Requested by the bootcamp leads,
+               2026-09-02. The RecruitPotentialHireInfo template is kept for
+               a future opt-in send. */
             } else if (stage === ApplicationStage.HIRED) {
                 await this.processHiredStageTransition(
                     req.session.authorizedUser!, teamInfo,

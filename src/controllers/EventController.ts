@@ -30,7 +30,7 @@ import { agendaClient } from "../clients/AgendaClient";
 import { DiscordClient } from "../clients/DiscordClient";
 
 
-export type DocumentJSON<T> = FlattenMaps<T> & Required<{ _id: Types.ObjectId; }> & { __v: number };
+import type { DocumentJSON } from "../utils/types";
 
 export interface GetEventListOptions {
     before?: Date;
@@ -621,7 +621,7 @@ export class EventController extends Controller {
             const emails = users.map(user => user.email);
             
 
-            this.emailClient.send({
+            await this.emailClient.send({
                 to: process.env.PEOPLEPORTAL_SMTP_USER!,
                 bcc: emails,
                 subject: `Update for ${oldName}`,
@@ -793,7 +793,7 @@ export class EventController extends Controller {
 
         try {
             // Send confirmation email
-            this.emailClient.send({
+            await this.emailClient.send({
                 to: email!,
                 subject: "App Dev Event RSVP Confirmation",
                 templateName: "RsvpConfirmation",

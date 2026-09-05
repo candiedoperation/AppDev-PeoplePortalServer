@@ -57,7 +57,9 @@ export class AgendaClient {
 
         for(const entry of RecurringJobs) {
             // Agenda automatically checks for duplicates.
-            this.agenda.every(
+            /* Awaited: an unawaited every() swallowed scheduling failures, so a
+               recurring job could silently never be registered. */
+            await this.agenda.every(
                 entry.schedule,
                 entry.jobName,
                 entry.jobPayload,
@@ -65,7 +67,7 @@ export class AgendaClient {
             );
         }
 
-        this.agenda.start();
+        await this.agenda.start();
     }
 
     // Schedule a job to be run one time.

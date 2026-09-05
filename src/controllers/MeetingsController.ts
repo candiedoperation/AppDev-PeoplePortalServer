@@ -39,7 +39,7 @@ import { MeetingSubteamAttendance } from "../models/MeetingSubteamAttendance";
 import { AuthentikClient } from "../clients/AuthentikClient";
 import { BindleController } from "./BindleController";
 import { executiveAuthVerify } from "../auth";
-import { CustomValidationError } from "../utils/errors";
+import { CustomValidationError, ResourceAccessError } from "../utils/errors";
 
 /** Which occurrences of a recurring series a mutation applies to */
 type MeetingScope = "this" | "following" | "all";
@@ -502,7 +502,7 @@ export class MeetingsController extends Controller {
         const recurring = created.length > 1;
 
         this.setStatus(201);
-        return created.map((doc) => ({ ...doc.toObject(), recurring }) as APITeamMeetingResponse);
+        return created.map((doc) => ({ ...doc.toObject(), _id: doc._id.toString(), recurring }) as APITeamMeetingResponse);
     }
 
     /**
@@ -571,7 +571,7 @@ export class MeetingsController extends Controller {
 
         /* Series membership is unchanged by an edit, so a single count suffices. */
         const recurring = await TeamMeeting.countDocuments({ seriesId: target.seriesId }) > 1;
-        return occurrences.map((occurrence) => ({ ...occurrence.toObject(), recurring }) as APITeamMeetingResponse);
+        return occurrences.map((occurrence) => ({ ...occurrence.toObject(), _id: occurrence._id.toString(), recurring }) as APITeamMeetingResponse);
     }
 
     /**
@@ -622,8 +622,21 @@ export class MeetingsController extends Controller {
     @Tags("Team Meetings")
     @SuccessResponse(200)
     @Security("oidc")
-    async getMeetingRoster(@Path() teamId: string): Promise<APIMeetingRosterMember[]> {
+    async getMeetingRoster(
+        @Request() req: express.Request,
+        @Path() teamId: string,
+    ): Promise<APIMeetingRosterMember[]> {
         const roster = await this.getTeamRoster(teamId);
+
+        /* @Security("oidc") only proves the caller is signed in. Without this
+           check any authenticated user could read name/username/email for every
+           member of any team by walking teamId, so the roster is restricted to
+           the team's own members and to meeting managers. */
+        const viewerPk = req.session.authorizedUser!.pk;
+        if (!roster.has(viewerPk) && !(await this.canManageMeetings(req, teamId))) {
+            throw new ResourceAccessError(403, "You must be a member of this team to view its roster.");
+        }
+
         return [...roster.values()].sort((a, b) => a.name.localeCompare(b.name));
     }
 

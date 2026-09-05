@@ -33,8 +33,12 @@ export function sanitizeGroupName(str: string) {
 }
 
 /**
- * Capitalizes the first letter of each word in a string and lowercases the rest.
- * Example: "HELLO wORLD" -> "Hello World"
+ * Title-cases each word, with two deliberate exceptions: a word containing no
+ * lowercase letters is left alone (so "UI/UX" and "USA" survive), as is an
+ * acronym plural ("PMs", "APIs").
+ *
+ * Example: "ada lovelace" -> "Ada Lovelace", "HELLO wORLD" -> "HELLO World"
+ * ("HELLO" has no lowercase, so it is treated as an acronym and preserved.)
  */
 export function capitalizeString(str: string): string {
   if (!str) return str;
@@ -73,7 +77,12 @@ export function sanitizeUserFullName(fullName: string): string {
     }).join('');
   };
 
-  return normalizeSegment(firstNameRaw) + normalizeSegment(lastNameRaw);
+  /* The result becomes an AWS IAM session name, which permits only
+     [\w+=,.@-]. Apostrophes survived normalizeSegment, so "Mary-Kate O'Neil"
+     produced "MaryKateO'neil" and STS rejected the console link outright. */
+  const toSessionSafe = (str: string): string => str.replace(/[^\w+=,.@-]/g, '');
+
+  return toSessionSafe(normalizeSegment(firstNameRaw) + normalizeSegment(lastNameRaw));
 }
 
 /**

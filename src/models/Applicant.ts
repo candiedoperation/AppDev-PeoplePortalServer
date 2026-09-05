@@ -16,14 +16,14 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-import { Document, Schema, model } from "mongoose";
+import { Document, Schema, Types, model } from "mongoose";
 
 export interface IApplicant extends Document {
-  _id: Schema.Types.ObjectId;
+  _id: Types.ObjectId;
   email: string;
   fullName: string;
   profile: Map<string, string>; // Made required with default
-  applicationIds: Schema.Types.ObjectId[];
+  applicationIds: Types.ObjectId[];
   createdAt: Date;
   updatedAt: Date;
 }
