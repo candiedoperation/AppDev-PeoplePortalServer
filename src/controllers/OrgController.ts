@@ -23,6 +23,8 @@ import { Request, Body, Controller, Get, Patch, Path, Post, Queries, Route, Succ
 import { AddGroupMemberRequest, GetGroupInfoResponse, GetTeamsListResponse, GetUserListOptions, GetUserListResponse, RemoveGroupMemberRequest, SeasonType, TeamType, UserInformationBrief, GetTeamsForUsernameResponse, AuthentikClientError, CreateUserRequest, ServiceSeasonType, AuthentikClientErrorType, TeamInformationDetail, GetTeamsListDetailResponse, UserInformationPartial, TeamAttributeDefinition, TeamInformationBrief, GetTeamMembershipsResponse } from "../clients/AuthentikClient/models";
 import { AuthentikClient } from "../clients/AuthentikClient";
 import { Invite } from "../models/Invites";
+import { Applicant } from "../models/Applicant";
+import { Application } from "../models/Application";
 import { EmailClient } from "../clients/EmailClient";
 import { SharedResourceClient } from '../clients';
 import { ENABLED_SHARED_RESOURCES, ENABLED_TEAMSETTING_RESOURCES, ENABLED_SERVICE_TEAMS, TEAM_TYPE_CONFIGS } from '../config';
@@ -1597,9 +1599,40 @@ export class OrgController extends Controller {
 
         await this.authentikClient.createNewUser(createUserRequest)
 
+        /* A recruit may have applied before becoming an App Dev member, so the
+           application could not have stored appDevInternalPk at submission
+           time. Link those historical applications immediately after account
+           creation, while the member's email is authoritative. */
+        let createdUser: UserInformationBrief | undefined;
+        try {
+            createdUser = await this.authentikClient.getUserInfoFromEmail(createUserRequest.email);
+            if (createdUser.active) {
+                const applicant = await Applicant.findOne({ email: createUserRequest.email.toLowerCase() })
+                    .select("_id")
+                    .lean()
+                    .exec();
+                if (applicant) {
+                    await Application.updateMany(
+                        {
+                            applicantId: applicant._id,
+                            $or: [
+                                { appDevInternalPk: { $exists: false } },
+                                { appDevInternalPk: null },
+                            ],
+                        },
+                        { $set: { appDevInternalPk: Number(createdUser.pk) } },
+                    ).exec();
+                }
+            }
+        } catch (error) {
+            /* Account creation succeeded; linkage can be retried later. */
+            console.error("Failed to link historical applications to new member:", error instanceof Error ? error.message : "unknown error");
+        }
+
         if (req.avatarKey) {
             try {
-                const createdUser = await this.authentikClient.getUserInfoFromEmail(createUserRequest.email);
+                if (!createdUser)
+                    createdUser = await this.authentikClient.getUserInfoFromEmail(createUserRequest.email);
                 const userPk = createdUser.pk;
 
                 const ext = req.avatarKey.split('.').pop();

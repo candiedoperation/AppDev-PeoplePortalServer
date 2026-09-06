@@ -20,7 +20,8 @@ import {
 import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { Application, ApplicationStage } from "../models/Application";
-import { IApplicant } from "../models/Applicant";
+import { Applicant, IApplicant } from "../models/Applicant";
+import { AuthentikClient } from "../clients/AuthentikClient";
 import { BUCKET_NAME, s3Client } from "../clients/AWSClient/S3Client";
 import { CustomValidationError } from "../utils/errors";
 
@@ -258,7 +259,36 @@ export class HorizonsController extends Controller {
     }
 
     private async getMemberApplications(appDevInternalPk: number): Promise<PopulatedApplication[]> {
-        return Application.find({ appDevInternalPk })
+        const linkedApplications = await this.findApplications({ appDevInternalPk });
+        if (linkedApplications.length > 0)
+            return linkedApplications;
+
+        /* Historical applications may predate the applicant's App Dev account,
+           so appDevInternalPk was null at submission time. Resolve only an
+           active current member, then use the canonical email to recover that
+           member's older applicant record without changing database state. */
+        try {
+            const member = await new AuthentikClient().getUserInfo(appDevInternalPk);
+            if (!member.active || !member.email)
+                return [];
+
+            const applicant = await Applicant.findOne({ email: member.email.toLowerCase() })
+                .select("_id")
+                .lean()
+                .exec();
+            if (!applicant)
+                return [];
+
+            return this.findApplications({ applicantId: applicant._id });
+        } catch (error) {
+            /* Do not expose directory-service errors through a PII endpoint. */
+            console.error("Horizons member lookup failed:", error instanceof Error ? error.message : "unknown error");
+            return [];
+        }
+    }
+
+    private findApplications(filter: Record<string, unknown>): Promise<PopulatedApplication[]> {
+        return Application.find(filter)
             .populate<{ applicantId: IApplicant }>("applicantId")
             .sort({ appliedAt: 1, _id: 1 })
             .lean()
