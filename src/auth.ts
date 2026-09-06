@@ -79,13 +79,14 @@ export async function expressAuthentication(
 
         else if (securityName == "horizons") {
             /* Read-only service-to-service access for AppDev Horizons. */
-            const configuredKey = process.env.HORIZONS_API_KEY;
+            const configuredKey = process.env.HORIZONS_API_KEY?.trim();
+            const authFailure = () => Promise.reject(new ResourceAccessError(401, "Invalid API Key"));
             if (!configuredKey || configuredKey.length < 32)
-                return Promise.reject(new ResourceAccessError(401, "Horizons access is not configured"));
+                return authFailure();
 
             const authHeader = request.headers.authorization;
             if (!authHeader || !authHeader.startsWith("Bearer "))
-                return Promise.reject(new ResourceAccessError(401, "Missing Bearer Token"));
+                return authFailure();
 
             const presentedDigest = crypto.createHash("sha256")
                 .update(authHeader.slice("Bearer ".length)).digest();
@@ -93,7 +94,7 @@ export async function expressAuthentication(
                 .update(configuredKey).digest();
 
             if (!crypto.timingSafeEqual(presentedDigest, configuredDigest))
-                return Promise.reject(new ResourceAccessError(401, "Invalid API Key"));
+                return authFailure();
 
             return Promise.resolve(true);
         }

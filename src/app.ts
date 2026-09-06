@@ -171,6 +171,11 @@ app.use(function errorHandler(
   }
 
   if (err instanceof Error) {
+    if (req.path === "/api/horizons" || req.path.startsWith("/api/horizons/")) {
+      console.error("Horizons request failed:", err.message);
+      return res.status(500).json({ message: "Internal Server Error" });
+    }
+
     console.error(err)
     return res.status(500).json({
       message: err.message ?? "Unknown Internal Server Error",

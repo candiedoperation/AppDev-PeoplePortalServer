@@ -134,6 +134,7 @@ export class HorizonsController extends Controller {
     public async getMemberRecruiting(
         @Path() appDevInternalPk: number,
     ): Promise<APIHorizonsMemberRecruitingResponse> {
+        this.setHeader("Cache-Control", "no-store");
         const applications = await this.getMemberApplications(appDevInternalPk);
         if (applications.length === 0)
             throw new CustomValidationError(404, "Member recruiting history not found");
@@ -199,13 +200,14 @@ export class HorizonsController extends Controller {
     public async getMemberApplicationsDetails(
         @Path() appDevInternalPk: number,
     ): Promise<APIHorizonsMemberApplicationsResponse> {
+        this.setHeader("Cache-Control", "no-store");
         const applications = await this.getMemberApplications(appDevInternalPk);
         if (applications.length === 0)
             throw new CustomValidationError(404, "Member recruiting history not found");
 
         return {
             memberPk: appDevInternalPk,
-            applications: applications.map((application) => this.toMemberApplication(application)),
+            applications: applications.map((application) => this.toMemberApplication(application, appDevInternalPk)),
         };
     }
 
@@ -216,6 +218,7 @@ export class HorizonsController extends Controller {
     public async getMemberResume(
         @Path() appDevInternalPk: number,
     ): Promise<APIHorizonsMemberResumeResponse> {
+        this.setHeader("Cache-Control", "no-store");
         const applications = await this.getMemberApplications(appDevInternalPk);
         if (applications.length === 0)
             throw new CustomValidationError(404, "Member recruiting history not found");
@@ -247,7 +250,10 @@ export class HorizonsController extends Controller {
             );
             return { memberPk: appDevInternalPk, applicantId, resumeAvailable: true, resumeUrl, expiresInSeconds: 900 };
         } catch (error) {
-            console.error("HorizonsController: member resume signing failed:", error);
+            console.error(
+                "HorizonsController: member resume signing failed:",
+                error instanceof Error ? error.message : "unknown error",
+            );
             return {
                 memberPk: appDevInternalPk,
                 applicantId,
@@ -259,27 +265,27 @@ export class HorizonsController extends Controller {
     }
 
     private async getMemberApplications(appDevInternalPk: number): Promise<PopulatedApplication[]> {
-        const linkedApplications = await this.findApplications({ appDevInternalPk });
-        if (linkedApplications.length > 0)
-            return linkedApplications;
-
-        /* Historical applications may predate the applicant's App Dev account,
-           so appDevInternalPk was null at submission time. Resolve only an
-           active current member, then use the canonical email to recover that
-           member's older applicant record without changing database state. */
+        /* Resolve the current directory record before reading any recruiting
+           data. This keeps rejected applicants, inactive users, and non-member
+           directory records out of the member endpoints. */
         try {
             const member = await new AuthentikClient().getUserInfo(appDevInternalPk);
-            if (!member.active || !member.email)
+            if (member.type !== "internal" || !member.active || !member.email)
                 return [];
 
             const applicant = await Applicant.findOne({ email: member.email.toLowerCase() })
                 .select("_id")
                 .lean()
                 .exec();
-            if (!applicant)
-                return [];
 
-            return this.findApplications({ applicantId: applicant._id });
+            /* Historical applications may predate the applicant's App Dev
+               account, so include both the current member link and the
+               canonical applicant profile in one deduplicated query. */
+            const memberFilters: Record<string, unknown>[] = [{ appDevInternalPk }];
+            if (applicant)
+                memberFilters.push({ applicantId: applicant._id });
+
+            return this.findApplications({ $or: memberFilters });
         } catch (error) {
             /* Do not expose directory-service errors through a PII endpoint. */
             console.error("Horizons member lookup failed:", error instanceof Error ? error.message : "unknown error");
@@ -301,12 +307,15 @@ export class HorizonsController extends Controller {
         return application.applicantId;
     }
 
-    private toMemberApplication(application: PopulatedApplication): APIHorizonsMemberApplication {
+    private toMemberApplication(
+        application: PopulatedApplication,
+        appDevInternalPk: number,
+    ): APIHorizonsMemberApplication {
         const applicant = this.requireApplicant(application);
         return {
             applicationId: String(application._id),
             applicantId: String(applicant._id),
-            appDevInternalPk: application.appDevInternalPk!,
+            appDevInternalPk,
             teamPk: application.teamPk,
             applicantName: applicant.fullName || "Unknown Applicant",
             email: applicant.email || "",
