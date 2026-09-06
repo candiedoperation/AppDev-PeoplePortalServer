@@ -74,10 +74,47 @@ test("invalidateAvatarUrlCache accepts both id shapes without throwing", () => {
 /* ── PhotoCheckClient: undecided results ─────────────────────────────────
    The service fails open by design. What must not happen is a malformed
    payload being read as a pass without anyone noticing. */
-test("photo check treats a malformed payload as undecided, not as a pass", async (t) => {
-  const client = require("../../dist/clients/PhotoCheckClient/PhotoCheckClient.js");
+/* PHOTO_CHECK_ENABLED gates the whole client, so the behavioural tests below
+   have to turn it on. It is off by default because the sidecar that answers
+   these calls is not in the deployment yet. */
+function withCheckEnabled(t) {
+  const savedFlag = process.env.PHOTO_CHECK_ENABLED;
   const originalFetch = globalThis.fetch;
-  t.after(() => { globalThis.fetch = originalFetch; });
+  process.env.PHOTO_CHECK_ENABLED = "true";
+  delete require.cache[require.resolve("../../dist/clients/PhotoCheckClient/PhotoCheckClient.js")];
+  const client = require("../../dist/clients/PhotoCheckClient/PhotoCheckClient.js");
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+    if (savedFlag === undefined) delete process.env.PHOTO_CHECK_ENABLED;
+    else process.env.PHOTO_CHECK_ENABLED = savedFlag;
+    delete require.cache[require.resolve("../../dist/clients/PhotoCheckClient/PhotoCheckClient.js")];
+  });
+  return client;
+}
+
+test("the check is off unless PHOTO_CHECK_ENABLED is set", async () => {
+  const savedFlag = process.env.PHOTO_CHECK_ENABLED;
+  delete process.env.PHOTO_CHECK_ENABLED;
+  delete require.cache[require.resolve("../../dist/clients/PhotoCheckClient/PhotoCheckClient.js")];
+  const client = require("../../dist/clients/PhotoCheckClient/PhotoCheckClient.js");
+
+  let called = false;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => { called = true; throw new Error("should not be reached"); };
+
+  const result = await client.checkPhotoHasFace(new Uint8Array([1]));
+  assert.equal(result.passed, true);
+  assert.equal(result.reason, "check_disabled");
+  assert.equal(called, false, "a disabled check must not call the sidecar at all");
+
+  globalThis.fetch = originalFetch;
+  if (savedFlag === undefined) delete process.env.PHOTO_CHECK_ENABLED;
+  else process.env.PHOTO_CHECK_ENABLED = savedFlag;
+  delete require.cache[require.resolve("../../dist/clients/PhotoCheckClient/PhotoCheckClient.js")];
+});
+
+test("photo check treats a malformed payload as undecided, not as a pass", async (t) => {
+  const client = withCheckEnabled(t);
 
   globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ nonsense: true }) });
   const result = await client.checkPhotoHasFace(new Uint8Array([1, 2, 3]));
@@ -86,9 +123,7 @@ test("photo check treats a malformed payload as undecided, not as a pass", async
 });
 
 test("photo check reports an unreachable service as service_unavailable", async (t) => {
-  const client = require("../../dist/clients/PhotoCheckClient/PhotoCheckClient.js");
-  const originalFetch = globalThis.fetch;
-  t.after(() => { globalThis.fetch = originalFetch; });
+  const client = withCheckEnabled(t);
 
   globalThis.fetch = async () => { throw new Error("ECONNREFUSED"); };
   const result = await client.checkPhotoHasFace(new Uint8Array([1]));
@@ -96,9 +131,7 @@ test("photo check reports an unreachable service as service_unavailable", async 
 });
 
 test("photo check passes an explicit rejection straight through", async (t) => {
-  const client = require("../../dist/clients/PhotoCheckClient/PhotoCheckClient.js");
-  const originalFetch = globalThis.fetch;
-  t.after(() => { globalThis.fetch = originalFetch; });
+  const client = withCheckEnabled(t);
 
   globalThis.fetch = async () => ({
     ok: true, status: 200,
@@ -111,9 +144,7 @@ test("photo check passes an explicit rejection straight through", async (t) => {
 });
 
 test("photo check passes an explicit acceptance straight through", async (t) => {
-  const client = require("../../dist/clients/PhotoCheckClient/PhotoCheckClient.js");
-  const originalFetch = globalThis.fetch;
-  t.after(() => { globalThis.fetch = originalFetch; });
+  const client = withCheckEnabled(t);
 
   globalThis.fetch = async () => ({
     ok: true, status: 200,
