@@ -111,7 +111,7 @@ export const ENABLED_SERVICE_TEAMS: Record<string, ServiceTeamConfig> = {
     ]
   },
   Events: {
-    friendlyName: "Event Management Team",
+    friendlyName: "Events",
     description: "Team of Members able to Create, Manage, and Delete Events",
     subteams: [
       {
