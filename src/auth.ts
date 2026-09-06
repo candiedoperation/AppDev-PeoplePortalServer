@@ -81,7 +81,10 @@ export async function expressAuthentication(
             /* Read-only service-to-service access for AppDev Horizons. */
             const configuredKey = process.env.HORIZONS_API_KEY?.trim();
             const authFailure = () => Promise.reject(new ResourceAccessError(401, "Invalid API Key"));
-            if (!configuredKey || configuredKey.length < 32)
+            /* Reject the former public example value as well as short keys in
+               case an operator copied it before the example was hardened. */
+            if (!configuredKey || configuredKey.length < 32 ||
+                configuredKey === "replace-with-a-random-service-key")
                 return authFailure();
 
             const authHeader = request.headers.authorization;
