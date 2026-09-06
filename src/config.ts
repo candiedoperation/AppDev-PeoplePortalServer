@@ -217,20 +217,54 @@ export const TEAM_TYPE_CONFIGS: Partial<Record<TeamType, TeamTypeConfig>> = {
 }
 
 /**
- * Teams whose members hold organisation-wide administrative authority: the
- * override the Executive Authorization Layer applies, and visibility of
- * exec-scoped events.
+ * Root teams under which administrative authority can be held.
  *
  * A named set rather than a string literal because the check appeared in five
  * places across auth.ts and EventController, and a sixth would have been easy
- * to miss. Membership of ANY of these grants the authority.
+ * to miss.
  */
 export const ADMIN_AUTHORITY_TEAMS: ReadonlySet<string> = new Set([
   "ExecutiveBoard",
   "TechOps",
 ]);
 
-/** Whether a user's root teams include one that confers admin authority. */
+/**
+ * The subteams that actually confer it.
+ *
+ * Root membership alone is not enough, because getRootTeamsForUsername
+ * collapses every subteam to its parent: a member of ExecutiveBoardAlumni
+ * resolves to ExecutiveBoard exactly like a current executive does. Checking
+ * only the root therefore granted past executives full override on every team
+ * for as long as they stayed in the alumni group.
+ *
+ * Membership is read from the user's own groups, so "Previous Executives" and
+ * "Previous Tech Ops" are records of who used to hold the role, not a way to
+ * keep it. Add a subteam here to grant authority through it.
+ */
+export const ADMIN_AUTHORITY_SUBTEAMS: ReadonlySet<string> = new Set([
+  "ExecutiveBoardMembers",
+  "TechOpsMembers",
+]);
+
+/**
+ * Whether a user holds organisation-wide administrative authority.
+ *
+ * Both halves must hold: an admin root team that is not flagged for deletion,
+ * and direct membership of either that root team or one of the admin subteams.
+ *
+ * @param rootTeams  from AuthentikClient.getRootTeamsForUsername
+ * @param userGroups the user's own group names, from the OIDC session
+ */
 export const hasAdminAuthority = (
-  teams: { name: string; flaggedForDeletion?: boolean }[]
-): boolean => teams.some(team => ADMIN_AUTHORITY_TEAMS.has(team.name) && !team.flaggedForDeletion);
+  rootTeams: { name: string; flaggedForDeletion?: boolean }[],
+  userGroups: string[]
+): boolean => {
+  const liveAdminRoot = rootTeams.some(
+    team => ADMIN_AUTHORITY_TEAMS.has(team.name) && !team.flaggedForDeletion
+  );
+  if (!liveAdminRoot) return false;
+
+  return userGroups.some(
+    group => ADMIN_AUTHORITY_SUBTEAMS.has(group) || ADMIN_AUTHORITY_TEAMS.has(group)
+  );
+};

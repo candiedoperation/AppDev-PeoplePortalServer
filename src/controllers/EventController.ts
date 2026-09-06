@@ -152,7 +152,7 @@ export class EventController extends Controller {
         } else if (!req.session.authorizedUser?.is_superuser) {
             try {
                 const userTeams = await this.authentikClient.getRootTeamsForUsername(req.session.authorizedUser!.username);
-                if (!hasAdminAuthority(userTeams.teams)) {
+                if (!hasAdminAuthority(userTeams.teams, req.session.authorizedUser!.groups ?? [])) {
                     scopes = ["public", "internal"];
                 }
             } catch (error) {
@@ -209,7 +209,7 @@ export class EventController extends Controller {
         } else if (!req.session.authorizedUser?.is_superuser) {
             try {
                 const userTeams = await this.authentikClient.getRootTeamsForUsername(req.session.authorizedUser!.username);
-                if (!hasAdminAuthority(userTeams.teams)) {
+                if (!hasAdminAuthority(userTeams.teams, req.session.authorizedUser!.groups ?? [])) {
                     query = query.where("scope").ne("exec");
                 }
             } catch (error) {
@@ -743,7 +743,7 @@ export class EventController extends Controller {
                 } else {
                     try {
                         const userTeams = await this.authentikClient.getRootTeamsForUsername(req.session.authorizedUser!.username);
-                        authorized = hasAdminAuthority(userTeams.teams);
+                        authorized = hasAdminAuthority(userTeams.teams, req.session.authorizedUser!.groups ?? []);
                     } catch (error) {
                         throw new ResourceAccessError(500, "Failed to get team membership."); 
                     }

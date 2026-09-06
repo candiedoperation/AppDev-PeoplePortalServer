@@ -172,7 +172,7 @@ export async function executiveAuthVerify(
         const userTeams = await authentikClient.getRootTeamsForUsername(authorizedUser.username);
 
         /* Any team carrying admin authority, not flagged for deletion */
-        const isExecutive = hasAdminAuthority(userTeams.teams);
+        const isExecutive = hasAdminAuthority(userTeams.teams, authorizedUser.groups ?? []);
 
         if (isExecutive)
             return Promise.resolve(true);
@@ -249,7 +249,7 @@ export async function eventsAuthVerify(
         /* If enabled, a user in exec can bypass permission. */
         if (allowExecOverride) {
             /* Any team carrying admin authority, not flagged for deletion */
-            const isExecutive = hasAdminAuthority(userTeams.teams);
+            const isExecutive = hasAdminAuthority(userTeams.teams, authorizedUser.groups ?? []);
 
             if (isExecutive)
                 return Promise.resolve(true);
