@@ -914,7 +914,12 @@ export class EventController extends Controller {
             return allUsers.users;
         } 
         else if (scope === "exec") {
-            // Return all execs
+            /* Deliberately ExecutiveBoardMembers only, not every team in
+               ADMIN_AUTHORITY_TEAMS. TechOps members can see and RSVP to
+               exec-scoped events, because visibility is gated on
+               hasAdminAuthority, but they are not mailed about them: an exec
+               event is exec board business. Decided 2026-09-06; please do not
+               "fix" the mismatch without checking that first. */
             const execGroupId = await this.authentikClient.getGroupPkFromName("ExecutiveBoardMembers");
             const groupInfo = await this.authentikClient.getGroupInfo(execGroupId);
             
