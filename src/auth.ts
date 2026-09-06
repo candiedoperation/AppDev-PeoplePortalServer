@@ -80,7 +80,7 @@ export async function expressAuthentication(
         else if (securityName == "horizons") {
             /* Read-only service-to-service access for AppDev Horizons. */
             const configuredKey = process.env.HORIZONS_API_KEY;
-            if (!configuredKey)
+            if (!configuredKey || configuredKey.length < 32)
                 return Promise.reject(new ResourceAccessError(401, "Horizons access is not configured"));
 
             const authHeader = request.headers.authorization;

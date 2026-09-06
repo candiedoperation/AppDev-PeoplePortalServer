@@ -92,7 +92,7 @@ test("production refuses to start with a required variable missing", () => {
   Object.assign(process.env, saved);
 });
 
-test("production refuses a weak Horizons API key", () => {
+test("production startup does not depend on Horizons API configuration", () => {
   const env = loadEnvironment("production");
   const saved = { ...process.env };
   for (const key of [
@@ -101,10 +101,7 @@ test("production refuses a weak Horizons API key", () => {
     "PEOPLEPORTAL_AUTHENTIK_ENDPOINT", "PEOPLEPORTAL_AUTHENTIK_TOKEN",
   ]) process.env[key] = "set";
 
-  process.env.HORIZONS_API_KEY = "too-short";
-  assert.throws(() => env.assertRequiredEnvironment(), /HORIZONS_API_KEY must be at least 32 characters/);
-
-  process.env.HORIZONS_API_KEY = "a".repeat(32);
+  delete process.env.HORIZONS_API_KEY;
   assert.doesNotThrow(() => env.assertRequiredEnvironment());
   process.env = saved;
 });
@@ -117,7 +114,6 @@ test("production refuses to start with TLS verification disabled", () => {
     "PEOPLEPORTAL_OIDC_DSCVURL", "PEOPLEPORTAL_OIDC_CLIENTID", "PEOPLEPORTAL_OIDC_CLIENTSECRET",
     "PEOPLEPORTAL_AUTHENTIK_ENDPOINT", "PEOPLEPORTAL_AUTHENTIK_TOKEN",
   ]) process.env[key] = "set";
-  process.env.HORIZONS_API_KEY = "a".repeat(32);
   process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
   assert.throws(() => env.assertRequiredEnvironment(), /NODE_TLS_REJECT_UNAUTHORIZED/);
   process.env = saved;
