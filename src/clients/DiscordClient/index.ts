@@ -29,22 +29,45 @@ export class DiscordClient implements SharedResourceClient {
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
     ];
-    private readonly discordClient: Client;
+    /* Null when the integration is disabled: see the constructor. */
+    private readonly discordClient: Client | null;
+
+    /**
+     * False when Discord is not configured. Every method below is a safe no-op
+     * in that state, so callers do not need to check it.
+     */
+    public readonly enabled: boolean;
 
     private readonly supportedBindles: BindlePermissionMap = {};
 
     public isReady: boolean;
 
     constructor() {
-        if (!process.env.PEOPLEPORTAL_DISCORD_BOT_TOKEN) {
-            throw new Error("PEOPLEPORTAL_DISCORD_BOT_TOKEN is undefined");
-        }
-        if (!process.env.PEOPLEPORTAL_DISCORD_SERVER_ID) {
-            throw new Error("PEOPLEPORTAL_DISCORD_SERVER_ID is undefined");
-        }
-
         this.isReady = false;
 
+        /* This runs at import time, via ENABLED_SHARED_RESOURCES in config.ts,
+           so throwing here kills the process before Express ever listens.
+           A Discord integration that is not configured must disable Discord,
+           not the server: these variables are absent from the deployment's
+           .env template, so a missing one is the likely case, not the
+           exceptional one. */
+        const token = process.env.PEOPLEPORTAL_DISCORD_BOT_TOKEN;
+        const serverId = process.env.PEOPLEPORTAL_DISCORD_SERVER_ID;
+        const missing = [
+            !token && "PEOPLEPORTAL_DISCORD_BOT_TOKEN",
+            !serverId && "PEOPLEPORTAL_DISCORD_SERVER_ID",
+        ].filter(Boolean);
+
+        if (missing.length > 0) {
+            this.enabled = false;
+            this.discordClient = null;
+            console.warn(
+                `${DiscordClient.TAG}: ${missing.join(" and ")} not set; Discord integration disabled.`
+            );
+            return;
+        }
+
+        this.enabled = true;
         this.discordClient = new Client({ intents: DiscordClient.INTENTS });
         this.discordClient.on(Events.ClientReady, () => this.isReady = true);
         /* login() is async and rejects on a bad/expired token. Unhandled, that
@@ -58,6 +81,8 @@ export class DiscordClient implements SharedResourceClient {
     }
 
     async init(): Promise<void> {
+        if (!this.enabled) return;
+
         /* waitForReady() rejects after 15s when the gateway never connects. That
            rejection used to propagate out of the startup loop and kill the
            process. A Discord outage should disable Discord, not People Portal;
@@ -70,8 +95,11 @@ export class DiscordClient implements SharedResourceClient {
     }
 
     waitForReady(): Promise<void> {
+        if (!this.enabled || !this.discordClient) return Promise.resolve();
+
+        const client = this.discordClient;
         return new Promise((resolve, reject) => {
-            if (this.discordClient.isReady()) {
+            if (client.isReady()) {
                 return resolve();
             }
 
@@ -83,10 +111,10 @@ export class DiscordClient implements SharedResourceClient {
             }
 
             timeout = setTimeout(() => {
-                this.discordClient.off(Events.ClientReady, onReady);
+                client.off(Events.ClientReady, onReady);
                 reject(new Error("Discord bot was not ready on time."));
             }, 15000);
-            this.discordClient.once(Events.ClientReady, onReady);
+            client.once(Events.ClientReady, onReady);
         });
     }
 
@@ -109,6 +137,10 @@ export class DiscordClient implements SharedResourceClient {
     }
 
     async getChannelFromName(channelName: string) {
+        /* Undefined is the "no such channel" answer callers already handle, so
+           a disabled integration looks the same as a missing channel. */
+        if (!this.enabled || !this.discordClient) return undefined;
+
         // Uses guild id in .env in case bot is in multiple servers.
         const guild = await this.discordClient.guilds.fetch(process.env.PEOPLEPORTAL_DISCORD_SERVER_ID!);
         return guild.channels.cache.find(ch => ch.name === channelName && ch.isTextBased());
