@@ -91,6 +91,6 @@ const ApplicationSchema = new Schema<IApplication>({
 // Updated indexes for team-level queries
 ApplicationSchema.index({ teamPk: 1, stage: 1 });
 ApplicationSchema.index({ applicantId: 1, teamPk: 1 }, { unique: true }); // One application per team per applicant
+ApplicationSchema.index({ appDevInternalPk: 1, appliedAt: 1 });
 
 export const Application = model<IApplication>('Application', ApplicationSchema);
-

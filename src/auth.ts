@@ -19,6 +19,7 @@
 import * as express from "express";
 import { AuthorizedUser, OpenIdClient } from "./clients/OpenIdClient";
 import jwt from "jsonwebtoken"
+import crypto from "crypto";
 import { BindleController } from "./controllers/BindleController";
 import { AuthentikClient } from "./clients/AuthentikClient";
 import { ENABLED_SERVICE_TEAM_NAMES } from "./utils/services";
@@ -74,6 +75,27 @@ export async function expressAuthentication(
                 delete request.session.tempsession;
                 return Promise.reject(new ResourceAccessError(401, "Invalid or expired token"));
             }
+        }
+
+        else if (securityName == "horizons") {
+            /* Read-only service-to-service access for AppDev Horizons. */
+            const configuredKey = process.env.HORIZONS_API_KEY;
+            if (!configuredKey)
+                return Promise.reject(new ResourceAccessError(401, "Horizons access is not configured"));
+
+            const authHeader = request.headers.authorization;
+            if (!authHeader || !authHeader.startsWith("Bearer "))
+                return Promise.reject(new ResourceAccessError(401, "Missing Bearer Token"));
+
+            const presentedDigest = crypto.createHash("sha256")
+                .update(authHeader.slice("Bearer ".length)).digest();
+            const configuredDigest = crypto.createHash("sha256")
+                .update(configuredKey).digest();
+
+            if (!crypto.timingSafeEqual(presentedDigest, configuredDigest))
+                return Promise.reject(new ResourceAccessError(401, "Invalid API Key"));
+
+            return Promise.resolve(true);
         }
 
         else
