@@ -87,7 +87,10 @@ const REQUIRED_IN_PRODUCTION = [
     "PEOPLEPORTAL_OIDC_CLIENTSECRET",
     "PEOPLEPORTAL_AUTHENTIK_ENDPOINT",
     "PEOPLEPORTAL_AUTHENTIK_TOKEN",
+    "HORIZONS_API_KEY",
 ] as const;
+
+const MIN_HORIZONS_API_KEY_LENGTH = 32;
 
 /** Present-but-empty is as broken as absent, and much harder to spot. */
 function isBlank(value: string | undefined): boolean {
@@ -101,6 +104,12 @@ export function assertRequiredEnvironment(): void {
     if (missing.length > 0) {
         throw new Error(
             `Missing required environment variables in production: ${missing.join(", ")}`
+        );
+    }
+
+    if (process.env.HORIZONS_API_KEY!.length < MIN_HORIZONS_API_KEY_LENGTH) {
+        throw new Error(
+            `HORIZONS_API_KEY must be at least ${MIN_HORIZONS_API_KEY_LENGTH} characters in production`
         );
     }
 
