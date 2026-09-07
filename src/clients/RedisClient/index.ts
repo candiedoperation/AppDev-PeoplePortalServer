@@ -15,6 +15,10 @@ export class RedisClient {
     private static getClient() {
         if (!this.client) {
             this.client = createClient({ url: this.getRedisUrl() });
+
+             this.client.on("error", (err) => {
+                 console.error("Redis client error:", err);
+             });
         }
 
         return this.client;
@@ -34,7 +38,12 @@ export class RedisClient {
             return null;
         }
 
-        return JSON.parse(value) as T;
+        try {
+            return JSON.parse(value) as T;
+        } catch (err) {
+            console.error(`Failed to parse Redis value for key "${key}":`, err);
+            return null;
+        }
     }
 
     public static async set(key: string, value: unknown, ttlSeconds?: number) {

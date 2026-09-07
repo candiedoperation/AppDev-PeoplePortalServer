@@ -159,8 +159,14 @@ app.use(function errorHandler(
 app.listen(PORT, async () => {
   /* Validate Connections */
   await OpenIdClient.init()
-  await RedisClient.init()
   //await AuthentikClient.validateAuthentikConnection()
+
+  try {
+    await RedisClient.init()
+  } catch (err) {
+    console.error("Redis unavailable at startup; continuing without cache:", err)
+  }
+  // Allow server startup if Redis is unavailable
 
   /* Validate Service Team Creation */
   const authentikClient = new AuthentikClient()

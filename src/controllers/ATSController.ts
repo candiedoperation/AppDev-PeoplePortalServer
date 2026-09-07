@@ -440,7 +440,8 @@ export class ATSController extends Controller {
             }
         }
 
-        await RedisClient.set(OPEN_TEAMS_CACHE_KEY, validRecruitingTeams);
+        // Expire cache after 1 hour to prevent stale recruiting data
+        await RedisClient.set(OPEN_TEAMS_CACHE_KEY, validRecruitingTeams, 60 * 60);
         return validRecruitingTeams;
     }
 
