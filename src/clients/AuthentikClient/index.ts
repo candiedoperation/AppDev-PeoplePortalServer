@@ -24,8 +24,14 @@ import { EnabledRootSettings } from "../../controllers/OrgController"
 import { BindleController, EnabledBindlePermissions } from "../../controllers/BindleController"
 import { ENABLED_SERVICE_TEAMS } from "../../config"
 import { ENABLED_SERVICE_TEAM_NAMES } from "../../utils/services"
+import { mapWithConcurrency } from "../../utils/concurrency"
 
 export class AuthentikClient {
+    /* Authentik is a small self-hosted instance; a handful of parallel lookups
+       hides the latency without turning a page load into a burst it has to
+       queue. */
+    private static readonly GROUP_FETCH_CONCURRENCY = 5;
+
     private static readonly TAG = "AuthentikClient"
     private AUTHENTIK_TOKEN = process.env.PEOPLEPORTAL_AUTHENTIK_TOKEN
     private readonly AxiosBaseConfig = {
@@ -685,6 +691,108 @@ export class AuthentikClient {
         }
     }
 
+    /**
+     * Resolves many groups in one request instead of one request per group.
+     *
+     * The open-roles endpoint used to call getGroupInfo in a sequential loop,
+     * so its latency scaled with the number of recruiting teams: at 13 teams
+     * that is 13 serial round trips before a single byte is returned, and with
+     * subteam member population on top it was closer to 65.
+     *
+     * Authentik's list endpoint returns the same shape as the detail endpoint,
+     * so one paginated sweep answers all of them. Any pk the sweep does not
+     * cover falls back to an individual fetch, bounded in parallel: that keeps
+     * this correct if the list endpoint ever filters differently, and it is
+     * also what surfaces a real GROUP_NOT_FOUND for a group that is genuinely
+     * gone, which callers rely on to clean up their own rows.
+     */
+    public getGroupsInfoByPks = async (
+        pks: readonly string[],
+        options?: GetGroupInfoRequestOptions
+    ): Promise<Map<string, GetGroupInfoResponse>> => {
+        const resolved = new Map<string, GetGroupInfoResponse>();
+        const wanted = new Set(pks);
+        if (wanted.size === 0) return resolved;
+
+        const includeUsers = options?.includeUsers ?? false;
+        const toGroupInfo = (entry: any): GetGroupInfoResponse => ({
+            pk: entry.pk,
+            name: entry.name,
+            subteamPkList: entry.children,
+            subteams: entry.children_obj ?? [],
+            parentPk: entry.parent ?? entry.parents?.[0] ?? null,
+            parentInfo: entry.parents_obj ? entry.parents_obj[0] : null,
+            attributes: entry.attributes,
+            users: (entry.users_obj ?? []).map((user: any) => ({
+                pk: user.pk,
+                username: user.username,
+                name: user.name,
+                email: user.email,
+                attributes: user.attributes
+            }))
+        });
+
+        /* One sweep of the directory. Authentik has no pk__in filter, so the
+           set is narrowed locally; a club-sized directory is a page or two. */
+        try {
+            let page = 1;
+            let totalPages = 1;
+
+            while (page <= totalPages && resolved.size < wanted.size) {
+                const res = await axios.request({
+                    ...this.AxiosBaseConfig,
+                    method: 'get',
+                    url: '/api/v3/core/groups/',
+                    params: {
+                        include_users: includeUsers,
+                        include_children: options?.includeChildren ?? true,
+                        include_parents: options?.includeParentInfo ?? false,
+                        page,
+                        page_size: 1000
+                    }
+                });
+
+                for (const entry of res.data.results ?? []) {
+                    if (wanted.has(entry.pk)) resolved.set(entry.pk, toGroupInfo(entry));
+                }
+
+                totalPages = res.data.pagination?.total_pages ?? 1;
+                page++;
+            }
+        } catch (e) {
+            /* A failed sweep is not fatal; every pk simply falls through to the
+               per-group path below, which is the old behaviour. */
+            log.warn(AuthentikClient.TAG, "Bulk group fetch failed, falling back to individual lookups: ", e)
+        }
+
+        const missing = [...wanted].filter((pk) => !resolved.has(pk));
+        if (missing.length === 0) return resolved;
+
+        const settled = await mapWithConcurrency(
+            missing,
+            AuthentikClient.GROUP_FETCH_CONCURRENCY,
+            (pk) => this.getGroupInfo(pk, options)
+        );
+
+        for (const [i, result] of settled.entries()) {
+            if (result.status === "fulfilled") {
+                resolved.set(missing[i]!, result.value);
+                continue;
+            }
+
+            /* GROUP_NOT_FOUND is meaningful to callers and must not be
+               flattened into "missing from the map" alongside a network
+               failure, so it is rethrown. */
+            if (result.reason instanceof AuthentikClientError &&
+                result.reason.code === AuthentikClientErrorType.GROUP_NOT_FOUND)
+                continue;
+
+            throw result.reason;
+        }
+
+        return resolved;
+    }
+
     public getGroupInfo = async (teamId: string, options?: GetGroupInfoRequestOptions): Promise<GetGroupInfoResponse> => {
         var RequestConfig: any = {
             ...this.AxiosBaseConfig,
@@ -718,7 +826,7 @@ export class AuthentikClient {
                 parentPk: res.data.parent ?? res.data.parents?.[0] ?? null, /* People Portal Legacy Single Parent Patch */
                 parentInfo: res.data.parents_obj ? res.data.parents_obj[0] : null, /* Authentik 2025.12+ Only */
                 attributes: res.data.attributes,
-                users: res.data.users_obj.map((user: any) => ({
+                users: (res.data.users_obj ?? []).map((user: any) => ({
                     pk: user.pk,
                     username: user.username,
                     name: user.name,
@@ -1108,7 +1216,7 @@ export class AuthentikClient {
                 parentPk: res.data.parent ?? res.data.parents?.[0] ?? null, /* People Portal Legacy Single Parent Patch */
                 parentInfo: res.data.parents_obj ? res.data.parents_obj[0] : null, /* Authentik 2025.12+ Only */
                 attributes: res.data.attributes,
-                users: res.data.users_obj.map((user: any) => ({
+                users: (res.data.users_obj ?? []).map((user: any) => ({
                     pk: user.pk,
                     username: user.username,
                     name: user.name,
