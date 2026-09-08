@@ -102,6 +102,10 @@ const MAX_RESPONSE_LENGTH = 2000;
 const MAX_WHY_APPDEV_WORDS = 200;
 const MIN_RESPONSE_WORDS = 10;
 const OPEN_TEAMS_CACHE_KEY = "ats:openteams";
+/* Backstop only; correctness comes from invalidating on write. This bounds how
+   long a *missed* invalidation (Redis down mid-write, or a mutation path added
+   later that forgets to bust) can serve a stale roster to applicants. */
+const OPEN_TEAMS_CACHE_TTL_SECONDS = 300;
 
 @Route("/api/ats")
 export class ATSController extends Controller {
@@ -444,7 +448,7 @@ export class ATSController extends Controller {
             }
         }
 
-        await RedisClient.set(OPEN_TEAMS_CACHE_KEY, validRecruitingTeams);
+        await RedisClient.set(OPEN_TEAMS_CACHE_KEY, validRecruitingTeams, OPEN_TEAMS_CACHE_TTL_SECONDS);
         return validRecruitingTeams;
     }
 
@@ -1481,8 +1485,6 @@ export class ATSController extends Controller {
 
     /* === HELPER METHODS === */
     async addSubteamToRecruiting(@Path() teamId: string, @Path() subteamId: string) {
-        await RedisClient.delete(OPEN_TEAMS_CACHE_KEY);
-
         const updatedTeam = await TeamRecruitingStatus.findOneAndUpdate(
             { teamPk: teamId },
             {
@@ -1501,12 +1503,13 @@ export class ATSController extends Controller {
             updatedTeam.isRecruiting = true;
         }
 
+        /* After every write, never before: invalidating first leaves a window in
+           which a concurrent read repopulates the cache from pre-update rows. */
+        await RedisClient.delete(OPEN_TEAMS_CACHE_KEY);
         return updatedTeam;
     }
 
     async removeSubteamFromRecruiting(@Path() teamId: string, @Path() subteamId: string) {
-        await RedisClient.delete(OPEN_TEAMS_CACHE_KEY);
-
         const updatedTeam = await TeamRecruitingStatus.findOneAndUpdate(
             { teamPk: teamId },
             { $pull: { recruitingSubteamPks: subteamId } },
@@ -1527,6 +1530,7 @@ export class ATSController extends Controller {
             updatedTeam.isRecruiting = false;
         }
 
+        await RedisClient.delete(OPEN_TEAMS_CACHE_KEY);
         return updatedTeam;
     }
 }
