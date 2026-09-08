@@ -38,6 +38,8 @@ import { AuthorizedUser } from "../clients/OpenIdClient";
 import { validateS3FileSignature, FILE_SIGNATURES } from '../utils/s3-validation';
 import MarkdownIt from "markdown-it";
 import { RedisClient } from "../clients/RedisClient";
+import { mapWithConcurrency } from "../utils/concurrency";
+import { CacheEnvelope, isCacheEnvelope, isCacheStale, wrapCacheValue } from "../utils/cache-envelope";
 
 // ====================
 // Type Definitions
@@ -102,10 +104,13 @@ const MAX_RESPONSE_LENGTH = 2000;
 const MAX_WHY_APPDEV_WORDS = 200;
 const MIN_RESPONSE_WORDS = 10;
 const OPEN_TEAMS_CACHE_KEY = "ats:openteams";
-/* Backstop only; correctness comes from invalidating on write. This bounds how
-   long a *missed* invalidation (Redis down mid-write, or a mutation path added
-   later that forgets to bust) can serve a stale roster to applicants. */
-const OPEN_TEAMS_CACHE_TTL_SECONDS = 300;
+/* Past this the entry is refreshed, but it is still served while that happens,
+   so no applicant waits for the rebuild. */
+const OPEN_TEAMS_CACHE_SOFT_TTL_SECONDS = 300;
+/* The Redis expiry, and the absolute ceiling on staleness if every background
+   refresh fails. Correctness comes from invalidating on write; this only bounds
+   how long a *missed* invalidation can serve a stale roster. */
+const OPEN_TEAMS_CACHE_HARD_TTL_SECONDS = 3600;
 
 @Route("/api/ats")
 export class ATSController extends Controller {
@@ -376,11 +381,54 @@ export class ATSController extends Controller {
     @Tags("Applicant Portal")
     @SuccessResponse(200)
     async getAllRecruitingTeams() {
-        const cachedOpenTeams = await RedisClient.get<any[]>(OPEN_TEAMS_CACHE_KEY);
-        if (cachedOpenTeams) {
-            return cachedOpenTeams;
+        const cached = await RedisClient.get<CacheEnvelope<any[]>>(OPEN_TEAMS_CACHE_KEY);
+
+        if (isCacheEnvelope<any[]>(cached)) {
+            if (isCacheStale(cached, OPEN_TEAMS_CACHE_SOFT_TTL_SECONDS))
+                this.refreshOpenTeamsInBackground();
+
+            return cached.value;
         }
 
+        /* A cold or invalidated cache is the only path that waits on a build. */
+        return this.buildAndCacheOpenTeams();
+    }
+
+    /**
+     * Rebuilds the cache without making the current request wait for it.
+     *
+     * Guarded so that a burst of readers arriving after the soft TTL triggers
+     * one rebuild rather than one per request, which is the stampede a plain
+     * TTL causes. The guard is per-process, so a multi-instance deployment
+     * rebuilds once per instance; that is a far cry from once per request, and
+     * a distributed lock is not worth its failure modes here.
+     */
+    private static openTeamsRefreshInFlight = false;
+
+    private refreshOpenTeamsInBackground() {
+        if (ATSController.openTeamsRefreshInFlight) return;
+        ATSController.openTeamsRefreshInFlight = true;
+
+        /* Deliberately not awaited. Nothing may escape: an unhandled rejection
+           here would take the process down for a stale cache entry. */
+        void this.buildAndCacheOpenTeams()
+            .catch((e: any) => console.error(`Background refresh of the open-teams cache failed: ${e?.message ?? e}`))
+            .finally(() => { ATSController.openTeamsRefreshInFlight = false; });
+    }
+
+    private async buildAndCacheOpenTeams() {
+        const validRecruitingTeams = await this.buildOpenTeams();
+        await RedisClient.set(
+            OPEN_TEAMS_CACHE_KEY,
+            wrapCacheValue(validRecruitingTeams),
+            OPEN_TEAMS_CACHE_HARD_TTL_SECONDS
+        );
+
+        return validRecruitingTeams;
+    }
+
+    /** The uncached build. Every Mongo and Authentik read for this page lives here. */
+    private async buildOpenTeams() {
         /* Fetch All teams that are recruiting currently */
         const recruitingTeams: any[] = await TeamRecruitingStatus.find({ isRecruiting: true }).lean().exec();
 
@@ -397,58 +445,79 @@ export class ATSController extends Controller {
         const allConfigs = await SubteamConfig.find({ subteamPk: { $in: allSubteamPks } }).lean().exec();
         const configMap = new Map(allConfigs.map((c: any) => [c.subteamPk, c]));
 
+        /*
+         * The remaining O(N) was N sequential Authentik round trips, one per
+         * recruiting team, each of which then fetched every subteam again just
+         * to populate members this endpoint never reads. At 13 teams that was
+         * roughly 65 serial requests. Both are gone: members are not requested,
+         * and the teams resolve in a single bulk lookup.
+         */
+        const teamInfoByPk = await this.authentikClient.getGroupsInfoByPks(
+            recruitingTeams.map(t => t.teamPk),
+            { includeUsers: false, includeChildren: true, disableSubteamMemberPopulate: true }
+        );
+
         /* Populate Team and Subteam Info */
         const validRecruitingTeams: any[] = [];
+        const missingTeamPks: string[] = [];
+
         for (const team of recruitingTeams) {
-            try {
-                const recruitingSubteams = new Set(team.recruitingSubteamPks)
-                const authentikTeamInfo = await this.authentikClient.getGroupInfo(team.teamPk);
+            const authentikTeamInfo = teamInfoByPk.get(team.teamPk);
+            if (!authentikTeamInfo) {
+                /* Absent from a successful bulk lookup means the group is gone
+                   from Authentik. Collected, not deleted mid-iteration. */
+                missingTeamPks.push(team.teamPk);
+                continue;
+            }
 
-                const parentInfoObj = {
-                    name: authentikTeamInfo.name,
-                    friendlyName: authentikTeamInfo.attributes.friendlyName,
-                    description: authentikTeamInfo.attributes.description,
-                    seasonText: `${authentikTeamInfo.attributes.seasonType} ${authentikTeamInfo.attributes.seasonYear}`,
-                    pk: authentikTeamInfo.pk
-                };
+            const recruitingSubteams = new Set(team.recruitingSubteamPks)
+            const parentInfoObj = {
+                name: authentikTeamInfo.name,
+                friendlyName: authentikTeamInfo.attributes.friendlyName,
+                description: authentikTeamInfo.attributes.description,
+                seasonText: `${authentikTeamInfo.attributes.seasonType} ${authentikTeamInfo.attributes.seasonYear}`,
+                pk: authentikTeamInfo.pk
+            };
 
-                team.teamInfo = parentInfoObj;
-                team.subteamInfo = {};
-                for (const sub of authentikTeamInfo.subteams) {
-                    if (recruitingSubteams.has(sub.pk)) {
-                        const config = configMap.get(sub.pk);
+            team.teamInfo = parentInfoObj;
+            team.subteamInfo = {};
+            for (const sub of authentikTeamInfo.subteams) {
+                if (recruitingSubteams.has(sub.pk)) {
+                    const config = configMap.get(sub.pk);
 
-                        const subteamInfoObj = {
-                            name: sub.name,
-                            friendlyName: sub.attributes.friendlyName,
-                            description: sub.attributes.description,
-                            seasonText: `${sub.attributes.seasonType} ${sub.attributes.seasonYear}`,
-                            pk: sub.pk
-                        };
+                    const subteamInfoObj = {
+                        name: sub.name,
+                        friendlyName: sub.attributes.friendlyName,
+                        description: sub.attributes.description,
+                        seasonText: `${sub.attributes.seasonType} ${sub.attributes.seasonYear}`,
+                        pk: sub.pk
+                    };
 
-                        team.subteamInfo[sub.pk] = {
-                            ...subteamInfoObj,
-                            recruitmentInfo: config ? {
-                                ...config,
-                                subteamInfo: subteamInfoObj,
-                                parentInfo: parentInfoObj
-                            } : null,
-                        };
-                    }
-                }
-
-                validRecruitingTeams.push(team);
-            } catch (e) {
-                if (e instanceof AuthentikClientError && e.code === AuthentikClientErrorType.GROUP_NOT_FOUND) {
-                    console.warn(`Recruiting Team with PK ${team.teamPk} not found in Authentik. Cleaning up.`);
-                    await TeamRecruitingStatus.deleteOne({ teamPk: team.teamPk }).exec();
-                } else {
-                    throw e;
+                    team.subteamInfo[sub.pk] = {
+                        ...subteamInfoObj,
+                        recruitmentInfo: config ? {
+                            ...config,
+                            subteamInfo: subteamInfoObj,
+                            parentInfo: parentInfoObj
+                        } : null,
+                    };
                 }
             }
+
+            validRecruitingTeams.push(team);
         }
 
-        await RedisClient.set(OPEN_TEAMS_CACHE_KEY, validRecruitingTeams, OPEN_TEAMS_CACHE_TTL_SECONDS);
+        /*
+         * 02-06-2026 (@atheesh): Data Integrity Compromise, See COE at
+         * https://wiki.appdevclub.com/people-portal-dev-guide/coe/ats-open-roles-failure
+         * Rows for groups Authentik no longer has are still cleaned up, now in
+         * one query rather than one delete per team inside the render loop.
+         */
+        if (missingTeamPks.length > 0) {
+            console.warn(`Recruiting Teams with PKs ${missingTeamPks.join(", ")} not found in Authentik. Cleaning up.`);
+            await TeamRecruitingStatus.deleteMany({ teamPk: { $in: missingTeamPks } }).exec();
+        }
+
         return validRecruitingTeams;
     }
 
