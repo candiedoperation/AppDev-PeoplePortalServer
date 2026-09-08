@@ -32,6 +32,7 @@ import { generateSecureRandomString } from "./utils/strings";
 import path from "path";
 import { NativeExpressOIDCAuthPort } from "./auth";
 import { AuthentikClient } from "./clients/AuthentikClient";
+import { RedisClient } from "./clients/RedisClient";
 import { CustomValidationError, ResourceAccessError } from "./utils/errors";
 import { ENABLED_SHARED_RESOURCES } from "./config";
 import log from 'loglevel';
@@ -182,6 +183,7 @@ app.use(function errorHandler(
 async function startup(): Promise<void> {
   /* Validate Connections */
   await OpenIdClient.init()
+  await RedisClient.init()
   //await AuthentikClient.validateAuthentikConnection()
 
   /* Validate Service Team Creation.

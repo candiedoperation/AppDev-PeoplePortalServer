@@ -37,6 +37,7 @@ import { BindleController } from "./BindleController";
 import { AuthorizedUser } from "../clients/OpenIdClient";
 import { validateS3FileSignature, FILE_SIGNATURES } from '../utils/s3-validation';
 import MarkdownIt from "markdown-it";
+import { RedisClient } from "../clients/RedisClient";
 
 // ====================
 // Type Definitions
@@ -100,6 +101,7 @@ const ALLOWED_CONTENT_TYPES = ['application/pdf'] as const;
 const MAX_RESPONSE_LENGTH = 2000;
 const MAX_WHY_APPDEV_WORDS = 200;
 const MIN_RESPONSE_WORDS = 10;
+const OPEN_TEAMS_CACHE_KEY = "ats:openteams";
 
 @Route("/api/ats")
 export class ATSController extends Controller {
@@ -370,6 +372,11 @@ export class ATSController extends Controller {
     @Tags("Applicant Portal")
     @SuccessResponse(200)
     async getAllRecruitingTeams() {
+        const cachedOpenTeams = await RedisClient.get<any[]>(OPEN_TEAMS_CACHE_KEY);
+        if (cachedOpenTeams) {
+            return cachedOpenTeams;
+        }
+
         /* Fetch All teams that are recruiting currently */
         const recruitingTeams: any[] = await TeamRecruitingStatus.find({ isRecruiting: true }).lean().exec();
 
@@ -437,6 +444,7 @@ export class ATSController extends Controller {
             }
         }
 
+        await RedisClient.set(OPEN_TEAMS_CACHE_KEY, validRecruitingTeams);
         return validRecruitingTeams;
     }
 
@@ -1473,6 +1481,8 @@ export class ATSController extends Controller {
 
     /* === HELPER METHODS === */
     async addSubteamToRecruiting(@Path() teamId: string, @Path() subteamId: string) {
+        await RedisClient.delete(OPEN_TEAMS_CACHE_KEY);
+
         const updatedTeam = await TeamRecruitingStatus.findOneAndUpdate(
             { teamPk: teamId },
             {
@@ -1495,6 +1505,8 @@ export class ATSController extends Controller {
     }
 
     async removeSubteamFromRecruiting(@Path() teamId: string, @Path() subteamId: string) {
+        await RedisClient.delete(OPEN_TEAMS_CACHE_KEY);
+
         const updatedTeam = await TeamRecruitingStatus.findOneAndUpdate(
             { teamPk: teamId },
             { $pull: { recruitingSubteamPks: subteamId } },
