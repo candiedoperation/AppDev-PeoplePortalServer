@@ -12,6 +12,8 @@ import { OrgController } from './controllers/OrgController';
 // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
 import { MeetingsController } from './controllers/MeetingsController';
 // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+import { HorizonsController } from './controllers/HorizonsController';
+// WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
 import { HooksController } from './controllers/HooksController';
 // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
 import { EventController } from './controllers/EventController';
@@ -669,6 +671,101 @@ const models: TsoaRoute.Models = {
         "additionalProperties": false,
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "APIHorizonsHealthResponse": {
+        "dataType": "refObject",
+        "properties": {
+            "status": {"dataType":"enum","enums":["ok"],"required":true},
+            "serverTime": {"dataType":"datetime","required":true},
+        },
+        "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "APIHorizonsMemberApplicant": {
+        "dataType": "refObject",
+        "properties": {
+            "applicantId": {"dataType":"string","required":true},
+            "name": {"dataType":"string","required":true},
+            "email": {"dataType":"string","required":true},
+            "resumeAvailable": {"dataType":"boolean","required":true},
+        },
+        "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "Record_ApplicationStage.number_": {
+        "dataType": "refAlias",
+        "type": {"dataType":"nestedObjectLiteral","nestedProperties":{"Applied":{"dataType":"double","required":true},"Interview":{"dataType":"double","required":true},"Rejected":{"dataType":"double","required":true},"Potential Hire":{"dataType":"double","required":true},"Hired":{"dataType":"double","required":true}},"validators":{}},
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "APIHorizonsMemberRecruitingResponse": {
+        "dataType": "refObject",
+        "properties": {
+            "memberPk": {"dataType":"double","required":true},
+            "applicants": {"dataType":"array","array":{"dataType":"refObject","ref":"APIHorizonsMemberApplicant"},"required":true},
+            "applicationCount": {"dataType":"double","required":true},
+            "teamCount": {"dataType":"double","required":true},
+            "teamPks": {"dataType":"array","array":{"dataType":"string"},"required":true},
+            "stageCounts": {"ref":"Record_ApplicationStage.number_","required":true},
+            "interviewedApplications": {"dataType":"double","required":true},
+            "interviewEvents": {"dataType":"double","required":true},
+            "firstInterviewAt": {"dataType":"union","subSchemas":[{"dataType":"datetime"},{"dataType":"enum","enums":[null]}],"required":true},
+            "lastInterviewAt": {"dataType":"union","subSchemas":[{"dataType":"datetime"},{"dataType":"enum","enums":[null]}],"required":true},
+            "averageStars": {"dataType":"union","subSchemas":[{"dataType":"double"},{"dataType":"enum","enums":[null]}],"required":true},
+            "applicationsWithFeedback": {"dataType":"double","required":true},
+            "resumeAvailable": {"dataType":"boolean","required":true},
+        },
+        "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "ApplicationStage": {
+        "dataType": "refEnum",
+        "enums": ["Applied","Interview","Rejected","Potential Hire","Hired"],
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "APIHorizonsMemberApplication": {
+        "dataType": "refObject",
+        "properties": {
+            "applicationId": {"dataType":"string","required":true},
+            "applicantId": {"dataType":"string","required":true},
+            "appDevInternalPk": {"dataType":"double","required":true},
+            "teamPk": {"dataType":"string","required":true},
+            "applicantName": {"dataType":"string","required":true},
+            "email": {"dataType":"string","required":true},
+            "stage": {"ref":"ApplicationStage","required":true},
+            "rolePreferences": {"dataType":"array","array":{"dataType":"nestedObjectLiteral","nestedProperties":{"subteamPk":{"dataType":"string","required":true},"role":{"dataType":"string","required":true}}},"required":true},
+            "appliedAt": {"dataType":"datetime","required":true},
+            "stars": {"dataType":"double","required":true},
+            "notes": {"dataType":"union","subSchemas":[{"dataType":"string"},{"dataType":"enum","enums":[null]}],"required":true},
+            "stageHistory": {"dataType":"array","array":{"dataType":"nestedObjectLiteral","nestedProperties":{"changedBy":{"dataType":"string"},"changedAt":{"dataType":"datetime","required":true},"stage":{"ref":"ApplicationStage","required":true}}},"required":true},
+            "hiredRole": {"dataType":"union","subSchemas":[{"dataType":"string"},{"dataType":"enum","enums":[null]}],"required":true},
+            "hiredSubteamPk": {"dataType":"union","subSchemas":[{"dataType":"string"},{"dataType":"enum","enums":[null]}],"required":true},
+            "profile": {"ref":"Record_string.string_","required":true},
+            "responses": {"ref":"Record_string.string_","required":true},
+            "resumeAvailable": {"dataType":"boolean","required":true},
+        },
+        "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "APIHorizonsMemberApplicationsResponse": {
+        "dataType": "refObject",
+        "properties": {
+            "memberPk": {"dataType":"double","required":true},
+            "applications": {"dataType":"array","array":{"dataType":"refObject","ref":"APIHorizonsMemberApplication"},"required":true},
+        },
+        "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+    "APIHorizonsMemberResumeResponse": {
+        "dataType": "refObject",
+        "properties": {
+            "memberPk": {"dataType":"double","required":true},
+            "applicantId": {"dataType":"string","required":true},
+            "resumeAvailable": {"dataType":"boolean","required":true},
+            "resumeUrl": {"dataType":"union","subSchemas":[{"dataType":"string"},{"dataType":"enum","enums":[null]}],"required":true},
+            "expiresInSeconds": {"dataType":"union","subSchemas":[{"dataType":"double"},{"dataType":"enum","enums":[null]}],"required":true},
+        },
+        "additionalProperties": false,
+    },
+    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
     "GiteaRepositoryPermissions": {
         "dataType": "refObject",
         "properties": {
@@ -1067,11 +1164,6 @@ const models: TsoaRoute.Models = {
             "roleSpecificQuestions": {"dataType":"nestedObjectLiteral","nestedProperties":{},"additionalProperties":{"dataType":"array","array":{"dataType":"string"}},"required":true},
         },
         "additionalProperties": false,
-    },
-    // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
-    "ApplicationStage": {
-        "dataType": "refEnum",
-        "enums": ["Applied","Interview","Rejected","Potential Hire","Hired"],
     },
     // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
     "Record_string.string-Array_": {
@@ -2955,6 +3047,128 @@ export function RegisterRoutes(app: Router) {
                 next,
                 validatedArgs,
                 successStatus: 204,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsHorizonsController_getHealth: Record<string, TsoaRoute.ParameterSchema> = {
+        };
+        app.get('/api/horizons/health',
+            ...(fetchMiddlewares<RequestHandler>(HorizonsController)),
+            ...(fetchMiddlewares<RequestHandler>(HorizonsController.prototype.getHealth)),
+
+            async function HorizonsController_getHealth(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsHorizonsController_getHealth, request, response });
+
+                const controller = new HorizonsController();
+
+              await templateService.apiHandler({
+                methodName: 'getHealth',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsHorizonsController_getMemberRecruiting: Record<string, TsoaRoute.ParameterSchema> = {
+                appDevInternalPk: {"in":"path","name":"appDevInternalPk","required":true,"dataType":"double"},
+        };
+        app.get('/api/horizons/members/:appDevInternalPk/recruiting',
+            authenticateMiddleware([{"horizons":[]}]),
+            ...(fetchMiddlewares<RequestHandler>(HorizonsController)),
+            ...(fetchMiddlewares<RequestHandler>(HorizonsController.prototype.getMemberRecruiting)),
+
+            async function HorizonsController_getMemberRecruiting(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsHorizonsController_getMemberRecruiting, request, response });
+
+                const controller = new HorizonsController();
+
+              await templateService.apiHandler({
+                methodName: 'getMemberRecruiting',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsHorizonsController_getMemberApplicationsDetails: Record<string, TsoaRoute.ParameterSchema> = {
+                appDevInternalPk: {"in":"path","name":"appDevInternalPk","required":true,"dataType":"double"},
+        };
+        app.get('/api/horizons/members/:appDevInternalPk/applications',
+            authenticateMiddleware([{"horizons":[]}]),
+            ...(fetchMiddlewares<RequestHandler>(HorizonsController)),
+            ...(fetchMiddlewares<RequestHandler>(HorizonsController.prototype.getMemberApplicationsDetails)),
+
+            async function HorizonsController_getMemberApplicationsDetails(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsHorizonsController_getMemberApplicationsDetails, request, response });
+
+                const controller = new HorizonsController();
+
+              await templateService.apiHandler({
+                methodName: 'getMemberApplicationsDetails',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 200,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsHorizonsController_getMemberResume: Record<string, TsoaRoute.ParameterSchema> = {
+                appDevInternalPk: {"in":"path","name":"appDevInternalPk","required":true,"dataType":"double"},
+        };
+        app.get('/api/horizons/members/:appDevInternalPk/resume',
+            authenticateMiddleware([{"horizons":[]}]),
+            ...(fetchMiddlewares<RequestHandler>(HorizonsController)),
+            ...(fetchMiddlewares<RequestHandler>(HorizonsController.prototype.getMemberResume)),
+
+            async function HorizonsController_getMemberResume(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsHorizonsController_getMemberResume, request, response });
+
+                const controller = new HorizonsController();
+
+              await templateService.apiHandler({
+                methodName: 'getMemberResume',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: 200,
               });
             } catch (err) {
                 return next(err);

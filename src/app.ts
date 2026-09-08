@@ -67,16 +67,23 @@ app.use(cors({
 }));
 
 app.set('trust proxy', true);
-app.use(
-  expressSession({
-    name: 'peopleportal_sid',
-    secret: process.env.PEOPLEPORTAL_TOKEN_SECRET,
-    resave: false,
-    saveUninitialized: true,
-    store: new expressSession.MemoryStore(), /* Use Redis for Horizontal Scaling */
-    proxy: true,
-  })
-);
+const sessionMiddleware = expressSession({
+  name: 'peopleportal_sid',
+  secret: process.env.PEOPLEPORTAL_TOKEN_SECRET,
+  resave: false,
+  saveUninitialized: true,
+  store: new expressSession.MemoryStore(), /* Use Redis for Horizontal Scaling */
+  proxy: true,
+});
+
+/* Horizons uses bearer-key auth and does not need browser sessions. Skipping
+   the session middleware for these routes prevents bulk analytics polling from
+   creating uninitialized entries in the in-memory portal session store. */
+app.use((req, res, next) => {
+  if (req.path === '/api/horizons' || req.path.startsWith('/api/horizons/'))
+    return next();
+  return sessionMiddleware(req, res, next);
+});
 
 /* Register TSOA Routes */
 const ApiRouter = Router()
@@ -121,6 +128,9 @@ ApiRouter.use("/api/docs", apiReference({
 
 /* Register & Setup Catch All Route for Public Dir */
 RegisterRoutes(ApiRouter);
+ApiRouter.use("/api/horizons", (req, res) => {
+  res.status(404).json({ message: "Horizons endpoint not found" });
+});
 app.use(ApiRouter);
 
 app.get(["/onboard", "/onboard/*splat"], (req, res) => {
@@ -162,6 +172,11 @@ app.use(function errorHandler(
   }
 
   if (err instanceof Error) {
+    if (req.path === "/api/horizons" || req.path.startsWith("/api/horizons/")) {
+      console.error("Horizons request failed:", err.message);
+      return res.status(500).json({ message: "Internal Server Error" });
+    }
+
     console.error(err)
     return res.status(500).json({
       message: err.message ?? "Unknown Internal Server Error",

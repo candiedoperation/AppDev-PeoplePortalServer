@@ -1511,6 +1511,11 @@ export class ATSController extends Controller {
         }
 
         /* Do not convert downstream membership/email failures into external invites. */
+        const memberPk = Number(user.pk);
+        if (application.appDevInternalPk !== memberPk) {
+            application.appDevInternalPk = memberPk;
+            await application.save();
+        }
         await this.orgController.addTeamMember(application.hiredSubteamPk!, { userPk: +user.pk, roleTitle: application.hiredRole! });
         await this.emailClient.send({
             to: applicantEmail,
